@@ -5,7 +5,11 @@
   "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
   "generationType": "normal",
   "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
-  "note": "SYNTHESIZED from ST 1.18.0 source (public/scripts/openai.js:1599-1601 — squashSystemMessages is called ONLY when oai_settings.squash_system_messages is true), not captured. Prose is RPT-authored + scrambled. Pins `squash_system_messages: false`: ST performs NO squashing, so the four adjacent unnamed `system` messages stay DISCRETE. This is the frozen ST-OFF spec. DELIBERATE RPT DIVERGENCE (KNOWN-DIVERGENCES §5): RPT keeps its merge-all `mergeConsecutiveRoles` for an imported preset with squash OFF (and for native presets), so RPT would coalesce these adjacent same-role messages where ST-off leaves them discrete — a behavior RPT retains on purpose to preserve the split-block (`<X_setting>` open/body/close) coalescing fix. squashSystemMessages is applied ONLY when the flag is true (see providerShape). Adapter-verify at Phase-2 wiring against this divergence.",
+  "note": "SYNTHESIZED from ST 1.18.0 source (public/scripts/openai.js:1599-1601 — squashSystemMessages is called ONLY when oai_settings.squash_system_messages is true), not captured. Prose is RPT-authored + scrambled. Pins `squash_system_messages: false`: ST performs NO squashing, so the four adjacent unnamed `system` messages stay DISCRETE. This is the frozen ST-OFF spec. DELIBERATE RPT DIVERGENCE (KNOWN-DIVERGENCES §5): RPT keeps its merge-all `mergeConsecutiveRoles` for an imported preset with squash OFF (and for native presets), so RPT would coalesce these adjacent same-role messages where ST-off leaves them discrete — a behavior RPT retains on purpose to preserve the split-block (`<X_setting>` open/body/close) coalescing fix. squashSystemMessages is applied ONLY when the flag is true (see providerShape). `expected.chat` below is ST's discrete-message spec; the `knownDivergence` marker tells the conformance runner to xfail the exact-match diff once the adapter is wired (M5) rather than hard-fail on RPT's coalesced output.",
+  "knownDivergence": {
+    "ref": "KNOWN-DIVERGENCES §5",
+    "reason": "RPT keeps merge-all mergeConsecutiveRoles for imported squash-off (and native) presets; ST-off leaves adjacent unnamed system messages discrete."
+  },
   "input": {
     "description": "Four adjacent unnamed system literals; one trailing user turn; squash off — discrete systems preserved.",
     "preset": {

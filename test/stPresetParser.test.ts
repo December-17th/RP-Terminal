@@ -258,4 +258,26 @@ describe('parseStPreset', () => {
     // Absent in the source → coerced to false (ST default), never left undefined for an import.
     expect(parseStPreset({ prompts: [] }, 'f').squash_system_messages).toBe(false)
   })
+
+  // Issue 11 (M2 review must-fix 1): an import ALWAYS carries the three ST per-marker format strings so
+  // the builder switches the char/scenario/personality/world-info markers to ST-faithful formatting.
+  it('extracts wi_format / personality_format / scenario_format (ST oai_settings), defaulting to ST defaults', () => {
+    const custom = parseStPreset(
+      {
+        prompts: [],
+        wi_format: 'WI:\n{0}',
+        personality_format: 'P: {{personality}}',
+        scenario_format: 'S: {{scenario}}'
+      },
+      'f'
+    )
+    expect(custom.wi_format).toBe('WI:\n{0}')
+    expect(custom.personality_format).toBe('P: {{personality}}')
+    expect(custom.scenario_format).toBe('S: {{scenario}}')
+    // Absent in the source → coerced to ST's own defaults, never left undefined for an import.
+    const bare = parseStPreset({ prompts: [] }, 'f')
+    expect(bare.wi_format).toBe('{0}')
+    expect(bare.personality_format).toBe('{{personality}}')
+    expect(bare.scenario_format).toBe('{{scenario}}')
+  })
 })

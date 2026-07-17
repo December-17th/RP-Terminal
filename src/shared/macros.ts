@@ -33,6 +33,17 @@ export interface MacroContext {
   /** The last user turn's raw text for `{{lastUserMessage}}` (chat-macros.js:108-111). */
   lastUserMessage?: string
   /**
+   * The character-card fields for ST's `{{personality}}` / `{{scenario}}` / `{{description}}` macros
+   * (env-macros.js:67-89 — `charPersonality`/`charScenario`/`charDescription` with those aliases,
+   * `handler: ({ env }) => env.character.<field> ?? ''`). Each resolves ONLY when supplied as a string
+   * (like `{{original}}`); absent → the macro is unknown-passthrough (left literal), so a caller that
+   * doesn't set them keeps its prior output. Used mainly to expand ST preset marker FORMAT strings
+   * (`personality_format` default `{{personality}}`, `scenario_format` default `{{scenario}}`,
+   * openai.js:112-113) for imported presets. */
+  personality?: string
+  scenario?: string
+  description?: string
+  /**
    * The ONE-SHOT `{{original}}` value: the ORIGINAL prompt content a character-card override replaced
    * (ST openai.js:1489-1492 → preparePrompt → substituteParams `{ original }`). First `{{original}}`
    * in an evaluation yields this string; every later `{{original}}` in the SAME call yields ''
@@ -236,6 +247,24 @@ export const expandMacros = (text: string, ctx: MacroContext = {}): string => {
           break
         case 'persona':
           res = ctx.persona ?? ''
+          break
+        // ST character-field macros + their aliases (env-macros.js:67-89). Gated on presence like
+        // {{original}}: resolve only when the caller supplied the field (a string), else fall through to
+        // unknown-passthrough so content that doesn't opt in is byte-identical to before.
+        case 'charpersonality':
+        case 'personality':
+          if (typeof ctx.personality !== 'string') return whole
+          res = ctx.personality
+          break
+        case 'charscenario':
+        case 'scenario':
+          if (typeof ctx.scenario !== 'string') return whole
+          res = ctx.scenario
+          break
+        case 'chardescription':
+        case 'description':
+          if (typeof ctx.description !== 'string') return whole
+          res = ctx.description
           break
         case 'lastusermessage':
           // Last user turn's raw text (chat-macros.js:108-111).

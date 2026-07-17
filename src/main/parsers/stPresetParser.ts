@@ -163,11 +163,21 @@ export const parseStPreset = (raw: any, fallbackName: string): any | null => {
   // the full oai_settings, so this field is present on real imports; coerce to an explicit boolean so an
   // import ALWAYS carries the flag (true → ST selective squash in providerShape; false → RPT merge-all,
   // the current behavior). A native preset never gains the key, so it keeps merge-all (parity).
+  //
+  // ST per-marker FORMAT strings (openai.js:106 `default_wi_format='{0}'`, :112-113
+  // `default_personality_format='{{personality}}'` / `default_scenario_format='{{scenario}}'`). Real ST
+  // presets save the full oai_settings, so these are present on imports; default to ST's own defaults when
+  // a preset omits them so an import ALWAYS carries all three — their presence is the builder's IMPORT
+  // signal (bare charDescription + ST format strings). A native preset never gains them (parity).
+  const str = (v: unknown, fallback: string): string => (typeof v === 'string' ? v : fallback)
   return {
     name: raw.name || fallbackName,
     parameters,
     prompts,
     squash_system_messages: raw.squash_system_messages === true,
+    wi_format: str(raw.wi_format, '{0}'),
+    personality_format: str(raw.personality_format, '{{personality}}'),
+    scenario_format: str(raw.scenario_format, '{{scenario}}'),
     ...(spreset ? { spreset } : {})
   }
 }

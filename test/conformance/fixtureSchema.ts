@@ -81,6 +81,14 @@ export interface Fixture {
   /** The golden assembled prompt: ST's post-extension mutable chat array. */
   expected: { chat: FixtureMessage[] }
   /**
+   * Marks a fixture whose `expected.chat` pins an ST behavior RPT DELIBERATELY diverges from (an entry in
+   * `KNOWN-DIVERGENCES.md`). When present, the conformance runner does NOT hard-fail the exact-match diff
+   * once the RPT adapter is wired (M5, issue 20) — it treats the mismatch as expected (xfail), asserting
+   * only that the divergence is on record via `ref`. Absent = a normal fixture RPT must match exactly.
+   * `ref` cites the KNOWN-DIVERGENCES section (e.g. "KNOWN-DIVERGENCES §5"); `reason` is a one-line why.
+   */
+  knownDivergence?: { ref: string; reason: string }
+  /**
    * Optional structural invariants the runner asserts even before RPT wiring
    * exists — lets a fixture "flow through" the runner today. All optional.
    */
@@ -155,6 +163,18 @@ export function validateFixture(obj: unknown): ValidationResult {
     }
     if (f.input.macroEngine !== 'new' && f.input.macroEngine !== 'legacy') {
       errors.push('input.macroEngine must be "new" | "legacy"')
+    }
+  }
+  // A documented-divergence marker, when present, must cite a KNOWN-DIVERGENCES ref + a reason.
+  if (f.knownDivergence != null) {
+    const kd = f.knownDivergence
+    if (typeof kd !== 'object' || typeof kd.ref !== 'string' || !kd.ref) {
+      errors.push('knownDivergence.ref must be a non-empty string')
+    } else if (!kd.ref.includes('KNOWN-DIVERGENCES')) {
+      errors.push('knownDivergence.ref must cite KNOWN-DIVERGENCES')
+    }
+    if (typeof kd !== 'object' || typeof kd.reason !== 'string' || !kd.reason) {
+      errors.push('knownDivergence.reason must be a non-empty string')
     }
   }
   return { ok: errors.length === 0, errors }

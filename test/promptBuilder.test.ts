@@ -1000,6 +1000,73 @@ describe('buildPrompt — distinct WI / personality / scenario markers', () => {
   })
 })
 
+// --- Issue 11 (M2 review must-fix 1): ST per-marker FORMAT strings for imported presets ---
+describe('buildPrompt — imported-preset ST marker format strings', () => {
+  // An imported ST preset carries the three format fields (the parser sets them, defaulting to ST
+  // defaults). Their presence flips the char/scenario/personality/world-info markers to ST-faithful
+  // formatting: bare charDescription, stringFormat(wi_format, …), substituteParams(personality|scenario).
+  const importPreset = (prompts: any[], fmt: Record<string, string> = {}): any => ({
+    name: 'Imported',
+    parameters: { temperature: 0.9, max_tokens: 100 },
+    wi_format: 'WI_FMT:\n{0}',
+    personality_format: 'PERS_FMT: {{personality}}',
+    scenario_format: 'SCN_FMT: {{scenario}}',
+    ...fmt,
+    prompts
+  })
+
+  it('renders a BARE charDescription (no Name:/Description: wrapper) for imports', () => {
+    const messages = buildPrompt({
+      card: card({ name: 'Kaevo', description: 'A quiet dock-warden.', personality: 'terse' }),
+      preset: importPreset([
+        blk('char_description'),
+        blk('char_personality', '', 'user'),
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    const desc = messages.find((m) => m.content === 'A quiet dock-warden.')
+    expect(desc).toBeTruthy() // bare description, no "Name:" prefix
+    expect(messages.some((m) => m.content.startsWith('Name:'))).toBe(false)
+  })
+
+  it('applies wi_format via stringFormat and personality_format/scenario_format via macros', () => {
+    const messages = buildPrompt({
+      card: card({ description: 'desc', personality: 'terse and wry', scenario: 'a rainy pier' }),
+      preset: importPreset([
+        blk('world_info_before'),
+        blk('char_description'),
+        blk('char_personality', '', 'user'),
+        blk('scenario', '', 'assistant'),
+        blk('chat_history')
+      ]),
+      lorebooks: [book([{ keys: [], content: 'LORE-BLOB', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'WI_FMT:\nLORE-BLOB')).toBe(true)
+    const pers = messages.find((m) => m.content === 'PERS_FMT: terse and wry')
+    const scn = messages.find((m) => m.content === 'SCN_FMT: a rainy pier')
+    expect(pers?.role).toBe('user')
+    expect(scn?.role).toBe('assistant')
+    // No native "World Info:\n" header leaks in on the import path.
+    expect(messages.some((m) => m.content.startsWith('World Info:'))).toBe(false)
+  })
+
+  it('an empty wi_format yields a bare WI blob (ST formatWorldInfo openai.js:787-788)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: importPreset([blk('world_info_before'), blk('chat_history')], { wi_format: '' }),
+      lorebooks: [book([{ keys: [], content: 'BARE-LORE', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'BARE-LORE')).toBe(true)
+  })
+})
+
 describe('buildPrompt — injection_trigger (generation-type allow-list)', () => {
   const trigBlk = (content: string, triggers: string[]): any => ({
     ...blk('none', content),

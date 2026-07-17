@@ -11,16 +11,15 @@
     "scenario_format": "ORP_SCN: {{scenario}}",
     "personality_format": "ORP_PERS: {{personality}}"
   },
-  "note": "SYNTHESIZED from ST 1.18.0 source, not captured. Per-marker ROLE override: the Prompt Manager collection prompt's role is copied onto the marker before expansion (openai.js:1468-1477, `prompt.role = collectionPrompt.role ?? prompt.role`). charPersonality is emitted as role=user and worldInfoAfter as role=assistant; the rest stay system. Adapter-verify at Phase-2 wiring; replace with source:'captured' per RUNBOOK.md. Prose is RPT-authored + scrambled; ST default strings overridden with ORP_ sentinels.",
+  "note": "SYNTHESIZED from ST 1.18.0 source, not captured. Per-marker ROLE override: the Prompt Manager collection prompt's role is copied onto the marker before expansion (openai.js:1468-1477, `prompt.role = collectionPrompt.role ?? prompt.role`). charPersonality is emitted as role=user and worldInfoAfter as role=assistant; the rest stay system. Also pins ST per-marker FORMAT strings for an IMPORTED preset (wi_format wraps the WI, charDescription BARE, personality_format/scenario_format expand macros — openai.js:780-792,1359-1369). Only a single after_char WI entry is supplied and there is NO worldInfoBefore marker, so RPT's world_info_after fallback (no before-slot) renders the blob at the after marker's role — matching ST here and keeping the role=assistant override observable. The before/after distinct-message SPLIT (both markers populated) is a documented divergence (KNOWN-DIVERGENCES §7), deliberately not exercised here. Adapter-verify at M5 (issue 20); replace with source:'captured' per RUNBOOK.md. Prose is RPT-authored + scrambled; ST default strings overridden with ORP_ sentinels.",
   "input": {
-    "description": "charPersonality role=user, worldInfoAfter role=assistant; other markers keep role=system.",
+    "description": "charPersonality role=user, worldInfoAfter role=assistant; other markers keep role=system. Single after_char WI entry, no before-marker.",
     "preset": {
       "name": "Oracle Marker Roles (scrambled)",
       "temperature": 1,
       "openai_max_tokens": 4096,
       "prompts": [
         { "identifier": "main", "name": "Main", "role": "system", "content": "Vornst kelbra directive: uphold the frelquam cadence." },
-        { "identifier": "worldInfoBefore", "name": "World Info (before)", "role": "system", "marker": true },
         { "identifier": "charDescription", "name": "Char Description", "role": "system", "marker": true },
         { "identifier": "charPersonality", "name": "Char Personality", "role": "user", "marker": true },
         { "identifier": "scenario", "name": "Scenario", "role": "system", "marker": true },
@@ -32,7 +31,6 @@
           "character_id": 100001,
           "order": [
             { "identifier": "main", "enabled": true },
-            { "identifier": "worldInfoBefore", "enabled": true },
             { "identifier": "charDescription", "enabled": true },
             { "identifier": "charPersonality", "enabled": true },
             { "identifier": "scenario", "enabled": true },
@@ -61,20 +59,18 @@
       "personality_format": "ORP_PERS: {{personality}}"
     },
     "worldInfo": [
-      { "position": "before_char", "order": 100, "content": "Before-lore: the Zell markets close at dusk-tide." },
       { "position": "after_char", "order": 100, "content": "After-lore: tide-bells ring thrice for a missing skiff." }
     ],
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "system", "system", "user", "system", "assistant", "user"],
-    "messageCount": 7,
+    "roleOrder": ["system", "system", "user", "system", "assistant", "user"],
+    "messageCount": 6,
     "mustContain": ["ORP_PERS: terse, wry", "ORP_SCN: A rain-slick pier", "After-lore: tide-bells"]
   },
   "expected": {
     "chat": [
       { "role": "system", "content": "Vornst kelbra directive: uphold the frelquam cadence." },
-      { "role": "system", "content": "ORP_WI:\nBefore-lore: the Zell markets close at dusk-tide." },
       { "role": "system", "content": "Character brindle: Kaevo, a quiet dock-warden of Sill." },
       { "role": "user", "content": "ORP_PERS: terse, wry, slow to trust." },
       { "role": "system", "content": "ORP_SCN: A rain-slick pier at the edge of Grennel Bay." },

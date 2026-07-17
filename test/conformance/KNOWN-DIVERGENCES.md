@@ -119,3 +119,41 @@ affixes, separators, `user_role_system`, conditional-tag gating) + stop-strings.
   (tier-order mode), `src/main/services/generation/{assemble,providerShape}.ts`; fixtures
   `wp-2.6-spreset-regexbinding.json`, `wp-2.6-spreset-chatsquash.json`, `wp-2.6-spreset-macronest.json`;
   unit tests `test/spreset.test.ts`, `test/regexOrder.test.ts`, `test/presetInventory.test.ts`.
+
+## 7. World Info before/after — distinct messages vs one combined blob (issue 11 / WP-2.1)
+
+RPT now applies ST's per-marker FORMAT strings for imported presets — a BARE `charDescription`
+(openai.js:1369), `stringFormat(wi_format, …)` on the World Info marker (`formatWorldInfo`,
+openai.js:780-792), and `substituteParams(personality_format|scenario_format)` on the personality/scenario
+markers (openai.js:1359-1360). Those match ST. What does NOT match is how the two World Info markers are
+POPULATED.
+
+- **ST:** `worldInfoBefore` (↑Char) and `worldInfoAfter` (↓Char) are DISTINCT default markers
+  (openai.js:1367-1368); ST activation places each entry into one slice, and both slices render as their
+  own messages at their own ordered positions/roles.
+- **RPT:** `LorebookEntry` has no ST `position`, so assembly computes ONE combined `worldInfo` blob (from
+  `partitionLore`/`topEntries`) rendered at the first before-slot (`world_info` or `world_info_before`).
+  `world_info_after` renders the blob ONLY as a fallback when there is no before-slot at all. RPT therefore
+  cannot split matched lore into distinct before/after messages.
+- **When they agree:** a single before-slot slice (or an after-only slice with no before-marker). The
+  marker fixtures `wp-2.1-markers-basic` (single `before_char`) and `wp-2.1-marker-roles-positions`
+  (single `after_char`, no before-marker → after-fallback) are authored to that convergent case so their
+  `expected.chat` stays a true ST oracle; the split itself is not exercised.
+- **Grounding:** ST `public/scripts/openai.js:1367-1368` (distinct markers) + `:780-792` (`formatWorldInfo`);
+  RPT `src/main/services/promptBuilder.ts` (`world_info_before`/`world_info_after` cases, `renderWorldInfo`,
+  the single `worldInfo` blob), `docs/adr/0016`. Scope — `assembly`.
+
+## 8. In-chat injection depth beyond MAX — RPT clamps, ST drops (issue 12 / WP-2.2)
+
+- **ST:** `populationInjectionPrompts` loops `i = 0..getExtensionPromptMaxDepth()` (MAX_INJECTION_DEPTH =
+  10000, `script.js:499`; `getExtensionPromptMaxDepth` returns MAX with NO clamp, `script.js:3222-3223`)
+  and keeps only `prompt.injection_depth === i` (openai.js:813). A block at a depth that matches no `i`
+  — i.e. depth > MAX — is DROPPED entirely (never injected).
+- **RPT:** clamps the injection index into the conversation region
+  (`idx = max(start, min(base − depth, maxIdx))`, `promptBuilder.ts`), so a depth > MAX is injected at the
+  TOP of the chat region instead of being dropped.
+- **When they agree:** any depth ≤ MAX. At depth == MAX (10000) both inject at the top after ST's final
+  whole-array reverse — the convergent value fixture `wp-2.2-depth-cap` pins.
+- **Grounding:** ST `public/scripts/openai.js:801-864` (loop + splice + final reverse), `:813` (`=== i`
+  filter), `script.js:499` + `:3222-3223`; RPT `src/main/services/promptBuilder.ts` (depth splice-plan
+  clamp). Scope — `assembly`.

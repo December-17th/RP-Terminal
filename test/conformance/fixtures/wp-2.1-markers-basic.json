@@ -11,7 +11,7 @@
     "scenario_format": "ORP_SCN: {{scenario}}",
     "personality_format": "ORP_PERS: {{personality}}"
   },
-  "note": "SYNTHESIZED, not captured. Prose is RPT-authored + scrambled placeholder; ST default utility strings are overridden with ORP_ sentinels so no ST prose appears. Pins the default marker ORDER: main -> worldInfoBefore -> charDescription -> charPersonality -> scenario -> worldInfoAfter -> chatHistory. The `input` block is the machine-readable feed that yields `expected.chat` (a coherent reconstruction, not adapter-verified until Phase-2 issues 11-15). Replace with a source:'captured' fixture per RUNBOOK.md when a real capture is taken.",
+  "note": "SYNTHESIZED, not captured. Prose is RPT-authored + scrambled placeholder; ST default utility strings are overridden with ORP_ sentinels so no ST prose appears. Pins the default marker ORDER (main -> worldInfoBefore -> charDescription -> charPersonality -> scenario -> worldInfoAfter -> chatHistory) AND ST per-marker FORMAT strings for an IMPORTED preset: wi_format `ORP_WI:\\n{0}` wraps the WI (formatWorldInfo/stringFormat, openai.js:780-792), charDescription is BARE (openai.js:1369), personality_format/scenario_format expand `{{personality}}`/`{{scenario}}` (openai.js:1359-1360). Only ONE before_char WI entry is supplied so RPT (which has no per-entry before/after position and renders one combined blob at the before-slot) matches ST here; worldInfoAfter then renders empty and ST drops it (getChat, openai.js:3738-3739) → 6 messages. The before/after distinct-message SPLIT is a documented divergence (KNOWN-DIVERGENCES §7), deliberately not exercised here. Not adapter-verified until M5 (issue 20). Replace with a source:'captured' fixture per RUNBOOK.md when a real capture is taken.",
   "input": {
     "description": "worldInfoBefore/After, charPersonality, scenario markers each populated; single-char preset; one trailing user turn.",
     "preset": {
@@ -61,14 +61,13 @@
       "personality_format": "ORP_PERS: {{personality}}"
     },
     "worldInfo": [
-      { "position": "before_char", "order": 100, "content": "Before-lore: the Zell markets close at dusk-tide." },
-      { "position": "after_char", "order": 100, "content": "After-lore: tide-bells ring thrice for a missing skiff." }
+      { "position": "before_char", "order": 100, "content": "Before-lore: the Zell markets close at dusk-tide." }
     ],
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "system", "system", "system", "system", "system", "user"],
-    "messageCount": 7,
+    "roleOrder": ["system", "system", "system", "system", "system", "user"],
+    "messageCount": 6,
     "mustContain": ["ORP_WI:", "ORP_SCN:", "ORP_PERS:"],
     "mustNotContain": ["[Start a new Chat]", "point of view of {{user}}, using the chat history"]
   },
@@ -79,7 +78,6 @@
       { "role": "system", "content": "Character brindle: Kaevo, a quiet dock-warden of Sill." },
       { "role": "system", "content": "ORP_PERS: terse, wry, slow to trust." },
       { "role": "system", "content": "ORP_SCN: A rain-slick pier at the edge of Grennel Bay." },
-      { "role": "system", "content": "ORP_WI:\nAfter-lore: tide-bells ring thrice for a missing skiff." },
       { "role": "user", "content": "Kaevo, did the night skiff ever come back?" }
     ]
   }

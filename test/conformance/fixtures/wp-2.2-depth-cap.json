@@ -5,9 +5,9 @@
   "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
   "generationType": "normal",
   "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
-  "note": "SYNTHESIZED from ST 1.18.0 source, not captured. populationInjectionPrompts loops i=0..getExtensionPromptMaxDepth() where MAX_INJECTION_DEPTH=10000 (script.js:499, getExtensionPromptMaxDepth script.js:3222). An injection deeper than the (reversed) history length splices past the array end, so `messages.splice(i, 0, ...)` appends at the tail of the reversed array and, after the final reverse (openai.js:864), lands at the TOP of the chat region. Depth requested 99999, clamped to the 10000 cap; two-message history. RPT reaches the same placement by clamping the index into the conversation region. Prose is RPT-authored + scrambled.",
+  "note": "SYNTHESIZED from ST 1.18.0 source, not captured. populationInjectionPrompts loops i=0..getExtensionPromptMaxDepth() where MAX_INJECTION_DEPTH=10000 (script.js:499, getExtensionPromptMaxDepth script.js:3222-3223 returns MAX with NO clamping) and each step keeps only `prompt.injection_depth === i` (openai.js:813). So a block at depth 10000 (== MAX) matches at i=10000; after the final whole-array reverse (openai.js:864) it lands at the TOP of the chat region. This fixture pins that boundary case, which BOTH ST and RPT inject at the top. ST does NOT clamp out-of-range depths — a depth > MAX matches no `i` and is DROPPED (never injected); RPT instead CLAMPS the index into the conversation region (idx = max(start, min(base-depth, maxIdx)), promptBuilder.ts), so it would inject a > MAX depth at the top where ST drops it. That divergence is enumerated in KNOWN-DIVERGENCES §8; this fixture stays on the convergent MAX value so `expected.chat` is a true ST oracle. Two-message history. Prose is RPT-authored + scrambled.",
   "input": {
-    "description": "One in-chat system injection at depth 10000 (requested 99999, clamped); lands above all chat messages.",
+    "description": "One in-chat system injection at depth 10000 (== MAX_INJECTION_DEPTH, the loop boundary ST includes); lands above all chat messages. Both ST and RPT inject here (convergent).",
     "preset": {
       "name": "Oracle Depth Cap (scrambled)",
       "temperature": 1,

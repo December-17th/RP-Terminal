@@ -89,8 +89,17 @@ describe('oracle conformance scenarios', () => {
       it('matches RPT assembly when the adapter is wired', () => {
         const produced = assembleForFixture(fixture.input)
         if (produced == null) {
-          // Adapter unwired (Phase-2 issues 11-15). Structural-only for now.
+          // Adapter unwired (Phase-2 issues 11-15 / M5 issue 20). Structural-only for now.
           expect(fixture.expected.chat.length).toBeGreaterThan(0)
+          return
+        }
+        if (fixture.knownDivergence) {
+          // DOCUMENTED DIVERGENCE (KNOWN-DIVERGENCES): `expected.chat` pins ST's behavior, which RPT
+          // deliberately diverges from. Don't hard-fail the exact-match diff — treat it as an expected
+          // divergence (xfail), asserting only that it's on record. When RPT's actual output happens to
+          // still match, that's fine too. See KNOWN-DIVERGENCES.md for the enumerated boundary.
+          expect(fixture.knownDivergence.ref).toContain('KNOWN-DIVERGENCES')
+          expect(fixture.knownDivergence.reason.length).toBeGreaterThan(0)
           return
         }
         expect(produced.chat).toEqual(fixture.expected.chat)

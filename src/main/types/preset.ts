@@ -91,6 +91,19 @@ export const PresetSchema = z.object({
    */
   squash_system_messages: z.boolean().optional(),
   /**
+   * ST per-marker FORMAT strings (`oai_settings.wi_format` / `personality_format` / `scenario_format`,
+   * openai.js:106,112-113). Carried ONLY by imported ST presets (the parser sets them, defaulting to ST's
+   * own defaults `{0}` / `{{personality}}` / `{{scenario}}`); NATIVE presets leave them UNDEFINED. Their
+   * presence is the IMPORT signal the builder uses to switch the char/scenario/personality/world-info
+   * markers to ST-faithful formatting (bare charDescription, `stringFormat(wi_format, …)`,
+   * `substituteParams(personality_format|scenario_format)`) instead of RPT's native `Name:/Description:`
+   * + `World Info:\n` shape. Optional-without-default so a native preset never gains the key and its wire
+   * output stays byte-identical (parity gate). See promptBuilder `renderWorldInfo` / the marker cases.
+   */
+  wi_format: z.string().optional(),
+  personality_format: z.string().optional(),
+  scenario_format: z.string().optional(),
+  /**
    * SPreset (`extensions.SPreset`) runtime projection (issue 16 / WP-2.6), mirroring how
    * `squash_system_messages` is projected. Present ONLY on an imported preset that carries the SPreset
    * namespace (or its `SPresetSettings` mirror block); NATIVE presets leave it UNDEFINED so their build

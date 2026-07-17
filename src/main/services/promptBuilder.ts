@@ -284,6 +284,14 @@ const buildCharDescription = (
 }
 
 /**
+ * ST `stringFormat` (utils.js:757-764): positional `{n}` substitution — `{0}` is replaced by the first
+ * arg, `{1}` by the second, etc.; an index with no matching arg is left literal. ST's `formatWorldInfo`
+ * (openai.js:780-792) builds the World Info marker with `stringFormat(wi_format, value)`.
+ */
+const stringFormat = (format: string, ...args: string[]): string =>
+  format.replace(/\{(\d+)\}/g, (m, n: string) => (args[Number(n)] !== undefined ? args[Number(n)] : m))
+
+/**
  * ST `shouldTrigger` (PromptManager.js:1549-1553): a block with no `injection_trigger` array,
  * or an empty one, fires for ALL generation types; otherwise the lowercased current generation
  * type must be listed.
@@ -659,6 +667,13 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     char: charName,
     persona: pd,
     lastUserMessage,
+    // ST character-field macros (env-macros.js:67-89): {{personality}}/{{scenario}}/{{description}}.
+    // Threaded so an imported preset's `personality_format` / `scenario_format` (which default to
+    // `{{personality}}` / `{{scenario}}`) resolve when the marker cases render them. Empty string (not
+    // undefined) when the card field is absent — matching ST's `env.character.<field> ?? ''`.
+    personality: card.data.personality || '',
+    scenario: card.data.scenario || '',
+    description: card.data.description || '',
     original,
     vars: vars ?? args.template?.vars,
     globals: globals ?? args.template?.globals,
@@ -681,6 +696,21 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       : args.template
     : undefined
   const render = makeRender(personaMacro, frontierTemplate)
+
+  // IMPORT-vs-NATIVE marker formatting (issue 11 / ST 1.18.0 parity). An imported ST preset carries the
+  // per-marker format strings (the parser sets all three, defaulting to ST defaults); a native RPT preset
+  // leaves them undefined. When present, the char/scenario/personality/world-info markers below reproduce
+  // ST's own formatting — a BARE charDescription (openai.js:1369), `stringFormat(wi_format, …)`
+  // (formatWorldInfo, openai.js:780-792), and `substituteParams(personality_format|scenario_format)`
+  // (openai.js:1359-1360). When absent, they keep RPT's native `Name:/Description:` + `World Info:\n` shape.
+  const wiFormat = preset.wi_format
+  const isStImport =
+    wiFormat != null || preset.personality_format != null || preset.scenario_format != null
+  // Build the World Info marker/safety-net content. Import: ST `formatWorldInfo` — a blank/whitespace
+  // wi_format yields the bare value (openai.js:787-788), otherwise `stringFormat`. Native: `World Info:\n`.
+  const renderWorldInfo = (blob: string): string =>
+    wiFormat != null ? (wiFormat.trim() ? stringFormat(wiFormat, blob) : blob) : `World Info:\n${blob}`
+
   // Expand {{macros}} for one entry — applying {{setvar}}/{{addvar}}/… side effects to the shared var
   // store. `original` (the pre-override preset text) is threaded for card-overridden main/jailbreak so
   // their {{original}} resolves.
@@ -855,18 +885,31 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
 
     switch (block.marker) {
       case 'char_description': {
-        // Fold personality/scenario in ONLY when the preset has no distinct markers for them.
-        const content = buildCharDescription(card, charName, render, {
-          includePersonality: !hasPersonalityMarker,
-          includeScenario: !hasScenarioMarker
-        })
-        messages.push({ role: block.role, content })
-        journal?.marker({ kind: 'card-field', id: 'char_description' }, block.role, content)
+        // IMPORT: ST's charDescription is the BARE card description (openai.js:1369) — no wrapper, and
+        // personality/scenario ride their own markers. NATIVE: RPT folds Name + Description (+ Personality
+        // + Scenario when no distinct markers) into one block. ST drops an empty charDescription
+        // (getChat, openai.js:3738-3739); native's `Name:` prefix is always non-empty, so the `if`
+        // preserves the native push while suppressing an empty imported one.
+        const content = isStImport
+          ? render(card.data.description || '')
+          : buildCharDescription(card, charName, render, {
+              includePersonality: !hasPersonalityMarker,
+              includeScenario: !hasScenarioMarker
+            })
+        if (content) {
+          messages.push({ role: block.role, content })
+          journal?.marker({ kind: 'card-field', id: 'char_description' }, block.role, content)
+        }
         break
       }
       case 'char_personality': {
         // ST charPersonality marker (openai.js:1370). Own role/position; the card's personality field.
-        const content = render(card.data.personality || '')
+        // IMPORT applies `personality_format` exactly as ST: `personality && format ?
+        // substituteParams(format) : (personality || '')` (openai.js:1360) — so a blank format falls back
+        // to the bare field and {{personality}} inside the format resolves to it. NATIVE (no format) keeps
+        // the bare rendered field (prior behavior).
+        const p = render(card.data.personality || '')
+        const content = p && preset.personality_format ? render(preset.personality_format) : p
         if (content) {
           messages.push({ role: block.role, content })
           journal?.marker({ kind: 'card-field', id: 'char_personality' }, block.role, content)
@@ -874,8 +917,10 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         break
       }
       case 'scenario': {
-        // ST scenario marker (openai.js:1371). Own role/position; the card's scenario field.
-        const content = render(card.data.scenario || '')
+        // ST scenario marker (openai.js:1371). Own role/position; the card's scenario field. IMPORT
+        // applies `scenario_format` the same way as charPersonality (openai.js:1359); NATIVE keeps bare.
+        const s = render(card.data.scenario || '')
+        const content = s && preset.scenario_format ? render(preset.scenario_format) : s
         if (content) {
           messages.push({ role: block.role, content })
           journal?.marker({ kind: 'card-field', id: 'scenario' }, block.role, content)
@@ -892,17 +937,18 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         break
       }
       // World Info markers. ST keeps worldInfoBefore (↑Char) + worldInfoAfter (↓Char) distinct
-      // (openai.js:1367-1368), but RPT's lorebook model carries no per-entry before/after position
-      // (LorebookEntry has no ST `position`), so there's ONE computed `worldInfo` blob. It renders
-      // at the first before-slot (native `world_info` or ST `world_info_before` — where ST's
-      // constant/default WI lives); `world_info_after` stays empty unless there's no before-slot at
-      // all (then it renders the blob as a fallback so imports that only carry the after-marker still
-      // get their lore). SEAM: when WI activation supplies per-entry before/after (assembly-only
-      // fixtures already do), route the after-slice into the world_info_after case here.
+      // (openai.js:1367-1368) AND formats each via `formatWorldInfo`/`wi_format` (openai.js:780-792) —
+      // but RPT's lorebook model carries no per-entry before/after position (LorebookEntry has no ST
+      // `position`), so there's ONE computed `worldInfo` blob rendered at the first before-slot (native
+      // `world_info` or ST `world_info_before`); `world_info_after` stays empty unless there's no
+      // before-slot at all (then it renders the blob as a fallback so imports that only carry the
+      // after-marker still get their lore). The before/after SPLIT into distinct messages is a documented
+      // divergence (test/conformance/KNOWN-DIVERGENCES.md §7). `renderWorldInfo` applies the import's
+      // wi_format (or the native `World Info:\n` header).
       case 'world_info':
       case 'world_info_before': {
         if (worldInfo && !worldInfoRendered) {
-          const content = `World Info:\n${worldInfo}`
+          const content = renderWorldInfo(worldInfo)
           messages.push({ role: block.role, content })
           journal?.marker({ kind: 'marker', id: block.marker }, block.role, content)
           worldInfoRendered = true
@@ -912,7 +958,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       }
       case 'world_info_after': {
         if (worldInfo && !worldInfoRendered && !hasWiBeforeSlot) {
-          const content = `World Info:\n${worldInfo}`
+          const content = renderWorldInfo(worldInfo)
           messages.push({ role: block.role, content })
           journal?.marker({ kind: 'marker', id: 'world_info_after' }, block.role, content)
           worldInfoRendered = true
@@ -985,7 +1031,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // otherwise drop matched lorebook entries. Inject them just before the first
   // conversation message so keyword/constant world info still reaches the model.
   if (worldInfo && !worldInfoEmitted) {
-    const content = `World Info:\n${worldInfo}`
+    const content = renderWorldInfo(worldInfo)
     const at = insertBeforeConvo(messages, { role: 'system', content })
     journal?.safetyNet({ kind: 'marker', id: 'world_info-net' }, at, 'system', content)
   }
