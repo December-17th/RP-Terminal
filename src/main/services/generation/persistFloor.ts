@@ -1,5 +1,7 @@
 import { appendFloor } from '../chatService'
 import { saveGlobals } from '../templateService'
+import { saveExecutionRecord } from '../executionRecordStore'
+import { resolveExecutionRecordRetention } from '../settingsService'
 import { ChatMessage } from '../promptBuilder'
 import { RPEvent } from '../../parsers/contentParser'
 import { FloorMetrics } from '../../../shared/usageTypes'
@@ -49,5 +51,20 @@ export const persistFloor = (
   }
 
   appendFloor(ctx.profileId, ctx.chatId, floor)
+
+  // Persist the forensic Execution Record for this generation (issue 09). The assemble stage stamped it
+  // onto the shared `gen`; it is stored WITHOUT its `wire` (that duplicates the floor's `request` just
+  // written above — executionRecordStore rehydrates it on read) and pruned to the rolling retention
+  // window (settings.records.retention, default 50). Best-effort: a graph whose assemble→write path
+  // doesn't share `gen` leaves this undefined and simply persists no record.
+  if (ctx.executionRecord) {
+    saveExecutionRecord(
+      ctx.chatId,
+      floor.floor,
+      ctx.executionRecord,
+      resolveExecutionRecordRetention(ctx.settings)
+    )
+  }
+
   return floor
 }

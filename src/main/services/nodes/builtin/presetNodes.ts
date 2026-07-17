@@ -68,12 +68,15 @@ export const promptPreset: NodeImpl = {
     // Unwired memory = '' (assemble's behavior for an empty memory block — NOT the default graph's
     // recall, which it wires explicitly).
     const memory = (inputs.memory as string | undefined) ?? ''
-    const { sendMessages, params } = assemblePrompt(
+    const { sendMessages, params, record } = assemblePrompt(
       gen,
       extra.length ? [...matched, ...extra] : matched,
       memory,
       overrides
     )
+    // Stamp the forensic record onto the shared gen (issue 09; parity with prompt.assemble) so a
+    // graph routing preset.gen → write.gen persists it too. Behavior-neutral: not a port.
+    if (record) gen.executionRecord = record
     return { outputs: { sendMessages, params } }
   }
 }

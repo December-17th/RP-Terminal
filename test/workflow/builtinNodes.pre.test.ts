@@ -51,4 +51,21 @@ describe('prompt.assemble', () => {
     expect(assemblePrompt).toHaveBeenCalledWith(gen, matched, 'memory block')
     expect(result).toEqual({ outputs: { sendMessages, params } })
   })
+
+  it('stamps the execution record onto the shared gen (issue 09), without exposing it as a port', () => {
+    const gen: any = { profileId: 'p1' }
+    const record = { version: 1, entries: [], wire: [], stats: {} }
+    vi.mocked(matchWorldInfo).mockReturnValue([] as any)
+    vi.mocked(assemblePrompt).mockReturnValue({
+      sendMessages: [],
+      params: {},
+      record
+    } as any)
+
+    const result = promptAssemble.run(baseCtx, { gen, block: '' })
+
+    // The record rides `gen` (so the terminal write stage persists it) — never the output ports.
+    expect(gen.executionRecord).toBe(record)
+    expect(result.outputs).not.toHaveProperty('record')
+  })
 })

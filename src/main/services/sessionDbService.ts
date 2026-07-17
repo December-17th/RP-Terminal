@@ -115,6 +115,17 @@ CREATE TABLE IF NOT EXISTS workflow_trigger_state (
   PRIMARY KEY (chat_id, doc_id, node_id)
 );
 CREATE INDEX IF NOT EXISTS idx_workflow_trigger_state_chat ON workflow_trigger_state(chat_id);
+
+-- Forensic Execution Record per generation (st-preset-compat issue 09). Keyed to the FLOOR it
+-- explains; the record column is the record JSON with its wire STRIPPED (the exact wire duplicates the
+-- floor request column — executionRecordStore rehydrates it on read). Rolling retention prunes old rows.
+CREATE TABLE IF NOT EXISTS execution_records (
+  chat_id TEXT NOT NULL,
+  floor INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  record TEXT NOT NULL,
+  PRIMARY KEY (chat_id, floor)
+);
 `
 
 // ---- pure helpers (unit-tested) --------------------------------------------------------------

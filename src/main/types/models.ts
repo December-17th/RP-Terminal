@@ -215,4 +215,11 @@ export interface Settings {
      *  detail is otherwise bounded per-entry and by a ring byte-budget to keep memory in check. */
     full_trace?: boolean
   }
+  /** Forensic execution records (st-preset-compat issue 09): one per generation, kept for a rolling
+   *  window. See settingsService.resolveExecutionRecordRetention. */
+  records?: {
+    /** How many recent generations to keep the execution record for, PER chat (older are pruned).
+     *  Default 50; 0 disables (keeps none); absent/invalid ⇒ the default. */
+    retention?: number
+  }
 }

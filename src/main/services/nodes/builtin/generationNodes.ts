@@ -84,11 +84,15 @@ export const promptAssemble: NodeImpl = {
     const gen = inputs.gen as GenContext
     const matched = matchWorldInfo(gen)
     const extra = Array.isArray(inputs.entries) ? (inputs.entries as LorebookEntry[]) : []
-    const { sendMessages, params } = assemblePrompt(
+    const { sendMessages, params, record } = assemblePrompt(
       gen,
       extra.length ? [...matched, ...extra] : matched,
       inputs.block as string
     )
+    // Stamp the forensic record onto the shared gen so the terminal write stage can persist it
+    // (issue 09). Behavior-neutral: the record is not exposed as a port, so unwired graphs and the
+    // parity gate are unaffected. Guard because assemblePrompt is mocked without a record in unit tests.
+    if (record) gen.executionRecord = record
     return { outputs: { sendMessages, params } }
   }
 }
