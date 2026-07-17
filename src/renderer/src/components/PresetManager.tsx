@@ -13,6 +13,7 @@ const MARKER_KEY: Record<PromptMarker, string> = {
   char_description: 'preset.markerChar',
   mes_example: 'preset.markerExamples',
   world_info: 'preset.markerWorldInfo',
+  persona_description: 'preset.markerPersona',
   chat_history: 'preset.markerChatHistory',
   post_history: 'preset.markerPostHistory'
 }

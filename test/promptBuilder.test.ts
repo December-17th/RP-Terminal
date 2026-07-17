@@ -243,7 +243,7 @@ describe('buildPrompt', () => {
     expect(penultimate.content).toContain('DRAGON-LORE')
   })
 
-  it('injects the persona at the top and expands {{persona}}/{{user}} macros', () => {
+  it('safety-net injects the persona at the top (no persona_description marker) and expands {{persona}}/{{user}}', () => {
     const messages = buildPrompt({
       card: card(),
       preset: preset([
@@ -255,7 +255,7 @@ describe('buildPrompt', () => {
       floors: [floor(0, '', 'hi')],
       userAction: 'hello',
       userName: 'Lyra',
-      persona: { description: 'a wanderer', inject: true, depth: null }
+      persona: { description: 'a wanderer', inject: true }
     })
     const personaBlock = messages.find((m) => m.content.includes("[Lyra's Persona]"))
     expect(personaBlock).toBeTruthy()
@@ -264,30 +264,97 @@ describe('buildPrompt', () => {
     expect(messages.some((m) => m.content === 'Bio: Lyra is a wanderer')).toBe(true)
   })
 
-  it('can place the persona at a depth instead of the top', () => {
+  it('expands {{persona}} when injection is disabled without emitting a persona block', () => {
     const messages = buildPrompt({
       card: card(),
-      preset: preset([blk('char_description'), blk('chat_history')]),
+      preset: preset([
+        blk('none', 'Authored bio: {{persona}}'),
+        blk('persona_description'),
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      userName: 'Lyra',
+      persona: { description: 'a quiet cartographer', inject: false }
+    })
+
+    expect(messages.some((m) => m.content === 'Authored bio: a quiet cartographer')).toBe(true)
+    expect(messages.some((m) => m.content === 'a quiet cartographer')).toBe(false)
+    expect(messages.some((m) => m.content.includes("Lyra's Persona"))).toBe(false)
+  })
+
+  it('places the RAW persona (no header) at the preset persona_description marker', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        blk('persona_description'),
+        blk('chat_history')
+      ]),
       lorebooks: [],
       floors: [floor(0, 'u0', 'a0')],
       userAction: 'go',
       userName: 'Lyra',
-      persona: { description: 'a wanderer', inject: true, depth: 1 }
+      persona: { description: 'a wanderer', inject: true }
     })
+    // At the marker the description is emitted RAW (ST IN_PROMPT parity) — the preset author owns the
+    // framing, so NO `[Name's Persona]` header (that's reserved for the headerless safety-net).
+    const personaIdx = messages.findIndex((m) => m.content === 'a wanderer')
+    const charIdx = messages.findIndex((m) => m.content.startsWith('Name:')) // char_description block
+    expect(personaIdx).toBeGreaterThan(charIdx) // positioned at the marker, after char description
+    expect(messages.some((m) => m.content.includes("Lyra's Persona"))).toBe(false) // no header
     expect(last(messages).content).toBe('go')
-    expect(
-      messages.some((m) => m.role === 'system' && m.content.includes("[Lyra's Persona]"))
-    ).toBe(true)
+  })
+
+  it('wraps the marker persona inside a preset-authored envelope (like 命定之诗)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('none', '<{{user}}_setting>'),
+        blk('persona_description'),
+        blk('none', '</{{user}}_setting>'),
+        blk('char_description'),
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'go',
+      userName: 'Lyra',
+      persona: { description: 'a wanderer', inject: true }
+    })
+    const open = messages.findIndex((m) => m.content === '<Lyra_setting>')
+    const persona = messages.findIndex((m) => m.content === 'a wanderer')
+    const close = messages.findIndex((m) => m.content === '</Lyra_setting>')
+    expect(open).toBeGreaterThanOrEqual(0)
+    expect(persona).toBe(open + 1)
+    expect(close).toBe(persona + 1)
+  })
+
+  it('a DISABLED persona_description marker suppresses the persona (opt-out, no safety-net)', () => {
+    const disabledMarker = { ...blk('persona_description'), enabled: false }
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), disabledMarker, blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'go',
+      userName: 'Lyra',
+      persona: { description: 'a wanderer', inject: true }
+    })
+    // Author opted out by disabling the marker → the safety net must NOT re-add the persona.
+    expect(messages.some((m) => m.content.includes('wanderer'))).toBe(false)
+    expect(messages.some((m) => m.content.includes('Persona'))).toBe(false)
   })
 
   it('does not inject the persona when inject is false or description is blank', () => {
     const messages = buildPrompt({
       card: card(),
-      preset: preset([blk('char_description'), blk('chat_history')]),
+      preset: preset([blk('char_description'), blk('persona_description'), blk('chat_history')]),
       lorebooks: [],
       floors: [],
       userAction: 'go',
-      persona: { description: 'hidden', inject: false, depth: null }
+      persona: { description: 'hidden', inject: false }
     })
     expect(messages.some((m) => m.content.includes('Persona'))).toBe(false)
   })

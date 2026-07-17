@@ -1,6 +1,7 @@
 // Simplified Chinese (简体中文). Uses the SillyTavern-ecosystem terms (世界书 = lorebook, 预设 = preset,
 // 正则 = regex, 脚本 = scripts) so they read naturally to the card community.
 const zh: Record<string, string> = {
+  'persona.duplicate': '复制',
   'nav.persona': '用户人设',
   'nav.preset': '预设',
   'nav.lorebook': '世界书',
@@ -223,6 +224,10 @@ const zh: Record<string, string> = {
   'prefs.wipeProfileConfirm': '清空此档案中除 API 连接外的所有内容？此操作无法撤销。',
 
   'persona.heading': '用户人设',
+  'persona.select': '当前人设',
+  'persona.newName': '新人设',
+  'persona.keepOne': '至少保留一个人设',
+  'persona.confirmDelete': '删除人设“{{name}}”？',
   'persona.name': '名称',
   'persona.namePh': '用户',
   'persona.nameHint': '在提示词、卡片与世界书中替换 {{user}}。',
@@ -230,9 +235,6 @@ const zh: Record<string, string> = {
   'persona.descriptionPh': '你在这个故事中的身份 —— 外貌、背景、性格。支持 {{char}} / {{user}}。',
   'persona.descriptionHint': '注入到提示词中，让模型了解你的身份。在创作内容中也可用 {{persona}}。',
   'persona.inject': '将描述注入提示词',
-  'persona.depth': '注入深度',
-  'persona.depthPh': '顶部',
-  'persona.depthHint': '从聊天底部往上数的消息数。留空 = 置顶，在对话之前。',
 
   'logs.heading': '日志',
   'logs.auto': '自动',
@@ -353,6 +355,7 @@ const zh: Record<string, string> = {
   'preset.markerChar': '角色描述',
   'preset.markerExamples': '示例对话',
   'preset.markerWorldInfo': '世界信息',
+  'preset.markerPersona': '用户人设',
   'preset.markerChatHistory': '聊天记录',
   'preset.markerPostHistory': '历史后指令',
 

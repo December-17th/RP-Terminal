@@ -113,6 +113,81 @@ describe('shapePreview — section classification', () => {
     expect(sections[5].text).toBe('the pending action')
   })
 
+  it('classifies a RAW (header-less) persona block as persona via personaText match', () => {
+    const raw: AssembledMessage[] = [
+      msg('system', 'Name: Char\nDescription: a guide'),
+      msg('system', 'A curious traveller'), // persona at a marker — emitted raw, no header
+      msg('user', 'the pending action')
+    ]
+    const { sections } = shapePreview({
+      messages: raw,
+      tokensPerMessage: raw.map((m) => m.content.length),
+      injections: [],
+      gatedInjectors: [],
+      personaText: 'A curious traveller'
+    })
+    expect(sections.map((s) => s.id)).toEqual(['card', 'persona', 'action'])
+    // Without personaText it would fall back to generic `system`.
+    const { sections: noHint } = shapePreview({
+      messages: raw,
+      tokensPerMessage: raw.map((m) => m.content.length),
+      injections: [],
+      gatedInjectors: []
+    })
+    expect(noHint[1].id).toBe('system')
+  })
+
+  it.each(['user', 'assistant'] as const)(
+    'classifies a %s-role raw persona marker as persona',
+    (role) => {
+      const raw: AssembledMessage[] = [
+        msg(role, 'A curious traveller'),
+        msg('user', 'the pending action')
+      ]
+      const { sections } = shapePreview({
+        messages: raw,
+        tokensPerMessage: raw.map((m) => m.content.length),
+        injections: [],
+        gatedInjectors: [],
+        personaText: 'A curious traveller'
+      })
+
+      expect(sections.map((s) => s.id)).toEqual(['persona', 'action'])
+    }
+  )
+
+  it('classifies a same-role merged custom envelope carrying the raw persona as persona', () => {
+    const merged: AssembledMessage[] = [
+      msg('assistant', '<persona_context>\nA curious traveller\n</persona_context>'),
+      msg('user', 'the pending action')
+    ]
+    const { sections } = shapePreview({
+      messages: merged,
+      tokensPerMessage: merged.map((m) => m.content.length),
+      injections: [],
+      gatedInjectors: [],
+      personaText: 'A curious traveller'
+    })
+
+    expect(sections.map((s) => s.id)).toEqual(['persona', 'action'])
+  })
+
+  it('does not attribute an authored sentence that merely contains the persona text', () => {
+    const authored: AssembledMessage[] = [
+      msg('system', 'Instruction: remember A curious traveller is nearby.'),
+      msg('user', 'the pending action')
+    ]
+    const { sections } = shapePreview({
+      messages: authored,
+      tokensPerMessage: authored.map((m) => m.content.length),
+      injections: [],
+      gatedInjectors: [],
+      personaText: 'A curious traveller'
+    })
+
+    expect(sections.map((s) => s.id)).toEqual(['system', 'action'])
+  })
+
   it('token counts ride tokensPerMessage', () => {
     const { sections } = shapePreview({ messages, tokensPerMessage, injections: [], gatedInjectors: [] })
     expect(sections[0].tokens).toBe(messages[0].content.length)

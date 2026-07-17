@@ -14,6 +14,7 @@ describe('parseStPreset', () => {
         name: 'Test',
         prompts: [
           { identifier: 'charDescription', name: 'Char' },
+          { identifier: 'personaDescription', name: 'Persona' },
           { identifier: 'worldInfoBefore', name: 'WIB' },
           { identifier: 'worldInfoAfter', name: 'WIA' }, // dup world_info -> dropped
           { identifier: 'chatHistory', name: 'Hist' }
@@ -22,7 +23,12 @@ describe('parseStPreset', () => {
       'fallback'
     )
     const markers = preset.prompts.map((p: any) => p.marker)
-    expect(markers).toEqual(['char_description', 'world_info', 'chat_history'])
+    expect(markers).toEqual([
+      'char_description',
+      'persona_description',
+      'world_info',
+      'chat_history'
+    ])
   })
 
   it('honors prompt_order (order + enabled) over raw prompt order', () => {

@@ -602,6 +602,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         return 'User'
       }
     },
+    // Active persona description for {{persona}}. UNGATED (ST parity): the macro returns the bio
+    // regardless of the inject toggle — only prompt injection respects it (promptBuilder). SYNC.
+    personaDescription: (e) => {
+      const ctx = wcvManager.contextFor(e.sender.id)
+      try {
+        return ctx ? settingsService.getSettings(ctx.profileId).persona?.description || '' : ''
+      } catch {
+        return ''
+      }
+    },
     // Edit message content by chat-array index (TH setChatMessages); then re-fold + reload.
     setChatMessages: (e, messages) => {
       const ctx = wcvManager.contextFor(e.sender.id)

@@ -230,6 +230,11 @@ const en: Record<string, string> = {
     'Wipe everything in this profile except your API connections? This cannot be undone.',
 
   'persona.heading': 'Persona',
+  'persona.select': 'Active Persona',
+  'persona.newName': 'New Persona',
+  'persona.duplicate': 'Duplicate',
+  'persona.keepOne': 'Keep at least one persona',
+  'persona.confirmDelete': 'Delete persona "{{name}}"?',
   'persona.name': 'Name',
   'persona.namePh': 'User',
   'persona.nameHint': 'Replaces {{user}} in prompts, cards and lorebooks.',
@@ -239,10 +244,6 @@ const en: Record<string, string> = {
   'persona.descriptionHint':
     'Injected into the prompt so the model knows who you are. Also available as {{persona}} in authored content.',
   'persona.inject': 'Inject description into the prompt',
-  'persona.depth': 'Injection Depth',
-  'persona.depthPh': 'top',
-  'persona.depthHint':
-    'Messages up from the bottom of the chat. Blank = at the top, before the conversation.',
 
   'logs.heading': 'Logs',
   'logs.auto': 'auto',
@@ -366,6 +367,7 @@ const en: Record<string, string> = {
   'preset.markerChar': 'Character',
   'preset.markerExamples': 'Examples',
   'preset.markerWorldInfo': 'World Info',
+  'preset.markerPersona': 'Persona',
   'preset.markerChatHistory': 'Chat History',
   'preset.markerPostHistory': 'Post-History',
 

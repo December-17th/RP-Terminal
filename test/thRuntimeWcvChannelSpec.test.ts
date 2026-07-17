@@ -50,7 +50,7 @@ describe('WCV_CHANNEL_SPEC drives createWcvHost', () => {
 
   it('spec + residue partition keyof Host, and WCV_CHANNELS mirrors it', () => {
     // Runtime sanity count (compile-time Equal<> above does the real completeness check).
-    expect(Object.keys(WCV_CHANNEL_SPEC).length).toBe(47)
+    expect(Object.keys(WCV_CHANNEL_SPEC).length).toBe(48)
     for (const [member, spec] of Object.entries(WCV_CHANNEL_SPEC)) {
       expect(WCV_CHANNELS[member as WcvSpecMember]).toBe(spec.channel)
     }

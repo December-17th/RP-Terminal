@@ -56,6 +56,7 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
     regexesFull: () => regexFull,
     formatRegex: (t) => t.toUpperCase(),
     personaName: () => 'Player',
+    personaDescription: () => 'a brave knight',
     currentChatId: () => 'c',
     getScriptVars: () => scriptVars,
     getChatVars: () => chatVars,
@@ -178,6 +179,8 @@ describe('createThRuntime', () => {
     expect(g.SillyTavern.substituteParams('{{char}}/{{user}}/{{getvar::hp}}')).toBe(
       'Ellia/Player/1'
     )
+    // {{user}} = persona name, {{persona}} = persona DESCRIPTION (ST-faithful; not the name).
+    expect(g.SillyTavern.substituteParams('{{user}}={{persona}}')).toBe('Player=a brave knight')
     expect(g.substitudeMacros('hi {{char}}')).toBe('hi Ellia')
     expect(g.SillyTavern.chat[0].name).toBe('Player')
   })

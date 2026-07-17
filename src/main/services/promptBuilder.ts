@@ -131,9 +131,8 @@ export const mergeConsecutiveRoles = (messages: ChatMessage[]): ChatMessage[] =>
 
 export interface PersonaArgs {
   description: string
+  /** Whether to inject the description (IN_PROMPT). false = ST's "None" position. */
   inject: boolean
-  /** null = inject at the top (before history); a number = depth from the bottom. */
-  depth: number | null
 }
 
 export interface BuildPromptArgs {
@@ -355,10 +354,12 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const charName = card.data.name || 'Character'
   const userName = args.userName || 'User'
 
-  const personaInject = !!args.persona?.inject && !!args.persona?.description?.trim()
+  const personaDescription = args.persona?.description ?? ''
+  const personaMacro = personaDescription.trim()
+  const personaInject = !!args.persona?.inject && !!personaMacro
   // {{persona}} expands to the description in authored content (but not inside the
   // persona block itself — that's rendered with an empty persona to avoid recursion).
-  const personaMacro = personaInject ? args.persona!.description : ''
+  // ST gates only the IN_PROMPT insertion; the macro resolver always sees the active bio.
 
   // Central transform order for authored content: macros → EJS template → (regex runs
   // separately on history/user text). The macro pass shares the template's var/global
@@ -426,7 +427,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       macroExpanded.set(b, macroPass(b.content))
   }
   const personaContent = personaInject
-    ? makeRender('', frontierTemplate)(args.persona!.description)
+    ? makeRender('', frontierTemplate)(personaDescription)
     : ''
 
   // Prompt-time regex: transform history/user text on its way into the prompt
@@ -516,6 +517,10 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const presetDepthItems: DepthItem[] = []
   let historyEmitted = false
   let worldInfoEmitted = false
+  // Whether the preset MANAGES persona placement itself (has a persona_description marker, enabled or
+  // not). A present-but-disabled marker is an explicit opt-out → the safety net must NOT re-add the
+  // persona; only a preset with no marker at all falls back to the pre-conversation block.
+  const hasPersonaMarker = preset.prompts.some((b) => b.marker === 'persona_description')
 
   for (const block of preset.prompts) {
     if (block.enabled === false) continue
@@ -533,6 +538,16 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       case 'world_info': {
         if (worldInfo) messages.push({ role: block.role, content: `World Info:\n${worldInfo}` })
         worldInfoEmitted = true
+        break
+      }
+      case 'persona_description': {
+        // ST personaDescription / IN_PROMPT: the RAW persona description at the preset's ordered
+        // position. No `[Name's Persona]` header here — the preset author owns the framing (e.g. a
+        // `<{{user}}_setting>…</{{user}}_setting>` envelope around this marker), matching ST, which
+        // emits the bare description. The header is added only by the headerless safety-net below.
+        if (personaContent) {
+          messages.push({ role: block.role, content: personaContent })
+        }
         break
       }
       case 'chat_history': {
@@ -588,17 +603,18 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     insertBeforeConvo(messages, { role: 'system', content: modeAddendum })
   }
 
-  // Persona description at the top: a stable, cache-friendly system block placed
-  // just before the conversation begins.
-  if (personaContent && args.persona?.depth == null) {
+  // Safety net: a preset without a persona_description marker (the common case for ST presets
+  // that don't manage the persona entry) still gets the persona block, placed just before the
+  // conversation begins — a stable, cache-friendly system block. A preset that HAS the marker owns
+  // placement (including a disabled marker = opt-out), so the net is suppressed there.
+  if (personaContent && !hasPersonaMarker) {
     insertBeforeConvo(messages, {
       role: 'system',
       content: `[${userName}'s Persona]\n${personaContent}`
     })
   }
 
-  // Depth-positioned injections: lorebook entries with a numeric depth, plus the
-  // persona block if it was given a depth instead of top placement.
+  // Depth-positioned injections: lorebook entries with a numeric depth.
   const byDepth = new Map<number, string[]>()
   for (const e of depthEntries) {
     const c = renderLoreEntry(e) // named+sourced diagnostic on error/empty (same as top-level World Info)
@@ -611,12 +627,6 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
     depth,
     content: `World Info:\n${contents.join('\n\n')}`
   }))
-  if (personaContent && args.persona?.depth != null) {
-    depthItems.push({
-      depth: args.persona.depth,
-      content: `[${userName}'s Persona]\n${personaContent}`
-    })
-  }
   // Depth-tagged preset prompt blocks (keep their authored role).
   depthItems.push(...presetDepthItems)
   if (depthItems.length) {

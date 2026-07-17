@@ -14,6 +14,14 @@ export interface ApiPreset {
   max_concurrent?: number
 }
 
+/** A saved, named user persona. The active one is mirrored into `Settings.persona`. */
+export interface PersonaPreset {
+  id: string
+  name: string
+  description: string
+  inject: boolean
+}
+
 export interface Settings {
   api: {
     provider: string
@@ -25,11 +33,14 @@ export interface Settings {
   }
   api_presets: ApiPreset[]
   active_api_preset_id: string
+  personas: PersonaPreset[]
+  active_persona_id: string
   persona: {
     name: string
     description: string
     inject: boolean
-    depth: number | null
+    /** @deprecated legacy @depth injection; only IN_PROMPT is supported now. */
+    depth?: number | null
   }
   generation: {
     max_context_tokens: number
