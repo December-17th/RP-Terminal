@@ -4,17 +4,78 @@ import {
   packInjections,
   rejoinTexts,
   packRejoinValue,
-  type AssembledMessage,
   type PackInjection,
   type GatedInjector
 } from '../../src/main/services/generation/previewSections'
 import type { CompositionMeta } from '../../src/shared/workflow/compose'
+import type {
+  ExecutionRecord,
+  RecordContent,
+  RecordEntry,
+  RecordMessage,
+  RecordRole,
+  RecordSource
+} from '../../src/shared/executionRecord'
 
-// Pins the pure section-shaping the preview service depends on (agent-packs plan WP3.4). Everything here
-// is import-light + side-effect-free — the SERVICE (test/generation/previewService.test.ts) covers the
-// engine run; this covers the classification + attribution logic in isolation.
+// Pins the pure section-shaping the preview service depends on (issue 08 — preview reads the execution
+// record). Everything here is import-light + side-effect-free; the SERVICE test
+// (test/generation/previewService.test.ts) covers the engine run + record capture, this covers the
+// record→sections decomposition + pack attribution in isolation.
 
-const msg = (role: AssembledMessage['role'], content: string): AssembledMessage => ({ role, content })
+const estimate = (s: string): number => s.length
+
+// ── record builders ───────────────────────────────────────────────────────────────────────────────
+const text = (s: string): RecordContent => ({ kind: 'text', text: s })
+const ref = (s: string): RecordContent => ({ kind: 'ref', hash: 'h', bytes: s.length, preview: s.slice(0, 8) })
+const wireMsg = (role: RecordRole, content: string): RecordMessage => ({ role, content })
+
+const rec = (entries: Omit<RecordEntry, 'seq'>[], wire: RecordMessage[] = []): ExecutionRecord => ({
+  version: 1,
+  createdAt: '2020-01-01T00:00:00.000Z',
+  entries: entries.map((e, i) => ({ ...e, seq: i })),
+  wire,
+  stats: { entries: entries.length, bytes: 0, buildMs: 0 }
+})
+
+const marker = (source: RecordSource, after: string, role: RecordRole = 'system'): Omit<RecordEntry, 'seq'> => ({
+  stage: 'marker-expand',
+  source,
+  role,
+  after: text(after)
+})
+const literal = (id: string, after: string): Omit<RecordEntry, 'seq'> => ({
+  stage: 'macro',
+  source: { kind: 'preset-block', id, label: id },
+  before: text(''),
+  after: text(after)
+})
+const safetyNet = (source: RecordSource, after: string): Omit<RecordEntry, 'seq'> => ({
+  stage: 'safety-net',
+  source,
+  at: 0,
+  role: 'system',
+  after: text(after)
+})
+const depthInject = (source: RecordSource, after: string): Omit<RecordEntry, 'seq'> => ({
+  stage: 'depth-inject',
+  source,
+  at: 0,
+  role: 'system',
+  after: text(after),
+  note: 'depth 4'
+})
+/** The bulk chat-history span — hashed in the record, so its per-turn text lives in the wire. */
+const historyEntry = (joined: string, turns: number): Omit<RecordEntry, 'seq'> => ({
+  stage: 'marker-expand',
+  source: { kind: 'history', id: 'chat_history' },
+  after: ref(joined),
+  note: `${turns} turn(s)`
+})
+const trimEntry = (note: string): Omit<RecordEntry, 'seq'> => ({
+  stage: 'trim',
+  source: { kind: 'pipeline', id: 'trim' },
+  note
+})
 
 describe('rejoinTexts', () => {
   it('block lane: a plain string is one text (empty string → none)', () => {
@@ -59,7 +120,7 @@ describe('packRejoinValue / packInjections', () => {
     ])
   })
 
-  it('produces one PackInjection per prompt-assembly rejoin, with names + texts', () => {
+  it('produces one PackInjection per prompt-assembly rejoin, carrying the target LANE + texts', () => {
     const outputs = new Map<string, Record<string, unknown>>([
       ['pack:pack.a:export', { entries: [{ content: 'MEM' }] }]
     ])
@@ -67,6 +128,7 @@ describe('packRejoinValue / packInjections', () => {
     expect(injs).toHaveLength(1)
     expect(injs[0].packId).toBe('pack.a')
     expect(injs[0].name).toBe('Pack A')
+    expect(injs[0].to.port).toBe('entries')
     expect(injs[0].texts).toEqual(['MEM'])
   })
 
@@ -91,154 +153,155 @@ describe('packRejoinValue / packInjections', () => {
   })
 })
 
-describe('shapePreview — section classification', () => {
-  const messages: AssembledMessage[] = [
-    msg('system', 'Name: Char\nDescription: a guide'),
-    msg('system', "[Alice's Persona]\nA curious traveller"),
-    msg('system', 'World Info:\nThe kingdom of X'),
-    msg('user', 'USER_0'),
-    msg('assistant', 'ASSISTANT_0'),
-    msg('user', 'the pending action')
-  ]
-  const tokensPerMessage = messages.map((m) => m.content.length)
+describe('shapePreview — decomposes the record by real source', () => {
+  it('each controlled-transform entry becomes a section attributed to its OWN source', () => {
+    const record = rec(
+      [
+        literal('main', 'You are an expert game master.'),
+        marker({ kind: 'card-field', id: 'char_description' }, 'Name: Char\nDescription: a guide'),
+        marker({ kind: 'marker', id: 'world_info' }, 'World Info:\nThe kingdom of X'),
+        marker({ kind: 'persona', id: 'persona_description' }, 'A curious traveller'),
+        historyEntry('U0\nA0', 3),
+        safetyNet({ kind: 'memory', id: 'memory-tail' }, 'Recent summary of events.')
+      ],
+      [wireMsg('user', 'USER_0'), wireMsg('assistant', 'ASSISTANT_0'), wireMsg('user', 'the pending action')]
+    )
 
-  it('classifies card / persona / worldInfo / history / action by prefix + role', () => {
-    const { sections } = shapePreview({ messages, tokensPerMessage, injections: [], gatedInjectors: [] })
-    const ids = sections.map((s) => s.id)
-    expect(ids).toEqual(['card', 'persona', 'worldInfo', 'history', 'history', 'action'])
-    // Every section carries an estimated token count > 0 and narrator source (no packs here).
-    expect(sections.every((s) => s.estimated)).toBe(true)
+    const { sections } = shapePreview({ record, injections: [], gatedInjectors: [], estimate })
+    // main→system, char→card, world_info→worldInfo, persona→persona, history turns, memory tail, then
+    // the action closes the prompt (deferred to last so the memory tail precedes it — wire order).
+    expect(sections.map((s) => s.id)).toEqual([
+      'system',
+      'card',
+      'worldInfo',
+      'persona',
+      'history',
+      'history',
+      'memory',
+      'action'
+    ])
+    // Attribution is by source identity — no content sniffing. Every non-pack section is narrator.
     expect(sections.every((s) => s.source.kind === 'narrator')).toBe(true)
-    // The action is the LAST user message.
-    expect(sections[5].text).toBe('the pending action')
+    // The action is the LAST user turn, from the wire.
+    expect(sections.find((s) => s.id === 'action')!.text).toBe('the pending action')
+    // History turns carry the wire text (the record hashed the span).
+    const hist = sections.filter((s) => s.id === 'history').map((s) => s.text)
+    expect(hist).toEqual(['USER_0', 'ASSISTANT_0'])
+    // Tokens are estimated per section.
+    expect(sections.every((s) => s.estimated)).toBe(true)
+    expect(sections[0].tokens).toBe('You are an expert game master.'.length)
   })
 
-  it('classifies a RAW (header-less) persona block as persona via personaText match', () => {
-    const raw: AssembledMessage[] = [
-      msg('system', 'Name: Char\nDescription: a guide'),
-      msg('system', 'A curious traveller'), // persona at a marker — emitted raw, no header
-      msg('user', 'the pending action')
-    ]
-    const { sections } = shapePreview({
-      messages: raw,
-      tokensPerMessage: raw.map((m) => m.content.length),
-      injections: [],
-      gatedInjectors: [],
-      personaText: 'A curious traveller'
-    })
-    expect(sections.map((s) => s.id)).toEqual(['card', 'persona', 'action'])
-    // Without personaText it would fall back to generic `system`.
-    const { sections: noHint } = shapePreview({
-      messages: raw,
-      tokensPerMessage: raw.map((m) => m.content.length),
-      injections: [],
-      gatedInjectors: []
-    })
-    expect(noHint[1].id).toBe('system')
-  })
-
-  it.each(['user', 'assistant'] as const)(
-    'classifies a %s-role raw persona marker as persona',
-    (role) => {
-      const raw: AssembledMessage[] = [
-        msg(role, 'A curious traveller'),
-        msg('user', 'the pending action')
-      ]
-      const { sections } = shapePreview({
-        messages: raw,
-        tokensPerMessage: raw.map((m) => m.content.length),
-        injections: [],
-        gatedInjectors: [],
-        personaText: 'A curious traveller'
-      })
-
-      expect(sections.map((s) => s.id)).toEqual(['persona', 'action'])
-    }
-  )
-
-  it('classifies a same-role merged custom envelope carrying the raw persona as persona', () => {
-    const merged: AssembledMessage[] = [
-      msg('assistant', '<persona_context>\nA curious traveller\n</persona_context>'),
-      msg('user', 'the pending action')
-    ]
-    const { sections } = shapePreview({
-      messages: merged,
-      tokensPerMessage: merged.map((m) => m.content.length),
-      injections: [],
-      gatedInjectors: [],
-      personaText: 'A curious traveller'
-    })
-
+  it('a header-less persona marker is persona by SOURCE, not a content/regex guess', () => {
+    // The raw description carries no `[Name's Persona]` header — the old shaper needed a regex + a
+    // personaText hint to guess it; here the record's `persona` source names it directly.
+    const record = rec(
+      [
+        marker({ kind: 'persona', id: 'persona_description' }, 'A curious traveller'),
+        historyEntry('U0', 1)
+      ],
+      [wireMsg('user', 'the pending action')]
+    )
+    const { sections } = shapePreview({ record, injections: [], gatedInjectors: [], estimate })
     expect(sections.map((s) => s.id)).toEqual(['persona', 'action'])
+    expect(sections[0].source.kind).toBe('narrator')
+    expect(sections[0].text).toBe('A curious traveller')
   })
 
-  it('does not attribute an authored sentence that merely contains the persona text', () => {
-    const authored: AssembledMessage[] = [
-      msg('system', 'Instruction: remember A curious traveller is nearby.'),
-      msg('user', 'the pending action')
-    ]
-    const { sections } = shapePreview({
-      messages: authored,
-      tokensPerMessage: authored.map((m) => m.content.length),
-      injections: [],
-      gatedInjectors: [],
-      personaText: 'A curious traveller'
-    })
-
-    expect(sections.map((s) => s.id)).toEqual(['system', 'action'])
+  it('skips an empty literal, and does not double-count a depth-placed literal', () => {
+    const record = rec([
+      literal('empty_block', ''), // evaluated to nothing → no section
+      literal('depth_block', 'A depth-injected instruction.'), // macro entry (raw→rendered) …
+      depthInject({ kind: 'preset-block', id: 'depth_block', label: 'depth_block' }, 'A depth-injected instruction.') // … placed here
+    ])
+    const { sections } = shapePreview({ record, injections: [], gatedInjectors: [], estimate })
+    // One section (the depth-inject placement), NOT two, and nothing for the empty block. A depth-placed
+    // preset block is a system instruction (world-info depth lore would carry a `lorebook-entry` source).
+    expect(sections).toHaveLength(1)
+    expect(sections[0].text).toBe('A depth-injected instruction.')
+    expect(sections[0].id).toBe('system')
   })
 
-  it('token counts ride tokensPerMessage', () => {
-    const { sections } = shapePreview({ messages, tokensPerMessage, injections: [], gatedInjectors: [] })
-    expect(sections[0].tokens).toBe(messages[0].content.length)
+  it('a trim entry is reported as omitted-budget', () => {
+    const record = rec(
+      [historyEntry('U0', 1), trimEntry('budget 100 tok — dropped 2 oldest turn(s)')],
+      [wireMsg('user', 'go')]
+    )
+    const { omitted } = shapePreview({ record, injections: [], gatedInjectors: [], estimate })
+    expect(omitted).toHaveLength(1)
+    expect(omitted[0].reason).toBe('budget')
+    expect(omitted[0].label).toContain('dropped 2 oldest')
   })
 })
 
-describe('shapePreview — pack attribution + omitted', () => {
-  it('a message carrying a pack injection is a packInject section attributed to the pack', () => {
-    const messages: AssembledMessage[] = [
-      msg('system', 'World Info:\nThe kingdom\n\nMEMORY_EXPORT[a;b]'),
-      msg('user', 'go')
-    ]
-    const injections: PackInjection[] = [
-      {
-        packId: 'pack.mem',
-        name: 'Memory',
-        checkpoint: 'prompt-assembly',
-        from: { node: 'pack:pack.mem:export', port: 'entries' },
-        texts: ['MEMORY_EXPORT[a;b]']
-      }
-    ]
+describe('shapePreview — pack attribution by construction (lane, not content)', () => {
+  const entriesPack = (texts: string[]): PackInjection => ({
+    packId: 'pack.mem',
+    name: 'Memory',
+    checkpoint: 'prompt-assembly',
+    from: { node: 'pack:pack.mem:export', port: 'entries' },
+    to: { node: 'assemble', port: 'entries' },
+    texts
+  })
+
+  it('an entries-lane pack re-attributes the top-level World Info section to the pack', () => {
+    const record = rec(
+      [marker({ kind: 'marker', id: 'world_info' }, 'World Info:\nMEMORY_EXPORT[a;b]')],
+      [wireMsg('user', 'go')]
+    )
     const { sections, omitted } = shapePreview({
-      messages,
-      tokensPerMessage: [10, 2],
-      injections,
-      gatedInjectors: []
+      record,
+      injections: [entriesPack(['MEMORY_EXPORT[a;b]'])],
+      gatedInjectors: [],
+      estimate
     })
     const packSection = sections.find((s) => s.source.kind === 'pack')
     expect(packSection).toBeDefined()
     expect(packSection!.id).toBe('packInject')
     expect(packSection!.source.packId).toBe('pack.mem')
     expect(packSection!.source.name).toBe('Memory')
-    // Matched → not omitted.
+    expect(packSection!.text).toContain('MEMORY_EXPORT')
+    // Attributed (not omitted) — its lane surfaced a section.
     expect(omitted).toEqual([])
   })
 
+  it('a block-lane pack re-attributes the memory-tail section to the pack', () => {
+    const record = rec([safetyNet({ kind: 'memory', id: 'memory-tail' }, 'PACK_BLOCK_TAIL')])
+    const blockPack: PackInjection = {
+      packId: 'pack.blk',
+      name: 'Block Pack',
+      checkpoint: 'prompt-assembly',
+      from: { node: 'pack:pack.blk:x', port: 'block' },
+      to: { node: 'assemble', port: 'block' },
+      texts: ['PACK_BLOCK_TAIL']
+    }
+    const { sections } = shapePreview({ record, injections: [blockPack], gatedInjectors: [], estimate })
+    const packSection = sections.find((s) => s.source.kind === 'pack')
+    expect(packSection).toBeDefined()
+    expect(packSection!.source.packId).toBe('pack.blk')
+    expect(packSection!.text).toBe('PACK_BLOCK_TAIL')
+  })
+
+  it('a pack that produced text but whose lane surfaced no section → omitted-empty', () => {
+    // No world_info entry in the record (its block rendered empty), yet the pack claims entries text.
+    const record = rec([], [wireMsg('user', 'go')])
+    const { sections, omitted } = shapePreview({
+      record,
+      injections: [entriesPack(['UNPLACED'])],
+      gatedInjectors: [],
+      estimate
+    })
+    expect(sections.some((s) => s.source.kind === 'pack')).toBe(false)
+    expect(omitted.some((o) => o.reason === 'empty' && o.source?.packId === 'pack.mem')).toBe(true)
+  })
+
   it('a pack whose branch produced NO text → omitted-empty', () => {
-    const injections: PackInjection[] = [
-      {
-        packId: 'pack.mem',
-        name: 'Memory',
-        checkpoint: 'prompt-assembly',
-        from: { node: 'pack:pack.mem:export', port: 'entries' },
-        texts: []
-      }
-    ]
+    const record = rec([], [wireMsg('user', 'go')])
     const { omitted } = shapePreview({
-      messages: [msg('user', 'go')],
-      tokensPerMessage: [2],
-      injections,
-      gatedInjectors: []
+      record,
+      injections: [entriesPack([])],
+      gatedInjectors: [],
+      estimate
     })
     expect(omitted).toHaveLength(1)
     expect(omitted[0].reason).toBe('empty')
@@ -247,35 +310,11 @@ describe('shapePreview — pack attribution + omitted', () => {
 
   it('a gate-closed injector → omitted-gate', () => {
     const gatedInjectors: GatedInjector[] = [{ packId: 'pack.off', name: 'Disabled Pack' }]
-    const { omitted } = shapePreview({
-      messages: [msg('user', 'go')],
-      tokensPerMessage: [2],
-      injections: [],
-      gatedInjectors
-    })
+    const record = rec([], [wireMsg('user', 'go')])
+    const { omitted } = shapePreview({ record, injections: [], gatedInjectors, estimate })
     expect(omitted).toHaveLength(1)
     expect(omitted[0].reason).toBe('gate')
     expect(omitted[0].label).toBe('Disabled Pack')
     expect(omitted[0].source?.packId).toBe('pack.off')
-  })
-
-  it('a pack that produced text but it never reached the prompt → omitted-empty (honest)', () => {
-    const injections: PackInjection[] = [
-      {
-        packId: 'pack.x',
-        name: 'X',
-        checkpoint: 'prompt-assembly',
-        from: { node: 'pack:pack.x:e', port: 'entries' },
-        texts: ['UNMATCHED_TEXT']
-      }
-    ]
-    const { sections, omitted } = shapePreview({
-      messages: [msg('system', 'World Info:\nnothing here'), msg('user', 'go')],
-      tokensPerMessage: [5, 2],
-      injections,
-      gatedInjectors: []
-    })
-    expect(sections.some((s) => s.source.kind === 'pack')).toBe(false)
-    expect(omitted.some((o) => o.reason === 'empty' && o.source?.packId === 'pack.x')).toBe(true)
   })
 })

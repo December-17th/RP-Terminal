@@ -30,16 +30,16 @@ import { builtinRegistry } from '../nodes/builtin'
 import { createRegistry } from '../nodes/registry'
 import { NodeImpl, RunContext } from '../nodes/types'
 import { resolveEffectiveDoc } from '../workflowService'
-import { getSettings } from '../settingsService'
 import { estimateTokens } from '../promptBuilder'
 import type { ChatMessage } from '../promptBuilder'
 import { log } from '../logService'
 import type { CompositionMeta } from '../../../shared/workflow/compose'
 import type { AttachmentDecl } from '../../../shared/workflow/attachments'
+import type { ExecutionRecord } from '../../../shared/executionRecord'
+import type { GenContext } from './types'
 import {
   packInjections,
   shapePreview,
-  type AssembledMessage,
   type GatedInjector,
   type PreviewSection,
   type OmittedItem
@@ -80,11 +80,13 @@ const SIDE_EFFECT_TYPES = [
  *   · every side-effecting node → a stub returning empty outputs (no write, no provider call);
  *   · llm.sample → additionally aborts the graph (the engine then marks every downstream node
  *     parse/apply/write skipped and runs no post phase — workflowEngine.ts abort path);
- *   · prompt.assemble → the REAL impl (assembly is pure) plus a tee that captures its sendMessages.
+ *   · prompt.assemble → the REAL impl (assembly is pure) plus a tee that captures its sendMessages
+ *     AND the forensic Execution Record it stamped on the shared `gen` (issue 08 preview reader).
  *  Descriptors (ports/config schema) are reused verbatim so validateWorkflow + input wiring are
- *  unchanged; only run() is swapped. A fresh registry per call so `onCaptureAssembled` is call-scoped. */
+ *  unchanged; only run() is swapped. A fresh registry per call so the captures are call-scoped. */
 const buildPreviewRegistry = (
-  onCaptureAssembled: (msgs: ChatMessage[]) => void
+  onCaptureAssembled: (msgs: ChatMessage[]) => void,
+  onCaptureRecord: (record: ExecutionRecord) => void
 ): ReturnType<typeof createRegistry> => {
   const impls: NodeImpl[] = []
   for (const type of builtinRegistry.descriptors().keys()) {
@@ -104,6 +106,10 @@ const buildPreviewRegistry = (
           const result = await real.run(ctx, inputs, node)
           const msgs = result.outputs?.sendMessages
           if (Array.isArray(msgs)) onCaptureAssembled(msgs as ChatMessage[])
+          // The node stamps the just-built record onto its `gen` input (generationNodes.ts) — read it
+          // off the same object the real run mutated. The record IS the attribution source (issue 08).
+          const record = (inputs.gen as GenContext | undefined)?.executionRecord
+          if (record) onCaptureRecord(record)
           return result
         }
       })
@@ -183,11 +189,19 @@ export const previewNextPrompt = async (inputs: PreviewInputs): Promise<NextProm
     return { sections: [], omitted: [], error: 'no-chat', generatedAt }
   }
 
-  // Capture prompt.assemble's output by teeing its REAL run() (the assembly is pure — no writes).
+  // Capture prompt.assemble's output + its forensic Execution Record by teeing its REAL run() (the
+  // assembly is pure — no writes). The record is the attribution SOURCE (issue 08): sections are
+  // decomposed from its journaled entries, not guessed from the flat message content.
   let assembled: ChatMessage[] | null = null
-  const registry = buildPreviewRegistry((msgs) => {
-    assembled = msgs
-  })
+  let record: ExecutionRecord | null = null
+  const registry = buildPreviewRegistry(
+    (msgs) => {
+      assembled = msgs
+    },
+    (rec) => {
+      record = rec
+    }
+  )
 
   const mainId = doc.nodes.find((n) => n.isMainOutput)?.id
   if (!mainId) return { sections: [], omitted: [], error: 'failed', generatedAt }
@@ -201,8 +215,9 @@ export const previewNextPrompt = async (inputs: PreviewInputs): Promise<NextProm
     const result = await runWorkflow(doc, registry, ctx)
     outputsMap = result.outputs
     // A pre-phase failure BEFORE assemble (e.g. a preset throw in prompt.assemble) surfaces as a fatal
-    // result with no captured prompt.
-    if (!assembled) {
+    // result with no captured record. assemblePrompt always produces a record, so a captured prompt
+    // without one would mean an unsupported assemble path — either way there is nothing to attribute.
+    if (!assembled || !record) {
       if (result.error) log('info', `previewNextPrompt: assembly failed — ${result.error.message}`)
       return { sections: [], omitted: [], error: 'failed', generatedAt }
     }
@@ -211,23 +226,17 @@ export const previewNextPrompt = async (inputs: PreviewInputs): Promise<NextProm
     return { sections: [], omitted: [], error: 'failed', generatedAt }
   }
 
-  const messages: AssembledMessage[] = (assembled as ChatMessage[]).map((m) => ({
-    role: m.role,
-    content: m.content
-  }))
-  const tokensPerMessage = messages.map((m) => estimateTokens(m.content))
-
   const composition = (doc.meta as { composition?: CompositionMeta } | undefined)?.composition
   const packNames = packNamesFrom(packSummaries)
   const injections = packInjections(composition, outputsMap, packNames)
   const gatedInjectors = gatedInjectorsFrom(packSummaries)
 
   const { sections, omitted } = shapePreview({
-    messages,
-    tokensPerMessage,
+    // Narrowed non-null by the guard above; the cast satisfies TS across the closure-captured `let`.
+    record: record as ExecutionRecord,
     injections,
     gatedInjectors,
-    personaText: getSettings(profileId).persona?.description || ''
+    estimate: estimateTokens
   })
   return { sections, omitted, generatedAt }
 }
