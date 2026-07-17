@@ -1114,6 +1114,42 @@ describe('buildPrompt — character-card system/jailbreak overrides', () => {
     expect(messages.some((m) => m.content === 'PRESET-MAIN')).toBe(false)
     expect(messages.some((m) => m.content === '')).toBe(false)
   })
+
+  it('a card override can re-embed the preset content via {{original}} (issue 13; ST openai.js:1489-1492)', () => {
+    const messages = buildPrompt({
+      card: card({ system_prompt: 'HOUSE RULE.\n{{original}}' }),
+      preset: preset([litMain('BASE PROMPT'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'HOUSE RULE.\nBASE PROMPT')).toBe(true)
+    // The bare {{original}} is gone (resolved), and the preset text is not emitted on its own.
+    expect(messages.some((m) => m.content.includes('{{original}}'))).toBe(false)
+    expect(messages.some((m) => m.content === 'BASE PROMPT')).toBe(false)
+  })
+})
+
+describe('buildPrompt — {{lastUserMessage}} macro (issue 13)', () => {
+  it('resolves to the pending action, else the newest floor user turn', () => {
+    const withAction = buildPrompt({
+      card: card(),
+      preset: preset([blk('none', 'Prev: {{lastUserMessage}}'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, 'first question', 'reply')],
+      userAction: 'second question'
+    })
+    expect(withAction.some((m) => m.content === 'Prev: second question')).toBe(true)
+
+    const noAction = buildPrompt({
+      card: card(),
+      preset: preset([blk('none', 'Prev: {{lastUserMessage}}'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, 'only question', 'reply')],
+      userAction: ''
+    })
+    expect(noAction.some((m) => m.content === 'Prev: only question')).toBe(true)
+  })
 })
 
 describe('resolveEffectivePrompts (ST getPromptCollection + overrides)', () => {

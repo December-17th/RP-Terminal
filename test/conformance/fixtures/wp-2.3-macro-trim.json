@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.3-macro-trim",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 new-engine source (MacroEngine.js:310-316: {{trim}} is a POST-processor that deletes the macro plus the newlines immediately around it). Pins that {{trim}} collapses adjacent newlines within a block. Prose RPT-authored + scrambled. rptAdapter unwired (issues 11-15) — structural target.",
+  "input": {
+    "description": "Main block with {{trim}} between two lines; the newlines around it are removed.",
+    "preset": {
+      "name": "Oracle Macro Trim (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "ORP_tr: alpha\n{{trim}}\nbeta" },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        { "character_id": 100001, "order": [ { "identifier": "main", "enabled": true }, { "identifier": "chatHistory", "enabled": true } ] }
+      ]
+    },
+    "character": { "name": "Vael", "description": "Character brindle: Vael, a lamp-keeper of Orrin." },
+    "chatMessages": [ { "role": "user", "content": "ORP_tr_user" } ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "worldInfo": [],
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "user"],
+    "messageCount": 2,
+    "mustContain": ["ORP_tr: alphabeta"],
+    "mustNotContain": ["{{trim}}"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "ORP_tr: alphabeta" },
+      { "role": "user", "content": "ORP_tr_user" }
+    ]
+  }
+}

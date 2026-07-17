@@ -245,6 +245,13 @@ export interface CardPromptOverrides {
 }
 
 /**
+ * A resolved prompt block. When a character-card override replaced a `main`/`jailbreak` literal, the
+ * block carries `originalContent` — the PRE-override preset text — so the override can resolve
+ * `{{original}}` to it during macro substitution (ST openai.js:1489-1492 → preparePrompt(…, original)).
+ */
+export type EffectivePromptBlock = PromptBlock & { originalContent?: string }
+
+/**
  * Resolve a preset's ordered prompts into the effective list the builder assembles from,
  * reproducing ST's Prompt Manager collection + character-card overrides:
  *
@@ -264,21 +271,23 @@ export const resolveEffectivePrompts = (
   prompts: PromptBlock[],
   generationType: string,
   overrides: CardPromptOverrides
-): PromptBlock[] => {
+): EffectivePromptBlock[] => {
   const gt = String(generationType || 'normal')
     .toLowerCase()
     .trim()
-  const out: PromptBlock[] = []
+  const out: EffectivePromptBlock[] = []
   for (const p of prompts) {
     const triggered = p.enabled !== false && shouldTrigger(p, gt)
     if (triggered) {
       if (p.marker === 'none' && p.forbid_overrides !== true) {
+        // The override replaces the literal's content; `originalContent` retains the preset text so
+        // the override's `{{original}}` resolves to it (ST openai.js:1489-1492).
         if (p.identifier === 'main' && overrides.system) {
-          out.push({ ...p, content: overrides.system })
+          out.push({ ...p, content: overrides.system, originalContent: p.content })
           continue
         }
         if (p.identifier === 'jailbreak' && overrides.postHistory) {
-          out.push({ ...p, content: overrides.postHistory })
+          out.push({ ...p, content: overrides.postHistory, originalContent: p.content })
           continue
         }
       }
@@ -575,14 +584,24 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   // stores so {{setvar}} and <% setvar() %> stay coherent; it leaves <%...%> intact so
   // the engine runs next. (Previously macros stripped EJS before eval — templates never
   // executed via the builder; that's fixed here.)
+  // {{lastUserMessage}} — the most recent user turn's raw text (ST chat-macros.js:108-111). During
+  // assembly the pending action IS the last user message (ST adds it to chat before generating);
+  // otherwise it's the newest floor's user message.
+  const lastUserMessage =
+    userAction ||
+    [...floors].reverse().find((f) => f.user_message?.content)?.user_message?.content ||
+    ''
   const macroBase = (
     pd: string,
     vars?: Record<string, any>,
-    globals?: Record<string, any>
+    globals?: Record<string, any>,
+    original?: string
   ): MacroContext => ({
     user: userName,
     char: charName,
     persona: pd,
+    lastUserMessage,
+    original,
     vars: vars ?? args.template?.vars,
     globals: globals ?? args.template?.globals
   })
@@ -602,11 +621,13 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
       : args.template
     : undefined
   const render = makeRender(personaMacro, frontierTemplate)
-  // Expand {{macros}} for one entry — applying {{setvar}}/{{addvar}}/… side effects to the shared var store.
-  const macroPass = (content: string): string =>
+  // Expand {{macros}} for one entry — applying {{setvar}}/{{addvar}}/… side effects to the shared var
+  // store. `original` (the pre-override preset text) is threaded for card-overridden main/jailbreak so
+  // their {{original}} resolves.
+  const macroPass = (content: string, original?: string): string =>
     expandMacros(
       content,
-      macroBase(personaMacro, frontierTemplate?.vars, frontierTemplate?.globals)
+      macroBase(personaMacro, frontierTemplate?.vars, frontierTemplate?.globals, original)
     )
   // EJS-evaluate already-macro-expanded PRESET content. An error here means a broken preset entry → FAIL THE
   // TURN with a detailed log (which entry + reason + source), so a conditional never silently drops or leaks
@@ -633,7 +654,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
   const macroExpanded = new Map<(typeof effectivePrompts)[number], string>()
   for (const b of effectivePrompts) {
     if (b.enabled !== false && b.marker === 'none' && b.content)
-      macroExpanded.set(b, macroPass(b.content))
+      macroExpanded.set(b, macroPass(b.content, b.originalContent))
   }
   const personaContent = personaInject
     ? makeRender('', frontierTemplate)(personaDescription)
@@ -862,7 +883,7 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
           label: block.name || block.identifier
         }
         const content = ejsStrict(
-          macroExpanded.get(block) ?? macroPass(block.content),
+          macroExpanded.get(block) ?? macroPass(block.content, block.originalContent),
           block.name || block.identifier
         )
         // Journal the literal block's transform (raw authored text → macro+EJS result) even when it

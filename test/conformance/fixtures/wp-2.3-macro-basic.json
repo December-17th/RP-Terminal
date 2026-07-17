@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.3-macro-basic",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 new-engine source (definitions/env-macros.js, chat-macros.js:108-111), NOT captured. Pins new-engine expansion of {{user}}/{{char}}/{{lastUserMessage}} in a literal prompt block. The user persona name is 'Rho' (no FixtureInput userName field yet — a pre-existing gap; carried in this note + expected.chat). Prose is RPT-authored + scrambled. rptAdapter is unwired (issues 11-15), so this is a structural target, not yet adapter-diffed.",
+  "input": {
+    "description": "Main block embeds core macros; new-engine expansion; one trailing user turn. User='Rho'.",
+    "preset": {
+      "name": "Oracle Macro Basic (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "ORP_mb: {{user}} hails {{char}}. Echo: {{lastUserMessage}}" },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        { "character_id": 100001, "order": [ { "identifier": "main", "enabled": true }, { "identifier": "chatHistory", "enabled": true } ] }
+      ]
+    },
+    "character": { "name": "Vael", "description": "Character brindle: Vael, a lamp-keeper of Orrin." },
+    "chatMessages": [ { "role": "user", "content": "did the lantern stay lit?" } ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "worldInfo": [],
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "user"],
+    "messageCount": 2,
+    "mustContain": ["Rho hails Vael", "Echo: did the lantern stay lit?"],
+    "mustNotContain": ["{{user}}", "{{char}}", "{{lastUserMessage}}"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "ORP_mb: Rho hails Vael. Echo: did the lantern stay lit?" },
+      { "role": "user", "content": "did the lantern stay lit?" }
+    ]
+  }
+}

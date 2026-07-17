@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.3-macro-unknown-literal",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 new-engine source (MacroEngine.js:216-218,:236 — an unregistered or faulting macro returns its raw {{…}} unchanged). Pins RPT's matching error-preservation policy (docs/rpt-api.md §7): unknown macros survive verbatim into the wire. Prose RPT-authored + scrambled. rptAdapter unwired (issues 11-15).",
+  "input": {
+    "description": "Main block contains an unknown macro that must survive literally.",
+    "preset": {
+      "name": "Oracle Macro Unknown (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "ORP_un: keep {{not_a_macro}} verbatim." },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        { "character_id": 100001, "order": [ { "identifier": "main", "enabled": true }, { "identifier": "chatHistory", "enabled": true } ] }
+      ]
+    },
+    "character": { "name": "Vael", "description": "Character brindle: Vael, a lamp-keeper of Orrin." },
+    "chatMessages": [ { "role": "user", "content": "ORP_un_user" } ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "worldInfo": [],
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "user"],
+    "messageCount": 2,
+    "mustContain": ["keep {{not_a_macro}} verbatim"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "ORP_un: keep {{not_a_macro}} verbatim." },
+      { "role": "user", "content": "ORP_un_user" }
+    ]
+  }
+}
