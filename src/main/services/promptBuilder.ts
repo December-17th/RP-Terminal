@@ -536,10 +536,12 @@ export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => {
         break
       }
       case 'persona_description': {
-        // ST personaDescription / IN_PROMPT: the user persona description placed at the preset's
-        // ordered position. Emitted only when inject is on and there's content to show.
+        // ST personaDescription / IN_PROMPT: the RAW persona description at the preset's ordered
+        // position. No `[Name's Persona]` header here — the preset author owns the framing (e.g. a
+        // `<{{user}}_setting>…</{{user}}_setting>` envelope around this marker), matching ST, which
+        // emits the bare description. The header is added only by the headerless safety-net below.
         if (personaContent) {
-          messages.push({ role: block.role, content: `[${userName}'s Persona]\n${personaContent}` })
+          messages.push({ role: block.role, content: personaContent })
         }
         personaEmitted = true
         break

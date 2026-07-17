@@ -264,7 +264,7 @@ describe('buildPrompt', () => {
     expect(messages.some((m) => m.content === 'Bio: Lyra is a wanderer')).toBe(true)
   })
 
-  it('places the persona at the preset persona_description marker (not the safety-net top)', () => {
+  it('places the RAW persona (no header) at the preset persona_description marker', () => {
     const messages = buildPrompt({
       card: card(),
       preset: preset([
@@ -278,12 +278,37 @@ describe('buildPrompt', () => {
       userName: 'Lyra',
       persona: { description: 'a wanderer', inject: true }
     })
-    // Exactly one persona block, positioned at the marker (after char description, before history).
-    const personaIdx = messages.findIndex((m) => m.content.includes("[Lyra's Persona]"))
+    // At the marker the description is emitted RAW (ST IN_PROMPT parity) — the preset author owns the
+    // framing, so NO `[Name's Persona]` header (that's reserved for the headerless safety-net).
+    const personaIdx = messages.findIndex((m) => m.content === 'a wanderer')
     const charIdx = messages.findIndex((m) => m.content.startsWith('Name:')) // char_description block
-    expect(personaIdx).toBeGreaterThan(charIdx)
-    expect(messages.filter((m) => m.content.includes("[Lyra's Persona]"))).toHaveLength(1)
+    expect(personaIdx).toBeGreaterThan(charIdx) // positioned at the marker, after char description
+    expect(messages.some((m) => m.content.includes("Lyra's Persona"))).toBe(false) // no header
     expect(last(messages).content).toBe('go')
+  })
+
+  it('wraps the marker persona inside a preset-authored envelope (like 命定之诗)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('none', '<{{user}}_setting>'),
+        blk('persona_description'),
+        blk('none', '</{{user}}_setting>'),
+        blk('char_description'),
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'go',
+      userName: 'Lyra',
+      persona: { description: 'a wanderer', inject: true }
+    })
+    const open = messages.findIndex((m) => m.content === '<Lyra_setting>')
+    const persona = messages.findIndex((m) => m.content === 'a wanderer')
+    const close = messages.findIndex((m) => m.content === '</Lyra_setting>')
+    expect(open).toBeGreaterThanOrEqual(0)
+    expect(persona).toBe(open + 1)
+    expect(close).toBe(persona + 1)
   })
 
   it('does not inject the persona when inject is false or description is blank', () => {
