@@ -22,6 +22,7 @@
 // tail — the composition meta names the lane, so the matching narrator section is re-attributed to the
 // pack WITHOUT scanning its text.
 
+import { createHash } from 'node:crypto'
 import type { CompositionMeta } from '../../../shared/workflow/compose'
 import type { CheckpointId } from '../../../shared/workflow/attachments'
 import type {
@@ -201,12 +202,49 @@ const sectionKindFor = (src: RecordSource): SectionKind => {
   }
 }
 
-/** The inline text an entry carries. Small controlled transforms keep their exact text; bulk/opaque
- *  spans are hash-referenced and only carry an 80-char preview (their authoritative copy is the wire —
- *  history resolves its full text from there, see buildHistorySections). */
-const entryText = (c?: RecordContent): string => {
+const sha256 = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex')
+
+/** Slice exactly `bytes` UTF-8 bytes out of `s` starting at char index `startCharIdx`. Returns '' when
+ *  the tail is shorter than `bytes` (nothing to reconstruct). A byte cut that lands mid-character yields
+ *  replacement chars whose hash won't match the span's — the caller's hash guard rejects it, so this is
+ *  safe to attempt speculatively. */
+const sliceBytes = (s: string, startCharIdx: number, bytes: number): string => {
+  const rest = Buffer.from(s.slice(startCharIdx), 'utf8')
+  if (rest.length < bytes) return ''
+  return rest.subarray(0, bytes).toString('utf8')
+}
+
+/** Rehydrate a hash-referenced span's FULL text from the authoritative wire (issue 08 M1 review finding
+ *  1). A bulk/opaque span at/above INLINE_LIMIT is stored as a `ref` (hash + byte length + an 80-char
+ *  anchor prefix), NOT the text — so the record stays small for storage (issue 09 wire dedup). But the
+ *  full text still lives in `record.wire`, possibly folded into a larger role-merged message. We locate
+ *  the anchor prefix in each wire message and slice exactly `bytes` UTF-8 bytes from there, then VERIFY
+ *  by hash before trusting it. On any miss (anchor absent, or a later transform altered the placed text
+ *  so no wire slice hashes equal) we fall back to the 80-char preview — i.e. today's behavior, no
+ *  regression — never a wrong-text guess. */
+const resolveRef = (c: Extract<RecordContent, { kind: 'ref' }>, wire: RecordMessage[]): string => {
+  const anchor = c.preview ?? ''
+  if (!anchor) return ''
+  for (const m of wire) {
+    let from = m.content.indexOf(anchor)
+    while (from >= 0) {
+      const span = sliceBytes(m.content, from, c.bytes)
+      if (span && sha256(span) === c.hash) return span
+      from = m.content.indexOf(anchor, from + 1)
+    }
+  }
+  return anchor
+}
+
+/** The FULL text an entry carries. Small controlled transforms keep their exact inline text; a bulk /
+ *  opaque span is hash-referenced (its authoritative copy is the wire). For a ref span we REHYDRATE the
+ *  full text from `wire` at preview time (issue 08 M1 finding 1) — so a >512-byte world-info / card /
+ *  memory block renders in full with token estimates on the full text, not an 80-char stub. History
+ *  refs never reach here (they resolve per-turn from the wire in emitHistory). Display-only: the record
+ *  stays hash-referenced for storage. */
+const entryText = (c: RecordContent | undefined, wire: RecordMessage[]): string => {
   if (!c) return ''
-  return c.kind === 'text' ? c.text : (c.preview ?? '')
+  return c.kind === 'text' ? c.text : resolveRef(c, wire)
 }
 
 /**
@@ -256,7 +294,7 @@ export function shapePreview(args: ShapeArgs): PreviewShape {
   )
 
   const emitContent = (e: RecordEntry, precomputed?: string): void => {
-    const text = precomputed ?? entryText(e.after)
+    const text = precomputed ?? entryText(e.after, record.wire)
     if (!text.trim()) return
     const packs = lanePacks(e.source)
     if (packs.length) {
@@ -300,7 +338,7 @@ export function shapePreview(args: ShapeArgs): PreviewShape {
       case 'macro': {
         // Literal preset block: skip when it evaluated to nothing, and skip the depth-placed ones (their
         // `depth-inject` entry is the placement) so a depth block is not counted twice.
-        const text = entryText(e.after)
+        const text = entryText(e.after, record.wire)
         if (!text.trim() || depthInjectedIds.has(e.source.id)) break
         emitContent(e, text)
         break

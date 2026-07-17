@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { createHash } from 'node:crypto'
 import {
   shapePreview,
   packInjections,
@@ -28,6 +29,15 @@ const estimate = (s: string): number => s.length
 const text = (s: string): RecordContent => ({ kind: 'text', text: s })
 const ref = (s: string): RecordContent => ({ kind: 'ref', hash: 'h', bytes: s.length, preview: s.slice(0, 8) })
 const wireMsg = (role: RecordRole, content: string): RecordMessage => ({ role, content })
+/** A FAITHFUL hash-ref, exactly as the record builder stamps a >512-byte span: real SHA-256, real UTF-8
+ *  byte count, an 80-char anchor prefix. The preview resolver rehydrates the full text from the wire by
+ *  locating this anchor + slicing `bytes` bytes + verifying the hash (executionRecord.ts INLINE_LIMIT). */
+const realRef = (s: string): RecordContent => ({
+  kind: 'ref',
+  hash: createHash('sha256').update(s, 'utf8').digest('hex'),
+  bytes: Buffer.byteLength(s, 'utf8'),
+  preview: s.slice(0, 80)
+})
 
 const rec = (entries: Omit<RecordEntry, 'seq'>[], wire: RecordMessage[] = []): ExecutionRecord => ({
   version: 1,
@@ -231,6 +241,79 @@ describe('shapePreview — decomposes the record by real source', () => {
     expect(omitted).toHaveLength(1)
     expect(omitted[0].reason).toBe('budget')
     expect(omitted[0].label).toContain('dropped 2 oldest')
+  })
+})
+
+describe('shapePreview — a large hash-ref span rehydrates to FULL text from the wire (M1 finding 1)', () => {
+  // A >512-byte world-info block. The record builder stores it as a `ref` (hash + byte count + 80-char
+  // anchor), NOT the text; the full copy lives in the wire. The preview must show the FULL block, not the
+  // 80-char stub, with the token estimate on the full text.
+  const bigWorldInfo = 'World Info:\n' + 'The kingdom of Eldoria stretches to the sea. '.repeat(30)
+
+  it('a world-info marker >512 bytes renders full when the span IS its own wire message', () => {
+    expect(Buffer.byteLength(bigWorldInfo, 'utf8')).toBeGreaterThan(512)
+    const record = rec(
+      [
+        {
+          stage: 'marker-expand',
+          source: { kind: 'marker', id: 'world_info' },
+          role: 'system',
+          after: realRef(bigWorldInfo)
+        }
+      ],
+      [wireMsg('system', bigWorldInfo), wireMsg('user', 'go')]
+    )
+    const wi = shapePreview({ record, injections: [], gatedInjectors: [], estimate }).sections.find(
+      (s) => s.id === 'worldInfo'
+    )!
+    expect(wi.text).toBe(bigWorldInfo) // FULL text, not the 80-char preview stub
+    expect(wi.text.length).toBeGreaterThan(80)
+    expect(wi.tokens).toBe(bigWorldInfo.length) // estimate on full text (estimate = s.length)
+  })
+
+  it('a large memory-tail span rehydrates even when role-merge folded it into a bigger wire message', () => {
+    const bigMemory = 'Memory tail:\n' + 'A concise summary of recent events. '.repeat(30)
+    expect(Buffer.byteLength(bigMemory, 'utf8')).toBeGreaterThan(512)
+    // The wire message the provider actually gets is the merged system block: preset system + the memory
+    // tail + a trailing note. The span is a SUBSTRING, not the whole message.
+    const mergedSystem = `You are a game master.\n\n${bigMemory}\n\nStay in character.`
+    const record = rec(
+      [
+        {
+          stage: 'safety-net',
+          source: { kind: 'memory', id: 'memory-tail' },
+          at: 0,
+          role: 'system',
+          after: realRef(bigMemory)
+        }
+      ],
+      [wireMsg('system', mergedSystem), wireMsg('user', 'go')]
+    )
+    const mem = shapePreview({ record, injections: [], gatedInjectors: [], estimate }).sections.find(
+      (s) => s.id === 'memory'
+    )!
+    expect(mem.text).toBe(bigMemory) // exact span carved out of the merged message
+    expect(mem.tokens).toBe(bigMemory.length)
+  })
+
+  it('falls back to the 80-char anchor preview when the span is NOT recoverable from the wire', () => {
+    const big = 'x'.repeat(600)
+    const record = rec(
+      [
+        {
+          stage: 'safety-net',
+          source: { kind: 'memory', id: 'memory-tail' },
+          at: 0,
+          role: 'system',
+          after: realRef(big)
+        }
+      ],
+      [wireMsg('user', 'go')] // no wire message carries the span → cannot rehydrate
+    )
+    const mem = shapePreview({ record, injections: [], gatedInjectors: [], estimate }).sections.find(
+      (s) => s.id === 'memory'
+    )!
+    expect(mem.text).toBe(big.slice(0, 80)) // graceful degradation — today's stub, no wrong-text guess
   })
 })
 
