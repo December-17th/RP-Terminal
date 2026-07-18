@@ -90,6 +90,10 @@ const zh: Record<string, string> = {
   'launcher.emptySession': '空会话',
   'launcher.sessionOne': '{{count}} 个会话',
   'launcher.sessionMany': '{{count}} 个会话',
+  'updates.availableTitle': 'RP Terminal 有新版本可用',
+  'updates.availableBody': '当前版本为 v{{current}}，最新版本为 v{{latest}}。',
+  'updates.viewRelease': '查看发布页面',
+  'updates.later': '稍后提醒',
 
   'settings.title': '设置',
   'settings.groupApp': '应用',

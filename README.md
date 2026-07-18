@@ -234,9 +234,11 @@ together. The active location is shown in Settings. On first launch, an existing
 from the earlier AppData-based portable build is copied beside the app; the AppData copy is left intact
 as a backup. Explicit custom locations remain unchanged.
 
-Updates are manual: stop RP Terminal, extract the newer ZIP, and copy the existing `rp-terminal-data`
-folder into the new extracted folder before launching. Keep that folder private; it is not included in
-GitHub release archives.
+Packaged builds check GitHub's latest published stable release in the background and show a notice above
+the world chooser when a newer strict `vMAJOR.MINOR.PATCH` release exists. The notice only opens the
+official release page; RP Terminal never downloads or installs an update. Updates remain manual: stop RP
+Terminal, extract the newer ZIP, and copy the existing `rp-terminal-data` folder into the new extracted
+folder before launching. Keep that folder private; it is not included in GitHub release archives.
 
 ### Download the macOS build
 
@@ -264,9 +266,10 @@ npm ci
 npm run dev
 ```
 
-The downloadable builds have no automatic update channel. Developers can inspect an isolated
-card panel with `RPT_OPEN_WCV_DEVTOOLS=1`; this is intentionally off by default. Maintainers should use
-the process in [`RELEASE.md`](RELEASE.md) to publish builds.
+The downloadable builds include a release notification but no automatic download or installation
+channel. Developers can inspect an isolated card panel with `RPT_OPEN_WCV_DEVTOOLS=1`; this is
+intentionally off by default. Maintainers should use the process in [`RELEASE.md`](RELEASE.md) to publish
+builds.
 
 ### Verification gate
 

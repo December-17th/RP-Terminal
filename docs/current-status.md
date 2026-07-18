@@ -20,6 +20,9 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
 - Electron main/preload/React renderer architecture with typed IPC, SQLite + portable file storage,
   profiles, launcher/play workspace, settings modal, semantic themes, custom title bar, and English/Chinese
   app i18n.
+- Packaged builds perform a fail-soft, cached check of GitHub's latest published stable release and show a
+  dismissible world-chooser notice for newer strict semantic versions. The notice opens only the
+  main-validated official release page; downloading and installation remain manual.
 - Main-process streaming generation pipeline for OpenAI-, Anthropic-, and Gemini-compatible providers,
   with resilient calls, RPM/concurrency limits, usage metrics, and per-floor token/cache history.
 - MVU/Zod state support, QuickJS EJS templates, ST prompt markers/macros, and a clean-room TavernHelper-like
@@ -60,7 +63,7 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
 | Agentic scene/tool mode   | Manual Explore/Dialogue/Combat FSM is implemented                         | Automatic routing, model-called tool loop, and lore mutation gatekeeper remain planned.                                     |
 | Prompt-cache optimization | Measurement/layering scaffolding exists                                   | App-side optimization is stashed; settings remain pinned to baseline pending evidence.                                      |
 | Card custom UI            | Inline/WCV execution, static layouts, overlays, and runtime theming exist | Declarative native StatusMenuBuilder view kit and some dynamic panel APIs remain deferred.                                  |
-| Release hardening         | Trust-boundary code and adversarial unit coverage landed                  | Owner in-app trust pass, packaged data-dir verification, recovery/backup UX, and broader release gates remain.              |
+| Release hardening         | Trust-boundary coverage and a packaged-build release notifier landed      | Owner in-app trust pass, packaged data-dir verification, automatic update helper/recovery UX, and broader release gates remain. |
 
 ## Designed or queued locally
 
