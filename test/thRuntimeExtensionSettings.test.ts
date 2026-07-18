@@ -54,4 +54,25 @@ describe('extensionSettings + saveSettingsDebounced (issue 19)', () => {
     expect(saved).toHaveLength(1)
     expect(saved[0].MyCard).toEqual({ n: 1 })
   })
+
+  // Hydration gate: a transient seed-read failure surfaces as `undefined` (NOT an empty `{}`). A card write
+  // after such a failure must NOT flush the unloaded stub over the valid stored settings.
+  it('does NOT overwrite persisted settings when the seed read failed (returned undefined)', async () => {
+    const saved: Record<string, any>[] = []
+    const host: Host = {
+      ...createNullHost({ profileId: 'p', chatId: 'c', characterId: 'ch' }),
+      getExtensionSettingsSync: () => undefined, // transient read failure, distinct from empty {}
+      setExtensionSettings: async (s) => {
+        saved.push(s)
+      }
+    }
+    const rt = createThRuntime(host) as any
+    const ctx = rt.SillyTavern.getContext()
+    ctx.extensionSettings.MyCard = { level: 3 } // a card write lands on the unloaded stub
+    ctx.saveSettingsDebounced()
+    await vi.advanceTimersByTimeAsync(250)
+    expect(saved).toHaveLength(0) // gate held: stored settings not clobbered with the stub
+    rt.__rptDispose() // dispose must not flush either (timer was never armed)
+    expect(saved).toHaveLength(0)
+  })
 })

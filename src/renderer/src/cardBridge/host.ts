@@ -374,11 +374,14 @@ export function createInlineHost(ctx: CardCtx): Host {
     },
     // TavernHelper extensionSettings durable backing (issue 19) — a per-profile store distinct from the
     // card KV scopes. SYNC read at boot; whole-object write is what saveSettingsDebounced flushes.
+    // Returns the saved bag ({} when the store is genuinely empty). On a transient IPC failure it returns
+    // `undefined` — NOT `{}` — so the shared runtime can tell "read failed" from "empty" and refuse to flush
+    // an unloaded bag over valid stored settings (the hydration gate in thRuntime/index.ts).
     getExtensionSettingsSync: () => {
       try {
         return window.api.extensionSettingsGetSync(ctx.profileId) || {}
       } catch {
-        return {}
+        return undefined
       }
     },
     setExtensionSettings: async (settings) => {

@@ -41,7 +41,9 @@ export interface VarsHost {
   // TavernHelper `getContext().extensionSettings` durable backing (issue 19). SYNC read so an
   // extension-style card reads its saved settings at boot (like the other sync getters); the whole-object
   // write is what `saveSettingsDebounced` flushes. A per-profile store, distinct from the card KV scopes.
-  getExtensionSettingsSync(): Record<string, any>
+  // Returns `undefined` (not `{}`) when the sync read fails, so the runtime can tell failure from an
+  // empty bag and gate the settings flush (hydration gate in index.ts). Empty store → `{}`.
+  getExtensionSettingsSync(): Record<string, any> | undefined
   setExtensionSettings(settings: Record<string, any>): Promise<void>
   onVarsChanged(cb: (statData: any, meta?: { origin: VarsOrigin }) => void): () => void
 }

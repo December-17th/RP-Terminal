@@ -65,7 +65,10 @@ export const WCV_CHANNEL_SPEC: Record<WcvSpecMember, ChannelSpec> = {
   getExtensionSettingsSync: {
     channel: 'wcv-host-get-extension-settings-sync',
     kind: 'sync',
-    fallback: {}
+    // `undefined` (not `{}`) on failure: the store returns a genuinely-empty bag as an object, so a fallback
+    // of `undefined` lets the shared runtime distinguish "read failed" from "empty" and gate the settings
+    // flush (thRuntime/index.ts hydration gate). Deliberately unlike the other sync getters' `{}` fallback.
+    fallback: undefined
   },
   setExtensionSettings: { channel: 'wcv-host-set-extension-settings', kind: 'invoke' },
 

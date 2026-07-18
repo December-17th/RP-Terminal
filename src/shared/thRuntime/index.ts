@@ -748,9 +748,17 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
   // then call `saveSettingsDebounced()`, which now PERSISTS the whole bag (it was a no-op before, so those
   // edits evaporated). `EjsTemplate.enabled` is force-defaulted so the EJS feature flag stays present even
   // for a fresh profile. Both transports inherit this via the shared runtime.
+  // HYDRATION GATE (silent data-loss fix): the sync seed read can fail transiently — the Host getter then
+  // returns `undefined`, which is DISTINCT from a genuinely-empty bag (the store always returns that as an
+  // object `{}`). If the seed did not hydrate, the live bag below is an unloaded stub; a later
+  // saveSettingsDebounced() must NOT flush it, or a card write would overwrite the valid stored settings
+  // with `{}`. Track whether hydration succeeded and suppress persistence until it does. Both transports
+  // inherit this via the shared runtime.
+  let settingsHydrated = false
   const extensionSettings: Record<string, any> = (() => {
-    const saved = host.getExtensionSettingsSync?.() || {}
-    const bag = saved && typeof saved === 'object' ? saved : {}
+    const saved = host.getExtensionSettingsSync?.()
+    settingsHydrated = saved != null && typeof saved === 'object'
+    const bag: Record<string, any> = saved ?? {}
     const ejs = bag.EjsTemplate && typeof bag.EjsTemplate === 'object' ? bag.EjsTemplate : {}
     bag.EjsTemplate = { enabled: true, ...ejs }
     return bag
@@ -759,6 +767,10 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
   // an extension card does on a settings change; on the trailing edge it persists via the Host.
   let saveSettingsTimer: ReturnType<typeof setTimeout> | null = null
   const saveSettingsDebounced = (): void => {
+    // If the boot seed never hydrated, the live bag is an unloaded stub — flushing it would clobber the
+    // valid stored settings with `{}`. Suppress persistence (and, by never arming the timer, the
+    // __rptDispose flush too) until a run hydrates successfully.
+    if (!settingsHydrated) return
     if (saveSettingsTimer) clearTimeout(saveSettingsTimer)
     saveSettingsTimer = setTimeout(() => {
       saveSettingsTimer = null
