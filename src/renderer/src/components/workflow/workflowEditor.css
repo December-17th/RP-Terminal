@@ -221,6 +221,11 @@
 .rpt-workflow-editor .rpt-port-lore {
   background: color-mix(in srgb, var(--rpt-accent) 55%, var(--rpt-warning));
 }
+/* Prompt (the rich assembly artifact on the wire — issue 18a). A distinct hue from Messages
+   (plain accent) since it carries contributions + record + params, not a bare message array. */
+.rpt-workflow-editor .rpt-port-prompt {
+  background: color-mix(in srgb, var(--rpt-accent) 60%, var(--rpt-success));
+}
 .rpt-workflow-editor .rpt-port-signal {
   background: var(--rpt-danger);
 }

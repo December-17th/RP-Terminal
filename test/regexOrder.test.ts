@@ -53,4 +53,21 @@ describe('getAllRules application order (ST tier priority)', () => {
     const names = getAllRules(profileId).map((r) => r.scriptName)
     expect(names.slice(0, 2)).toEqual(['global-rule', 'global-rule-2'])
   })
+
+  // SPreset RegexBinding (issue 16): the `preset-first` ordering MODE runs preset-bound regex ahead of
+  // global/character — spec §RegexBinding default `[2,0,1]` = preset → global → character. This is an
+  // explicit ordering-mode selection in getAllRules, NOT a monkeypatch, and leaves `st-default` intact.
+  it('preset-first mode runs preset ahead of global/world/session (SPreset RegexBinding)', () => {
+    const names = getAllRules(profileId, undefined, 'preset-first').map((r) => r.scriptName)
+    // preset first, then the two globals (file order preserved), then world, then session.
+    expect(names).toEqual([
+      'preset-rule',
+      'global-rule',
+      'global-rule-2',
+      'world-rule',
+      'session-rule'
+    ])
+    // st-default is unchanged (global first) — the mode selection does not mutate the standing order.
+    expect(getAllRules(profileId).map((r) => r.scriptName)[0]).toBe('global-rule')
+  })
 })

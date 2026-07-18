@@ -13,8 +13,10 @@ import * as regexService from '../services/regexService'
 import * as pluginStorageService from '../services/pluginStorageService'
 import * as pluginService from '../services/pluginService'
 import * as settingsService from '../services/settingsService'
+import * as extensionSettingsService from '../services/extensionSettingsService'
 import * as worldAssetService from '../services/worldAssetService'
 import * as characterService from '../services/characterService'
+import * as presetService from '../services/presetService'
 import { getActivePresetId } from '../services/presetService'
 import { log } from '../services/logService'
 import { ArtifactScope } from '../../shared/artifactScope'
@@ -515,6 +517,24 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       if (ctx)
         pluginService.setGlobalVars(ctx.profileId, vars && typeof vars === 'object' ? vars : {})
     },
+    // TavernHelper extensionSettings durable backing (issue 19). SYNC read (card reads its saved
+    // settings at boot); whole-object write is what saveSettingsDebounced flushes. Per-profile store.
+    getExtensionSettingsSync: (e) => {
+      const ctx = wcvManager.contextFor(e.sender.id)
+      // Unresolved ctx = a FAILED read, not a genuinely-empty store: return `undefined` (NOT `{}`) so the
+      // shared runtime's hydration gate (thRuntime/index.ts, B fix 62bc5b3) treats it as not-hydrated and
+      // suppresses the settings flush, instead of clobbering valid stored settings with an empty bag. The
+      // real store returns `{}` for a genuinely-empty profile; only the ctx-miss path signals undefined.
+      return ctx ? extensionSettingsService.getExtensionSettings(ctx.profileId) : undefined
+    },
+    setExtensionSettings: (e, settings) => {
+      const ctx = wcvManager.contextFor(e.sender.id)
+      if (ctx)
+        extensionSettingsService.setExtensionSettings(
+          ctx.profileId,
+          settings && typeof settings === 'object' ? settings : {}
+        )
+    },
 
     // --- WorldbookHost ---
     // Persist a worldbook the card modified — a FULL replace (TavernHelper replaceWorldbookEntries):
@@ -666,13 +686,21 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         ? scriptApiService.getCharAvatarPath(ctx.profileId, ctx.chatId, ctx.characterId)
         : null
     },
+    // getPreset('in_use'): the active preset as a Host preset view (name/settings/prompts/prompts_unused/
+    // extensions). The shared runtime maps it to the TavernHelper shape; both transports inherit that.
     preset: (e) => {
       const ctx = wcvManager.contextFor(e.sender.id)
-      return ctx ? scriptApiService.getPresetInfo(ctx.profileId) : null
+      return ctx ? presetService.getActivePresetView(ctx.profileId) : null
     },
     presetNames: (e) => {
       const ctx = wcvManager.contextFor(e.sender.id)
       return ctx ? scriptApiService.listPresetNames(ctx.profileId) : []
+    },
+    // Persist a card's preset edits (the 狐神抚 control surface). The runtime already merged the card's
+    // mutated view onto the current normalized view, so this is a full normalized-preset-shaped patch.
+    savePreset: (e, patch) => {
+      const ctx = wcvManager.contextFor(e.sender.id)
+      return ctx ? presetService.saveActivePreset(ctx.profileId, patch) : false
     },
 
     // --- RegexHost ---

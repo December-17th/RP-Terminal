@@ -11,6 +11,7 @@ import {
   type VarOp
 } from './ops'
 import { nativeToThEntry, thToNativeEntry } from './worldbookEntry'
+import { mapPresetToThShape, mergePresetView } from './presetShape'
 import { expandMacros } from '../macros'
 import { runScript, type StCtx } from '../stscript'
 
@@ -341,6 +342,16 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     return true
   }
 
+  // replacePreset and setPreset are exact aliases — the same merge-onto-current-view-and-persist write.
+  // Keep ONE body here and expose it under both names (API compat: a card may call either). Both call
+  // shapes are tolerated: replacePreset(preset) and replacePreset(name, preset).
+  const replacePresetImpl = async (name?: any, incoming?: any): Promise<boolean> => {
+    const base = host.preset()
+    if (!base) return false
+    const payload = incoming !== undefined ? incoming : name
+    return host.savePreset(mergePresetView(base, payload))
+  }
+
   // --- TavernHelper helpers (bare + namespaced) ---
   const helpers: Record<string, any> = {
     // SYNC getters
@@ -395,8 +406,36 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     getTavernHelperVersion: () => '4.3.17',
     getCharData: () => host.charData(),
     getCharAvatarPath: () => host.charAvatarPath(),
-    getPreset: () => host.preset(),
+    // getPreset('in_use') — the active preset as TavernHelper's `Preset` shape (spec §7 docs-confirmed):
+    // { name, settings, parameters, prompts, prompts_unused, extensions }. `prompts` is the live control
+    // surface a card (the 狐神抚 case) reads + toggles; `parameters` is kept alongside `settings` so cards
+    // that already read `getPreset().name`/`.parameters` don't regress. A named argument other than
+    // 'in_use' resolves only when it names the ACTIVE preset (the host exposes the active one); any other
+    // name → null (a cross-preset fetch is a separate host capability, not this getter).
+    getPreset: (name?: any) => {
+      const shaped = mapPresetToThShape(host.preset())
+      if (!shaped) return null
+      if (name == null || name === 'in_use' || name === shaped.name) return shaped
+      return null
+    },
     getPresetNames: () => host.presetNames(),
+    // getLoadedPresetName (spec §7) — the name of the loaded/active preset. RPT's `in_use` and loaded name
+    // coincide (no un-persisted in-chat divergence layer yet — see the F6 TODO on ChatHost.savePreset).
+    getLoadedPresetName: () => host.preset()?.name ?? '',
+    // Preset write path (the 狐神抚 control surface persists prompt choices). The card mutates the object it
+    // got from getPreset and hands it back; the runtime MERGES it onto the current normalized view by
+    // identifier (so a partial edit never drops prompts) and persists a full normalized preset via the host.
+    // `replacePreset`/`setPreset` are aliases; `updatePresetWith` takes an updater over the current shape.
+    // Returns whether the write succeeded. (Exact write NAME/durability is F6-guarded — see savePreset.)
+    replacePreset: replacePresetImpl,
+    setPreset: replacePresetImpl,
+    updatePresetWith: async (updater?: any) => {
+      const base = host.preset()
+      if (!base) return false
+      const shaped = mapPresetToThShape(base)
+      const next = typeof updater === 'function' ? updater(shaped) : shaped
+      return host.savePreset(mergePresetView(base, next ?? shaped))
+    },
     getCharWorldbookNames: () => host.worldbookNames(),
     getWorldbookNames: () => host.listWorldbooks().map((w) => w.name),
     getLorebooks: () => host.listWorldbooks(),
@@ -701,10 +740,42 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     await host.setChatVars(clone(chatMetadata.variables) || {})
     return true
   }
-  // ST persists global settings on a debounce; RP Terminal has no ST settings.json, so this is a no-op.
-  // Cards (esp. extension-style ones) call it after mutating extensionSettings — without the function on
-  // the global they throw "SillyTavern.saveSettingsDebounced is not a function" (an unhandledrejection).
-  const saveSettingsDebounced = (): void => undefined
+  // extensionSettings — the durable TavernHelper `getContext().extensionSettings` bag (issue 19). ST keeps
+  // it in settings.json and flushes on a debounce; RP Terminal has no settings.json, so it is backed by a
+  // per-profile store via the Host (getExtensionSettingsSync / setExtensionSettings). ONE live object per
+  // runtime, seeded from the saved bag: extension-style cards mutate `extensionSettings.Foo = …` in place
+  // then call `saveSettingsDebounced()`, which now PERSISTS the whole bag (it was a no-op before, so those
+  // edits evaporated). `EjsTemplate.enabled` is force-defaulted so the EJS feature flag stays present even
+  // for a fresh profile. Both transports inherit this via the shared runtime.
+  // HYDRATION GATE (silent data-loss fix): the sync seed read can fail transiently — the Host getter then
+  // returns `undefined`, which is DISTINCT from a genuinely-empty bag (the store always returns that as an
+  // object `{}`). If the seed did not hydrate, the live bag below is an unloaded stub; a later
+  // saveSettingsDebounced() must NOT flush it, or a card write would overwrite the valid stored settings
+  // with `{}`. Track whether hydration succeeded and suppress persistence until it does. Both transports
+  // inherit this via the shared runtime.
+  let settingsHydrated = false
+  const extensionSettings: Record<string, any> = (() => {
+    const saved = host.getExtensionSettingsSync?.()
+    settingsHydrated = saved != null && typeof saved === 'object'
+    const bag: Record<string, any> = saved ?? {}
+    const ejs = bag.EjsTemplate && typeof bag.EjsTemplate === 'object' ? bag.EjsTemplate : {}
+    bag.EjsTemplate = { enabled: true, ...ejs }
+    return bag
+  })()
+  // Debounced durable flush of the live extensionSettings bag. The debounce coalesces the burst of writes
+  // an extension card does on a settings change; on the trailing edge it persists via the Host.
+  let saveSettingsTimer: ReturnType<typeof setTimeout> | null = null
+  const saveSettingsDebounced = (): void => {
+    // If the boot seed never hydrated, the live bag is an unloaded stub — flushing it would clobber the
+    // valid stored settings with `{}`. Suppress persistence (and, by never arming the timer, the
+    // __rptDispose flush too) until a run hydrates successfully.
+    if (!settingsHydrated) return
+    if (saveSettingsTimer) clearTimeout(saveSettingsTimer)
+    saveSettingsTimer = setTimeout(() => {
+      saveSettingsTimer = null
+      void host.setExtensionSettings?.(clone(extensionSettings) || {})
+    }, 200)
+  }
   const getContext = (): any => ({
     chat: stChat(),
     eventSource,
@@ -712,7 +783,7 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     event_types: TAVERN_EVENTS,
     chatMetadata,
     saveMetadata,
-    extensionSettings: { EjsTemplate: { enabled: true } },
+    extensionSettings,
     saveSettingsDebounced,
     getContext: () => getContext()
   })
@@ -776,6 +847,13 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     __rptDispose: () => {
       offVars()
       offHost()
+      // Flush any pending extensionSettings write synchronously so a card's last saveSettingsDebounced()
+      // before teardown is not lost, then clear the timer.
+      if (saveSettingsTimer) {
+        clearTimeout(saveSettingsTimer)
+        saveSettingsTimer = null
+        void host.setExtensionSettings?.(clone(extensionSettings) || {})
+      }
     }
   }
 }

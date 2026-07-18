@@ -11,8 +11,12 @@ interface Props {
 const MARKER_KEY: Record<PromptMarker, string> = {
   none: '',
   char_description: 'preset.markerChar',
+  char_personality: 'preset.markerPersonality',
+  scenario: 'preset.markerScenario',
   mes_example: 'preset.markerExamples',
   world_info: 'preset.markerWorldInfo',
+  world_info_before: 'preset.markerWorldInfoBefore',
+  world_info_after: 'preset.markerWorldInfoAfter',
   persona_description: 'preset.markerPersona',
   chat_history: 'preset.markerChatHistory',
   post_history: 'preset.markerPostHistory'
@@ -49,12 +53,50 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
     deleteBlock
   } = usePresetStore()
   const [editing, setEditing] = useState<number | null>(null)
+  // Per-preset high-trust opt-in (ADR 0017 / issue 19): whether the active preset's remote-code scripts
+  // are unlocked to run (granted), plus how many it carries (so the control only shows when meaningful).
+  const [highTrust, setHighTrust] = useState<{ granted: boolean; remoteCode: number } | null>(null)
   const t = useT()
   const markerText = (m: PromptMarker): string => (m === 'none' ? '' : t(MARKER_KEY[m]))
 
   useEffect(() => {
     load(profileId)
   }, [profileId])
+
+  // Load the active preset's high-trust state + remote-code count whenever the selection changes.
+  useEffect(() => {
+    if (!activeId) {
+      setHighTrust(null)
+      return
+    }
+    let alive = true
+    Promise.all([
+      window.api.presetIsHighTrust(profileId, activeId),
+      window.api.presetGetInventory(profileId, activeId)
+    ]).then(([granted, inv]: [boolean, { remoteCodeScripts?: number } | null]) => {
+      if (!alive) return
+      setHighTrust({ granted: granted === true, remoteCode: inv?.remoteCodeScripts ?? 0 })
+    })
+    return () => {
+      alive = false
+    }
+  }, [profileId, activeId])
+
+  // Grant / revoke the active preset's high-trust opt-in — invokes presetSetHighTrust and reflects the
+  // new state. Granting installs the preset's remote-code scripts to RUN (isolated realm only, ADR 0017).
+  const grantHighTrust = async (): Promise<void> => {
+    if (!activeId || !highTrust) return
+    if (!confirm(t('preset.highTrust.confirm'))) return
+    const installed = await window.api.presetSetHighTrust(profileId, activeId, true)
+    setHighTrust({ granted: true, remoteCode: highTrust.remoteCode })
+    useToastStore.getState().push(t('preset.highTrust.enabled', { count: installed }))
+  }
+  const revokeHighTrust = async (): Promise<void> => {
+    if (!activeId || !highTrust) return
+    const removed = await window.api.presetSetHighTrust(profileId, activeId, false)
+    setHighTrust({ granted: false, remoteCode: highTrust.remoteCode })
+    useToastStore.getState().push(t('preset.highTrust.disabled', { count: removed }))
+  }
 
   const numField = (
     key: keyof PresetParameters,
@@ -91,10 +133,35 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
     if (!guardDirty()) return
     const res = await importPreset(profileId)
     if (!res) return
+    // Surface the capability inventory (ADR 0017) — counts of what the preset carries, not a gate.
+    const inv = res.inventory
     let msg = t('preset.imported', { name: res.name })
-    if (res.regexScripts || res.scripts)
-      msg += t('preset.importedBundle', { regex: res.regexScripts, scripts: res.scripts })
+    msg +=
+      ' — ' +
+      t('preset.inv.summary', {
+        prompts: inv.prompts,
+        enabled: inv.promptsEnabled,
+        regex: inv.regexScripts,
+        spreset: inv.spresetRegex,
+        scripts: inv.tavernHelperScripts,
+        ejs: inv.ejsPrompts
+      })
+    if (inv.unknownExtensions.length)
+      msg += t('preset.inv.unknownExt', { names: inv.unknownExtensions.join(', ') })
+    if (inv.duplicateIdentifiers.length || inv.orphanIdentifiers.length)
+      msg += t('preset.inv.anomalies', {
+        dupes: inv.duplicateIdentifiers.length,
+        orphans: inv.orphanIdentifiers.length
+      })
     useToastStore.getState().push(msg)
+    // Remote-code scripts stay inert until a high-trust opt-in exists — warn NOW (separate toast).
+    if (inv.remoteCodeScripts)
+      useToastStore.getState().push(t('preset.inv.remoteCode', { count: inv.remoteCodeScripts }))
+    // SPreset ChatSquash features RPT does not execute (issue 16) — surfaced like a capability flag.
+    if (inv.unsupportedSpreset?.length)
+      useToastStore
+        .getState()
+        .push(t('preset.inv.spresetUnsupported', { features: inv.unsupportedSpreset.join(', ') }))
   }
 
   return (
@@ -152,6 +219,54 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
               {t('preset.name')}
             </label>
             <input value={preset.name} onChange={(e) => setName(e.target.value)} />
+
+            {/* Per-preset high-trust opt-in (ADR 0017 / issue 19). Shown when the preset carries
+                remote-code scripts (kept inert on import) or already has the grant. */}
+            {highTrust && (highTrust.remoteCode > 0 || highTrust.granted) && (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: 12,
+                  borderRadius: 8,
+                  border: '1px solid var(--rpt-border, #34344a)',
+                  background: 'var(--rpt-surface-alt, rgba(255,255,255,0.03))'
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 12
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{t('preset.highTrust.heading')}</div>
+                    <div style={{ fontSize: 12, opacity: 0.7, marginTop: 2 }}>
+                      {highTrust.granted
+                        ? t('preset.highTrust.statusGranted')
+                        : t('preset.highTrust.statusInert', { count: highTrust.remoteCode })}
+                    </div>
+                  </div>
+                  {highTrust.granted ? (
+                    <button className="btn-ghost danger" onClick={revokeHighTrust}>
+                      {t('preset.highTrust.revoke')}
+                    </button>
+                  ) : (
+                    <button
+                      className="btn-accent"
+                      onClick={grantHighTrust}
+                      disabled={highTrust.remoteCode === 0}
+                    >
+                      {t('preset.highTrust.enable')}
+                    </button>
+                  )}
+                </div>
+                <p style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.5, margin: '8px 0 0' }}>
+                  {t('preset.highTrust.note')}
+                </p>
+              </div>
+            )}
 
             <h4 style={{ marginBottom: 8 }}>{t('preset.genParams')}</h4>
             <div className="param-grid">

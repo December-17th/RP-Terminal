@@ -28,10 +28,17 @@ describe('input.context', () => {
     const gen = { profileId: 'p1', chatId: 'c1', userAction: 'hi' }
     vi.mocked(buildGenContext).mockReturnValue(gen as any)
 
-    const ctx: RunContext = { ...baseCtx, profileId: 'p1', chatId: 'c1', userAction: 'hi' }
+    // issue 12: input.context now forwards the turn's generationType into buildGenContext (4th arg).
+    const ctx: RunContext = {
+      ...baseCtx,
+      profileId: 'p1',
+      chatId: 'c1',
+      userAction: 'hi',
+      generationType: 'regenerate'
+    }
     const result = inputContext.run(ctx, {})
 
-    expect(buildGenContext).toHaveBeenCalledWith('p1', 'c1', 'hi')
+    expect(buildGenContext).toHaveBeenCalledWith('p1', 'c1', 'hi', 'regenerate')
     expect(result).toEqual({ outputs: { gen } })
   })
 })
@@ -49,6 +56,34 @@ describe('prompt.assemble', () => {
 
     expect(matchWorldInfo).toHaveBeenCalledWith(gen)
     expect(assemblePrompt).toHaveBeenCalledWith(gen, matched, 'memory block')
-    expect(result).toEqual({ outputs: { sendMessages, params } })
+    // Issue 18b: the legacy sendMessages/params ports are UNCHANGED; the same assembly is ALSO
+    // emitted as the rich `prompt` artifact (messages + provenance + params) — additive, so seeded
+    // docs that wire only sendMessages/params are byte-for-byte unaffected.
+    expect(result).toEqual({
+      outputs: {
+        sendMessages,
+        params,
+        prompt: expect.objectContaining({ kind: 'prompt-artifact', messages: sendMessages, params })
+      }
+    })
+  })
+
+  it('stamps the execution record onto the shared gen (issue 09), without exposing it as a port', () => {
+    const gen: any = { profileId: 'p1' }
+    const record = { version: 1, entries: [], wire: [], stats: {} }
+    vi.mocked(matchWorldInfo).mockReturnValue([] as any)
+    vi.mocked(assemblePrompt).mockReturnValue({
+      sendMessages: [],
+      params: {},
+      record
+    } as any)
+
+    const result = promptAssemble.run(baseCtx, { gen, block: '' })
+
+    // The record rides `gen` (so the terminal write stage persists it) and now ALSO travels inside
+    // the `prompt` artifact (issue 18a) — but never as a STANDALONE output port.
+    expect(gen.executionRecord).toBe(record)
+    expect(result.outputs).not.toHaveProperty('record')
+    expect((result.outputs.prompt as { record: unknown }).record).toBe(record)
   })
 })

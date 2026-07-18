@@ -37,8 +37,10 @@ export const parseFindRegex = (raw: string): { source: string; flags: string } =
 
 /**
  * A normalized store rule → `TavernRegex` (for `getTavernRegexes`). Our `placement` (1 = user input,
- * 2 = AI output; empty = everywhere) maps to `source`; `markdownOnly`/`promptOnly` map to `destination`.
- * Fields we don't model (slash_command/world_info, run_on_edit, depths) take faithful defaults.
+ * 2 = AI output, 3 = slash command, 5 = world info; empty = everywhere) maps to `source`;
+ * `markdownOnly`/`promptOnly` map to `destination`; `runOnEdit`/`minDepth`/`maxDepth` round-trip.
+ * (TavernHelper's `source` has no reasoning=6 field, so placement 6 isn't represented here — faithful
+ * to the JSR `tavern_regex` shape.)
  */
 export const storeRuleToTavernRegex = (r: RenderRegexRule): TavernRegex => {
   const everywhere = !r.placement || r.placement.length === 0
@@ -52,13 +54,13 @@ export const storeRuleToTavernRegex = (r: RenderRegexRule): TavernRegex => {
     source: {
       user_input: everywhere || r.placement.includes(1),
       ai_output: everywhere || r.placement.includes(2),
-      slash_command: false,
-      world_info: false
+      slash_command: everywhere || r.placement.includes(3),
+      world_info: everywhere || r.placement.includes(5)
     },
     destination: { display: appliesToDisplay(r), prompt: appliesToPrompt(r) },
-    run_on_edit: false,
-    min_depth: null,
-    max_depth: null
+    run_on_edit: r.runOnEdit === true,
+    min_depth: r.minDepth ?? null,
+    max_depth: r.maxDepth ?? null
   }
 }
 
@@ -75,6 +77,8 @@ export const tavernRegexToStoreObject = (tr: any): Record<string, any> => {
   const placement: number[] = []
   if (s.user_input) placement.push(1)
   if (s.ai_output) placement.push(2)
+  if (s.slash_command) placement.push(3)
+  if (s.world_info) placement.push(5)
   const find =
     typeof src.find_regex === 'string' && src.find_regex
       ? src.find_regex
@@ -89,6 +93,9 @@ export const tavernRegexToStoreObject = (tr: any): Record<string, any> => {
     placement: placement.length ? placement : [1, 2],
     // display-only ⇒ markdownOnly; prompt-only ⇒ promptOnly; both/neither ⇒ applies to both.
     markdownOnly: d.display === true && d.prompt === false,
-    promptOnly: d.prompt === true && d.display === false
+    promptOnly: d.prompt === true && d.display === false,
+    runOnEdit: src.run_on_edit === true,
+    minDepth: src.min_depth ?? null,
+    maxDepth: src.max_depth ?? null
   }
 }

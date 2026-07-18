@@ -63,6 +63,10 @@ export interface RunContext {
   workflowId?: string
   /** Turn seed (Phase 2b): the raw user action text that started this turn. */
   userAction?: string
+  /** Turn seed (issue 12): the ST generation type driving preset injection_trigger filtering —
+   *  `normal` | `regenerate` | `swipe` | `continue` | `impersonate` | `quiet`. Absent = 'normal'
+   *  (buildGenContext's default). `input.context` forwards it into the per-turn GenContext. */
+  generationType?: string
   /** The user's Stop signal, given to the LLM call ONLY (so streaming can abort). Distinct from
    *  `signal` (the graph signal the engine watches): a user Stop must NOT skip the graph's
    *  parse/apply/write, because today's pipeline persists a partial floor when the model returns

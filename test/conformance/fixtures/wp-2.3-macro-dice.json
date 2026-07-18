@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.3-macro-dice",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 new-engine source (core-macros.js:303-337 → droll.js:58-107). The legacy SPACE form {{roll d6}} and the {{roll:1d6}} single-colon form both resolve to a droll roll. Dice are random, so the value here is a FROZEN placeholder (4) — under the assembly-only oracle a real capture pins a seeded value; RPT uses an injectable RNG in tests. Prose RPT-authored + scrambled. rptAdapter unwired (issues 11-15).",
+  "input": {
+    "description": "Main block rolls a d6 via the legacy space form; frozen placeholder value 4.",
+    "preset": {
+      "name": "Oracle Macro Dice (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "ORP_di: the die shows {{roll d6}} pips." },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        { "character_id": 100001, "order": [ { "identifier": "main", "enabled": true }, { "identifier": "chatHistory", "enabled": true } ] }
+      ]
+    },
+    "character": { "name": "Vael", "description": "Character brindle: Vael, a lamp-keeper of Orrin." },
+    "chatMessages": [ { "role": "user", "content": "ORP_di_user" } ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "worldInfo": [],
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "system", "user"],
+    "messageCount": 3,
+    "mustContain": ["the die shows 4 pips"],
+    "mustNotContain": ["{{roll", "d6}}"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "ORP_di: the die shows 4 pips." },
+      { "role": "system", "content": "Character brindle: Vael, a lamp-keeper of Orrin." },
+      { "role": "user", "content": "ORP_di_user" }
+    ]
+  }
+}

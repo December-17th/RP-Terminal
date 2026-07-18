@@ -10,7 +10,18 @@ import { ChatMessage } from '../../promptBuilder'
 import { LorebookEntry } from '../../../types/character'
 import { PresetParameters } from '../../../types/preset'
 import { FloorMetrics } from '../../../../shared/usageTypes'
+import { providerShape } from '../../generation/providerShape'
 import { NodeImpl, NodeRunFailure, RunContext } from '../types'
+import {
+  assembledArtifact,
+  resolveSendMessages,
+  resolveParams,
+  resolveDispatchMessages,
+  applyDispatchTransforms,
+  appendDispatchEntries,
+  isPromptArtifact
+} from '../promptArtifact'
+import { getDispatchHooks } from '../dispatchHooks'
 
 /**
  * Pre-model built-in nodes (Phase 2b-1b task 2): thin `run()` delegations to the 2b-1a
@@ -25,7 +36,9 @@ export const inputContext: NodeImpl = {
   inputs: [],
   outputs: [{ name: 'gen', type: 'Context' }],
   run: (ctx) => ({
-    outputs: { gen: buildGenContext(ctx.profileId!, ctx.chatId!, ctx.userAction!) }
+    outputs: {
+      gen: buildGenContext(ctx.profileId!, ctx.chatId!, ctx.userAction!, ctx.generationType)
+    }
   })
 }
 
@@ -57,7 +70,9 @@ export const contextRefresh: NodeImpl = {
   run: (_ctx, inputs) => {
     const orig = inputs.gen as GenContext
     return {
-      outputs: { gen: buildGenContext(orig.profileId, orig.chatId, orig.userAction) }
+      outputs: {
+        gen: buildGenContext(orig.profileId, orig.chatId, orig.userAction, orig.generationType)
+      }
     }
   }
 }
@@ -78,18 +93,36 @@ export const promptAssemble: NodeImpl = {
   ],
   outputs: [
     { name: 'sendMessages', type: 'Messages' },
-    { name: 'params', type: 'Any' }
+    { name: 'params', type: 'Any' },
+    // Issue 18b: the SAME assembly, also emitted as the rich `Prompt` artifact (messages +
+    // provenance + execution record + params). ADDITIVE — the legacy `sendMessages`/`params` ports
+    // stay so every seeded/existing doc wires exactly as before (behavior-neutral). A new workflow
+    // wires `prompt` into Sample/Parse/Write instead.
+    { name: 'prompt', type: 'Prompt' }
   ],
   run: (_ctx, inputs) => {
     const gen = inputs.gen as GenContext
     const matched = matchWorldInfo(gen)
     const extra = Array.isArray(inputs.entries) ? (inputs.entries as LorebookEntry[]) : []
-    const { sendMessages, params } = assemblePrompt(
+    const { sendMessages, params, record, authored } = assemblePrompt(
       gen,
       extra.length ? [...matched, ...extra] : matched,
       inputs.block as string
     )
-    return { outputs: { sendMessages, params } }
+    // Stamp the forensic record onto the shared gen so the terminal write stage can persist it
+    // (issue 09). Behavior-neutral: the record travels inside the `prompt` artifact but is not a
+    // standalone port, so unwired graphs and the parity gate are unaffected. Guard because
+    // assemblePrompt is mocked without a record in unit tests.
+    if (record) gen.executionRecord = record
+    // `authored` (issue 18c) carries the pre-shape messages + budget policy so the artifact's
+    // contributions get `budgetClass`; absent (mocked assemble) → contributions derive from the wire.
+    return {
+      outputs: {
+        sendMessages,
+        params,
+        prompt: assembledArtifact(sendMessages, params, record, authored)
+      }
+    }
   }
 }
 
@@ -212,6 +245,10 @@ export const llmSample: NodeImpl = {
     { name: 'gen', type: 'Context' },
     { name: 'sendMessages', type: 'Messages' },
     { name: 'params', type: 'Any' },
+    // Issue 18b: an alternative to the two legacy ports above — the rich `Prompt` artifact from
+    // Assemble/Preset carries BOTH the messages and the params. The legacy ports win when wired
+    // (seeded docs are unchanged); `prompt` is the final-adapter fallback when they are not.
+    { name: 'prompt', type: 'Prompt' },
     // Optional spec §11 gating port: unwired in the default graph, additive-only.
     { name: 'when', type: 'Signal' }
   ],
@@ -224,11 +261,35 @@ export const llmSample: NodeImpl = {
   configSchema: llmCallConfigSchema,
   run: async (ctx, inputs, node) => {
     const cfg = (node?.config ?? {}) as LlmCallConfig
+    const gen = inputs.gen as GenContext
+    // 18e SEAM 2 — the pre-dispatch transformation seam: resolve the messages to send AND provider-
+    // shape them exactly once here (the single dispatch boundary). A legacy `sendMessages` array or an
+    // already-shaped artifact passes through unchanged (byte-identical for seeded docs); only an
+    // UNSHAPED Prompt artifact is shaped, via providerShape bound to this turn's settings.
+    const shapedMessages = resolveDispatchMessages(inputs.sendMessages, inputs.prompt, (m) =>
+      providerShape(gen.settings, m)
+    ) as ChatMessage[]
+    // 18e capability-gated PRE-DISPATCH MUTATION seam (Tier-4 TavernHelper, issue 19): apply any
+    // registered high-trust late hooks to the FINAL message array and delta-record each real mutation as
+    // an `opaque` entry on the Prompt artifact's execution record (script id + hook + before/after hashes —
+    // never a raw untracked swap). Zero hooks (the default) ⇒ the array passes through byte-identical.
+    const hooks = getDispatchHooks(gen.chatId)
+    const { messages: sendMessages, entries: dispatchEntries } = applyDispatchTransforms(
+      shapedMessages ?? [],
+      hooks
+    )
+    if (dispatchEntries.length && isPromptArtifact(inputs.prompt) && inputs.prompt.record) {
+      // Forensic: land the late-hook deltas on the LIVE artifact's record — the same object the turn
+      // threads to parse.response/writeFloor — so the pre-dispatch mutation is journaled, never a raw
+      // untracked swap. `appendDispatchEntries` re-indexes seq; we splice its result back in place.
+      const merged = appendDispatchEntries(inputs.prompt, dispatchEntries)
+      inputs.prompt.record.entries.splice(0, inputs.prompt.record.entries.length, ...merged.record!.entries)
+    }
     const r = await runLlmCall(
       ctx,
-      inputs.gen as GenContext,
-      inputs.sendMessages as ChatMessage[],
-      inputs.params as PresetParameters,
+      gen,
+      sendMessages,
+      resolveParams(inputs.params, inputs.prompt) as PresetParameters,
       cfg
     )
     // Abort-with-empty (callModel returned null): nothing to persist — abort the GRAPH so the engine
@@ -251,6 +312,9 @@ export const parseResponseNode: NodeImpl = {
     { name: 'gen', type: 'Context' },
     { name: 'raw', type: 'Text' },
     { name: 'sendMessages', type: 'Messages' },
+    // Issue 18b: the `Prompt` artifact as the sendMessages source (final adapter) — for the metrics'
+    // sent-token estimate. Legacy `sendMessages` wins when wired (behavior-neutral for seeded docs).
+    { name: 'prompt', type: 'Prompt' },
     { name: 'rawUsage', type: 'Any' }
   ],
   outputs: [
@@ -263,7 +327,7 @@ export const parseResponseNode: NodeImpl = {
     const { parsed, mvu } = parseResponse(raw)
     const metrics = computeMetrics(
       inputs.gen as GenContext,
-      inputs.sendMessages as ChatMessage[],
+      resolveSendMessages(inputs.sendMessages, inputs.prompt) as ChatMessage[],
       raw,
       inputs.rawUsage
     )
@@ -303,6 +367,9 @@ export const outputWriteFloor: NodeImpl = {
     { name: 'gen', type: 'Context' },
     { name: 'raw', type: 'Text' },
     { name: 'sendMessages', type: 'Messages' },
+    // Issue 18b: the `Prompt` artifact as the sendMessages source (final adapter) — the request array
+    // stored on the floor. Legacy `sendMessages` wins when wired (behavior-neutral for seeded docs).
+    { name: 'prompt', type: 'Prompt' },
     { name: 'variables', type: 'Vars' },
     { name: 'parsed', type: 'Any' },
     { name: 'metrics', type: 'Any' },
@@ -318,7 +385,7 @@ export const outputWriteFloor: NodeImpl = {
     const floor = persistFloor(gen, {
       userAction: gen.userAction,
       raw: inputs.raw as string,
-      sendMessages: inputs.sendMessages as ChatMessage[],
+      sendMessages: resolveSendMessages(inputs.sendMessages, inputs.prompt) as ChatMessage[],
       events: parsed.events,
       variables: inputs.variables as Record<string, unknown>,
       metrics: inputs.metrics as FloorMetrics,

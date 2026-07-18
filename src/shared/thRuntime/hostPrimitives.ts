@@ -65,3 +65,38 @@ export type GenCfgNormalized = {
   maxTokens?: number
   overrides?: any
 }
+
+/**
+ * One prompt entry in the Host's normalized preset view — the shape a card's preset control surface
+ * (the 狐神抚 case) reads and toggles. Carries BOTH the RPT-native `identifier` and the TavernHelper
+ * `id` (they are the same string) so native and TH-faithful cards both resolve it. The runtime maps
+ * this into the TH `getPreset('in_use').prompts` shape (see `presetShape.ts`).
+ */
+export type HostPresetPrompt = {
+  id: string
+  identifier: string
+  name: string
+  role: 'system' | 'user' | 'assistant'
+  content: string
+  enabled: boolean
+  marker?: string
+  injection_depth?: number | null
+  injection_order?: number
+}
+
+/**
+ * The Host's normalized view of the active ('in_use') preset — the M2 normalized runtime view plus any
+ * envelope-derived `prompts_unused`. The runtime maps it into the TavernHelper `Preset` shape
+ * (`{ settings, prompts, prompts_unused, extensions }`, docs-confirmed spec §7) AND keeps the legacy
+ * `{ name, parameters }` fields cards already read. `prompts_unused` + `extensions` are envelope-derived;
+ * BOTH transports source this view from the same main-side projection (`presetService.getActivePresetView`
+ * — WCV via its sync channel, inline via `getActivePresetViewSync`), so they are at parity (`[]`/`{}` only
+ * for a pre-envelope import).
+ */
+export type HostPresetView = {
+  name: string
+  parameters: Record<string, any>
+  prompts: HostPresetPrompt[]
+  prompts_unused: HostPresetPrompt[]
+  extensions: Record<string, any>
+}

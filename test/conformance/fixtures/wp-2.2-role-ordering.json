@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.2-role-ordering",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 source, not captured. Within one depth+order group, populationInjectionPrompts iterates roles in the fixed sequence ['system','user','assistant'] (openai.js:838, comment 'most important go lower') joining same-role contents with '\\n'. ST builds that [system,user,assistant] sequence then reverses the whole array (openai.js:864), so the NET order at depth 1 is [assistant, user, system]. Two-message history plus the pending user action. Prose is RPT-authored + scrambled.",
+  "input": {
+    "description": "Three in-chat injections at depth 1, equal (default 100) order, roles system/user/assistant.",
+    "preset": {
+      "name": "Oracle Role Ordering (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "ORP_ro_main: keep the causeway lamps trimmed." },
+        { "identifier": "inj_sys", "name": "Inj System", "role": "system", "content": "ORP_ro_inj_system", "injection_position": 1, "injection_depth": 1 },
+        { "identifier": "inj_usr", "name": "Inj User", "role": "user", "content": "ORP_ro_inj_user", "injection_position": 1, "injection_depth": 1 },
+        { "identifier": "inj_ast", "name": "Inj Assistant", "role": "assistant", "content": "ORP_ro_inj_assistant", "injection_position": 1, "injection_depth": 1 },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "inj_sys", "enabled": true },
+            { "identifier": "inj_usr", "enabled": true },
+            { "identifier": "inj_ast", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ]
+    },
+    "character": { "name": "Wren", "description": "Character brindle: Wren, a lamp-keeper on the Skarn causeway." },
+    "chatMessages": [
+      { "role": "assistant", "content": "ORP_ro_hist_asst" },
+      { "role": "user", "content": "ORP_ro_hist_user" }
+    ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "worldInfo": [],
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "assistant", "assistant", "user", "system", "system", "user"],
+    "messageCount": 7,
+    "mustContain": ["ORP_ro_inj_system", "ORP_ro_inj_user", "ORP_ro_inj_assistant"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "ORP_ro_main: keep the causeway lamps trimmed." },
+      { "role": "assistant", "content": "ORP_ro_hist_asst" },
+      { "role": "assistant", "content": "ORP_ro_inj_assistant" },
+      { "role": "user", "content": "ORP_ro_inj_user" },
+      { "role": "system", "content": "ORP_ro_inj_system" },
+      { "role": "system", "content": "Character brindle: Wren, a lamp-keeper on the Skarn causeway." },
+      { "role": "user", "content": "ORP_ro_hist_user" }
+    ]
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.2-depth-zero",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "continue",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 source, not captured. At depth 0, populationInjectionPrompts splices the role messages at reversed-array index 0 (openai.js:858-859); after the final reverse (openai.js:864) they land AFTER the newest chat message. This fixture uses a `continue` on an assistant tail (no pending user message) so ST and RPT agree exactly: RPT keeps a trailing USER action last (L4-last, ADR 0016 tracked divergence), but with no trailing user it also appends the depth-0 injection at the very bottom. Prose is RPT-authored + scrambled.",
+  "input": {
+    "description": "One system injection at depth 0 on an assistant tail (continue); lands after the last message.",
+    "preset": {
+      "name": "Oracle Depth Zero (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "ORP_dz_main: keep the reply flowing." },
+        { "identifier": "inj_zero", "name": "Depth Zero", "role": "system", "content": "ORP_dz_inj_bottom", "injection_position": 1, "injection_depth": 0 },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "inj_zero", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ]
+    },
+    "character": { "name": "Bex", "description": "Character brindle: Bex, a chronicler mid-sentence on the ledge." },
+    "chatMessages": [
+      { "role": "user", "content": "ORP_dz_hist_user" },
+      { "role": "assistant", "content": "ORP_dz_hist_asst" }
+    ],
+    "generationType": "continue",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "worldInfo": [],
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "user", "assistant", "system", "system"],
+    "messageCount": 5,
+    "mustContain": ["ORP_dz_inj_bottom"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "ORP_dz_main: keep the reply flowing." },
+      { "role": "user", "content": "ORP_dz_hist_user" },
+      { "role": "assistant", "content": "ORP_dz_hist_asst" },
+      { "role": "system", "content": "Character brindle: Bex, a chronicler mid-sentence on the ledge." },
+      { "role": "system", "content": "ORP_dz_inj_bottom" }
+    ]
+  }
+}

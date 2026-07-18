@@ -22,6 +22,8 @@ interface RegexState {
   /** Plot-recall (plot-block panel): display rules that ALSO admit placement 1 (user-input
    *  beautification), which `rules` (placement 2 / empty) drops. Applied to `FloorFile.plot_block`. */
   plotRules: RenderRegexRule[]
+  /** Reasoning-panel display rules (ST placement 6). Applied to the extracted <think> text. */
+  reasoningRules: RenderRegexRule[]
   scripts: RegexScriptInfo[]
   /** Display rules resolved for the active world/session (global ⊕ world ⊕ session). */
   load: (profileId: string, ctx?: ScopeContext) => Promise<void>
@@ -45,6 +47,8 @@ interface RegexState {
   apply: (content: string, ctx?: RegexApplyContext) => string
   /** Apply the plot-block display rules (placement 1 admitted) to a `plot_block` string. */
   applyPlot: (content: string, ctx?: RegexApplyContext) => string
+  /** Apply the reasoning display rules (ST placement 6) to extracted <think> text. */
+  applyReasoning: (content: string, ctx?: RegexApplyContext) => string
 }
 
 // Compiled-RegExp cache so we don't recompile every render.
@@ -69,17 +73,24 @@ let lastCtx: ScopeContext | undefined
 export const useRegexStore = create<RegexState>((set, get) => ({
   rules: [],
   plotRules: [],
+  reasoningRules: [],
   scripts: [],
 
   load: async (profileId, ctx) => {
     if (ctx !== undefined) lastCtx = ctx
-    // Resolve the display rules AND the plot-block rules (placement 1 admitted) for the same context
-    // in one pass, so the plot-block panel refreshes alongside the chat on scope/preset changes.
-    const [rules, plotRules] = await Promise.all([
+    // Resolve the display rules, the plot-block rules (placement 1 admitted), and the reasoning rules
+    // (placement 6) for the same context in one pass, so all panels refresh alongside the chat on
+    // scope/preset changes.
+    const [rules, plotRules, reasoningRules] = await Promise.all([
       window.api.getRenderRegex(profileId, lastCtx),
-      window.api.getPlotBlockRegex(profileId, lastCtx)
+      window.api.getPlotBlockRegex(profileId, lastCtx),
+      window.api.getReasoningRegex(profileId, lastCtx)
     ])
-    set({ rules: rules || [], plotRules: plotRules || [] })
+    set({
+      rules: rules || [],
+      plotRules: plotRules || [],
+      reasoningRules: reasoningRules || []
+    })
   },
 
   loadScripts: async (profileId) => {
@@ -144,6 +155,16 @@ export const useRegexStore = create<RegexState>((set, get) => ({
   // plot beautifier pastes ~148KB, then same-tier cleanups rescanned it; see PlotPanel).
   applyPlot: (content, ctx) =>
     applyRegexRules(content, get().plotRules, ctx ?? {}, {
+      compile: getRe,
+      marker: modeMarker,
+      freezePayloads: true
+    }),
+
+  // Reasoning display rules (ST placement 6) applied to the extracted <think> text. Same shared
+  // transform + payload-freeze as the other display paths so a reasoning-beautification card behaves
+  // consistently. Identity when no placement-6 rule is active (the common case).
+  applyReasoning: (content, ctx) =>
+    applyRegexRules(content, get().reasoningRules, ctx ?? {}, {
       compile: getRe,
       marker: modeMarker,
       freezePayloads: true

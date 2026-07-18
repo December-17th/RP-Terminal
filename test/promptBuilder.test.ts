@@ -1,11 +1,15 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import {
   buildPrompt,
+  buildPromptDetailed,
   buildScanText,
   collectRenderMarkers,
   estimateTokens,
   fitToBudget,
+  groupDepthInjections,
   mergeConsecutiveRoles,
+  resolveEffectivePrompts,
+  shouldTrigger,
   systemToUser,
   ChatMessage
 } from '../src/main/services/promptBuilder'
@@ -88,12 +92,12 @@ describe('fitToBudget', () => {
     expect(last(messages).content).toBe('u2')
   })
 
-  it('trims oldest HISTORY turns but never the static world-info prefix', () => {
-    // Large constant lore + a couple of small turns; a tiny budget must evict the old turns,
-    // not the lore (regression: a preset with a user-role block ahead of world_info used to make
-    // fitToBudget classify the lore as droppable "history").
+  it('trims oldest HISTORY turns but never the static pinned prefix (explicit 18c/18d policy)', () => {
+    // Large constant lore + a couple of small turns; a tiny budget must evict the old turns, not the
+    // lore. Post-18d the history-vs-static distinction is EXPLICIT DATA (budgetClasses), not the old
+    // hidden HISTORY_TAG: world info is classed `pinned` (never dropped), the turns `history`.
     const bigLore = 'L'.repeat(400)
-    const messages = buildPrompt({
+    const { messages, budgetClasses } = buildPromptDetailed({
       card: card(),
       preset: preset([blk('world_info'), blk('chat_history')]),
       lorebooks: [book([{ keys: [], content: bigLore, constant: true, enabled: true }])],
@@ -101,10 +105,14 @@ describe('fitToBudget', () => {
       userAction: 'latest turn'
     })
     expect(messages.some((m) => m.content.includes(bigLore))).toBe(true)
+    // The world-info block is pinned; the pending action (last message) is a history turn.
+    const wiIdx = messages.findIndex((m) => m.content.includes(bigLore))
+    expect(budgetClasses[wiIdx]).toBe('pinned')
+    expect(budgetClasses[messages.length - 1]).toBe('history')
 
-    const { messages: fit, dropped } = fitToBudget(messages, 1)
+    const { messages: fit, dropped } = fitToBudget(messages, 1, budgetClasses)
     expect(dropped).toBeGreaterThan(0)
-    expect(fit.some((m) => m.content.includes(bigLore))).toBe(true) // lore survived
+    expect(fit.some((m) => m.content.includes(bigLore))).toBe(true) // pinned lore survived
     expect(last(fit).content).toBe('latest turn') // latest turn survived
     expect(fit.some((m) => m.content === 'old user turn')).toBe(false) // oldest turn evicted
   })
@@ -156,6 +164,63 @@ describe('buildPrompt', () => {
     expect(messages.some((m) => m.role === 'assistant' && m.content === 'Hello traveler')).toBe(
       true
     )
+    expect(last(messages)).toEqual({ role: 'user', content: 'I wave back' })
+  })
+
+  // Owner directive / KNOWN-DIVERGENCES §10: when the assembled preset carries NO char_description
+  // marker, RPT still surfaces the character — it injects the SAME content the marker would produce as a
+  // `system` message IMMEDIATELY BEFORE the pending player action. History stays before it; a post-history
+  // block stays after the action. (Previously RPT injected nothing — the old §10 presence divergence.)
+  it('injects the character description before the player action when the preset omits the marker (§10)', () => {
+    const messages = buildPrompt({
+      card: card({ description: 'A knight.', post_history_instructions: 'POST-HISTORY REMINDER' }),
+      preset: preset([blk('', 'MAIN SYSTEM'), blk('chat_history'), blk('post_history')]),
+      lorebooks: [],
+      floors: [floor(0, '', 'Hello traveler')],
+      userAction: 'I wave back'
+    })
+    const actionIdx = messages.findIndex((m) => m.role === 'user' && m.content === 'I wave back')
+    // The injected char description sits immediately before the pending player action …
+    expect(messages[actionIdx - 1].role).toBe('system')
+    expect(messages[actionIdx - 1].content).toContain('Name: Aria')
+    expect(messages[actionIdx - 1].content).toContain('A knight.')
+    // … chat history stays before it, and the post-history block stays AFTER the action.
+    expect(messages.some((m, i) => m.content === 'Hello traveler' && i < actionIdx)).toBe(true)
+    expect(last(messages)).toEqual({ role: 'system', content: 'POST-HISTORY REMINDER' })
+    // Exactly one char-description message — no duplication.
+    expect(messages.filter((m) => m.content.includes('Name: Aria')).length).toBe(1)
+  })
+
+  it('does NOT inject a second char description when the marker is present (native/default unaffected)', () => {
+    const messages = buildPrompt({
+      card: card({ description: 'A knight.' }),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, '', 'Hello traveler')],
+      userAction: 'I wave back'
+    })
+    // The marker renders the description at ITS position (the head), not before the action, and only once.
+    expect(messages.filter((m) => m.content.includes('Name: Aria')).length).toBe(1)
+    expect(messages[0].content).toContain('Name: Aria')
+    expect(last(messages)).toEqual({ role: 'user', content: 'I wave back' })
+  })
+
+  // A char_description marker the author explicitly DISABLED is an opt-out, not an absence: the safety net
+  // must NOT re-add the description (that would duplicate what the author chose to suppress). The presence
+  // check reads the RAW prompt list, so a disabled marker still counts as PRESENT even though
+  // resolveEffectivePrompts drops it from the assembled blocks.
+  it('does NOT inject when a char_description marker is present but DISABLED (author opt-out)', () => {
+    const messages = buildPrompt({
+      card: card({ description: 'A knight.' }),
+      preset: preset([{ ...blk('char_description'), enabled: false }, blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, '', 'Hello traveler')],
+      userAction: 'I wave back'
+    })
+    // The disabled marker emits nothing at its position AND the safety net stays quiet — zero occurrences.
+    expect(messages.filter((m) => m.content.includes('Name: Aria')).length).toBe(0)
+    expect(messages.filter((m) => m.content.includes('A knight.')).length).toBe(0)
+    // The action still lands last; the disabled marker didn't push a stray system message before it.
     expect(last(messages)).toEqual({ role: 'user', content: 'I wave back' })
   })
 
@@ -606,8 +671,9 @@ describe('buildPrompt — EJS in constant lore (命定之诗 real-card shape)', 
   })
 
   it('keeps the PROSE of a lorebook entry whose trailing EJS block errors (艾莉亚 shape)', () => {
-    // 命定之诗's 艾莉亚 entry = lots of character prose + a trailing `await TavernHelper…` seeder that
-    // our sync/TavernHelper-less prompt engine can't run. The bad EJS must not take the prose down.
+    // 命定之诗's 艾莉亚 entry = lots of character prose + a trailing `await something()` seeder. The EJS
+    // profile now supports top-level await, so this is no longer a SyntaxError — `something` is simply
+    // undefined at build time → a runtime ReferenceError. Either way the bad EJS must not take the prose down.
     const messages = buildPrompt({
       card: card(),
       preset: preset([blk('char_description'), blk('world_info'), blk('chat_history')]),
@@ -625,7 +691,7 @@ describe('buildPrompt — EJS in constant lore (命定之诗 real-card shape)', 
       template: { vars: {}, globals: {}, constants: {} }
     })
     const wi = messages.find((m) => m.content.startsWith('World Info:'))
-    expect(wi?.content).toContain('艾莉亚是') // prose survived the EJS SyntaxError
+    expect(wi?.content).toContain('艾莉亚是') // prose survived the EJS runtime error
     expect(wi?.content).not.toContain('await') // the dead EJS block was stripped
   })
 })
@@ -924,6 +990,366 @@ describe('buildPrompt — recalled memory tail (§16.1)', () => {
   })
 })
 
+// --- Issue 11: distinct markers, triggers, overrides (ST 1.18.0 parity, ADR 0016) ---
+describe('buildPrompt — distinct WI / personality / scenario markers', () => {
+  it('renders the WI blob at world_info_before; world_info_after stays empty', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('world_info_before'),
+        blk('char_description'),
+        blk('world_info_after'),
+        blk('chat_history')
+      ]),
+      lorebooks: [book([{ keys: [], content: 'BLOB-LORE', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    const wi = messages.filter((m) => m.content.startsWith('World Info:'))
+    expect(wi).toHaveLength(1) // rendered once, not duplicated across the two markers
+    expect(wi[0].content).toContain('BLOB-LORE')
+    // It rendered at the BEFORE marker: it appears before char_description.
+    const wiIdx = messages.findIndex((m) => m.content.startsWith('World Info:'))
+    const charIdx = messages.findIndex((m) => m.content.startsWith('Name:'))
+    expect(wiIdx).toBeLessThan(charIdx)
+  })
+
+  it('world_info_after alone (no before-slot) falls back to rendering the blob', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([blk('char_description'), blk('world_info_after'), blk('chat_history')]),
+      lorebooks: [book([{ keys: [], content: 'AFTER-ONLY-LORE', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content.includes('AFTER-ONLY-LORE'))).toBe(true)
+  })
+
+  it('emits char_personality + scenario as their own messages with their own roles', () => {
+    const messages = buildPrompt({
+      card: card({ personality: 'stoic and wry', scenario: 'a rainy tavern' }),
+      preset: preset([
+        blk('char_description'),
+        blk('char_personality', '', 'user'),
+        blk('scenario', '', 'assistant'),
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    const pers = messages.find((m) => m.content === 'stoic and wry')
+    const scn = messages.find((m) => m.content === 'a rainy tavern')
+    expect(pers?.role).toBe('user')
+    expect(scn?.role).toBe('assistant')
+    // char_description must NOT re-fold personality/scenario when the distinct markers are present.
+    const desc = messages.find((m) => m.content.startsWith('Name:'))!
+    expect(desc.content).not.toContain('stoic and wry')
+    expect(desc.content).not.toContain('rainy tavern')
+  })
+
+  it('native char_description still folds personality/scenario when no distinct markers exist', () => {
+    const messages = buildPrompt({
+      card: card({ description: 'A knight.', personality: 'brave', scenario: 'a castle' }),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    const desc = messages.find((m) => m.content.startsWith('Name:'))!
+    expect(desc.content).toContain('Personality: brave')
+    expect(desc.content).toContain('Scenario: a castle')
+  })
+})
+
+// --- Issue 11 (M2 review must-fix 1): ST per-marker FORMAT strings for imported presets ---
+describe('buildPrompt — imported-preset ST marker format strings', () => {
+  // An imported ST preset carries the three format fields (the parser sets them, defaulting to ST
+  // defaults). Their presence flips the char/scenario/personality/world-info markers to ST-faithful
+  // formatting: bare charDescription, stringFormat(wi_format, …), substituteParams(personality|scenario).
+  const importPreset = (prompts: any[], fmt: Record<string, string> = {}): any => ({
+    name: 'Imported',
+    parameters: { temperature: 0.9, max_tokens: 100 },
+    wi_format: 'WI_FMT:\n{0}',
+    personality_format: 'PERS_FMT: {{personality}}',
+    scenario_format: 'SCN_FMT: {{scenario}}',
+    ...fmt,
+    prompts
+  })
+
+  it('renders a BARE charDescription (no Name:/Description: wrapper) for imports', () => {
+    const messages = buildPrompt({
+      card: card({ name: 'Kaevo', description: 'A quiet dock-warden.', personality: 'terse' }),
+      preset: importPreset([
+        blk('char_description'),
+        blk('char_personality', '', 'user'),
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    const desc = messages.find((m) => m.content === 'A quiet dock-warden.')
+    expect(desc).toBeTruthy() // bare description, no "Name:" prefix
+    expect(messages.some((m) => m.content.startsWith('Name:'))).toBe(false)
+  })
+
+  it('applies wi_format via stringFormat and personality_format/scenario_format via macros', () => {
+    const messages = buildPrompt({
+      card: card({ description: 'desc', personality: 'terse and wry', scenario: 'a rainy pier' }),
+      preset: importPreset([
+        blk('world_info_before'),
+        blk('char_description'),
+        blk('char_personality', '', 'user'),
+        blk('scenario', '', 'assistant'),
+        blk('chat_history')
+      ]),
+      lorebooks: [book([{ keys: [], content: 'LORE-BLOB', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'WI_FMT:\nLORE-BLOB')).toBe(true)
+    const pers = messages.find((m) => m.content === 'PERS_FMT: terse and wry')
+    const scn = messages.find((m) => m.content === 'SCN_FMT: a rainy pier')
+    expect(pers?.role).toBe('user')
+    expect(scn?.role).toBe('assistant')
+    // No native "World Info:\n" header leaks in on the import path.
+    expect(messages.some((m) => m.content.startsWith('World Info:'))).toBe(false)
+  })
+
+  it('an empty wi_format yields a bare WI blob (ST formatWorldInfo openai.js:787-788)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: importPreset([blk('world_info_before'), blk('chat_history')], { wi_format: '' }),
+      lorebooks: [book([{ keys: [], content: 'BARE-LORE', constant: true }])],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'BARE-LORE')).toBe(true)
+  })
+})
+
+describe('buildPrompt — injection_trigger (generation-type allow-list)', () => {
+  const trigBlk = (content: string, triggers: string[]): any => ({
+    ...blk('none', content),
+    identifier: content,
+    injection_trigger: triggers
+  })
+
+  it('drops a block whose trigger list excludes the current generation type', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        trigBlk('NORMAL-ONLY', ['normal']),
+        trigBlk('CONTINUE-ONLY', ['continue']),
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      generationType: 'normal'
+    })
+    expect(messages.some((m) => m.content === 'NORMAL-ONLY')).toBe(true)
+    expect(messages.some((m) => m.content === 'CONTINUE-ONLY')).toBe(false)
+  })
+
+  it('an empty trigger list fires for every generation type', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([trigBlk('ALWAYS', []), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      generationType: 'impersonation'
+    })
+    expect(messages.some((m) => m.content === 'ALWAYS')).toBe(true)
+  })
+
+  it('compares case-insensitively (ST lowercases the generation type)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([trigBlk('CONT', ['continue']), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go',
+      generationType: 'Continue'
+    })
+    expect(messages.some((m) => m.content === 'CONT')).toBe(true)
+  })
+})
+
+describe('buildPrompt — character-card system/jailbreak overrides', () => {
+  const litMain = (content: string, extra: any = {}): any => ({
+    ...blk('none', content),
+    identifier: 'main',
+    ...extra
+  })
+  const litJb = (content: string, extra: any = {}): any => ({
+    ...blk('none', content),
+    identifier: 'jailbreak',
+    ...extra
+  })
+
+  it('card system_prompt replaces main content; post_history replaces jailbreak', () => {
+    const messages = buildPrompt({
+      card: card({ system_prompt: 'CARD-SYSTEM', post_history_instructions: 'CARD-JAILBREAK' }),
+      preset: preset([litMain('PRESET-MAIN'), blk('chat_history'), litJb('PRESET-JB')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'CARD-SYSTEM')).toBe(true)
+    expect(messages.some((m) => m.content === 'PRESET-MAIN')).toBe(false)
+    expect(messages.some((m) => m.content === 'CARD-JAILBREAK')).toBe(true)
+    expect(messages.some((m) => m.content === 'PRESET-JB')).toBe(false)
+  })
+
+  it('forbid_overrides keeps the preset content (override ignored)', () => {
+    const messages = buildPrompt({
+      card: card({ system_prompt: 'CARD-SYSTEM' }),
+      preset: preset([litMain('PRESET-MAIN', { forbid_overrides: true }), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'PRESET-MAIN')).toBe(true)
+    expect(messages.some((m) => m.content === 'CARD-SYSTEM')).toBe(false)
+  })
+
+  it('no card override leaves the preset main content untouched (parity)', () => {
+    const messages = buildPrompt({
+      card: card(), // no system_prompt
+      preset: preset([litMain('PRESET-MAIN'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'PRESET-MAIN')).toBe(true)
+  })
+
+  it('a disabled main is a structural empty (no override, no wire message)', () => {
+    const messages = buildPrompt({
+      card: card({ system_prompt: 'CARD-SYSTEM' }),
+      preset: preset([
+        { ...blk('none', 'PRESET-MAIN'), identifier: 'main', enabled: false },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    // Disabled main is NOT card-overridden (ST isPromptDisabledForActiveCharacter guard) and,
+    // being empty, contributes nothing to the wire.
+    expect(messages.some((m) => m.content === 'CARD-SYSTEM')).toBe(false)
+    expect(messages.some((m) => m.content === 'PRESET-MAIN')).toBe(false)
+    expect(messages.some((m) => m.content === '')).toBe(false)
+  })
+
+  it('a card override can re-embed the preset content via {{original}} (issue 13; ST openai.js:1489-1492)', () => {
+    const messages = buildPrompt({
+      card: card({ system_prompt: 'HOUSE RULE.\n{{original}}' }),
+      preset: preset([litMain('BASE PROMPT'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [],
+      userAction: 'go'
+    })
+    expect(messages.some((m) => m.content === 'HOUSE RULE.\nBASE PROMPT')).toBe(true)
+    // The bare {{original}} is gone (resolved), and the preset text is not emitted on its own.
+    expect(messages.some((m) => m.content.includes('{{original}}'))).toBe(false)
+    expect(messages.some((m) => m.content === 'BASE PROMPT')).toBe(false)
+  })
+})
+
+describe('buildPrompt — {{lastUserMessage}} macro (issue 13)', () => {
+  it('resolves to the pending action, else the newest floor user turn', () => {
+    const withAction = buildPrompt({
+      card: card(),
+      preset: preset([blk('none', 'Prev: {{lastUserMessage}}'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, 'first question', 'reply')],
+      userAction: 'second question'
+    })
+    expect(withAction.some((m) => m.content === 'Prev: second question')).toBe(true)
+
+    const noAction = buildPrompt({
+      card: card(),
+      preset: preset([blk('none', 'Prev: {{lastUserMessage}}'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, 'only question', 'reply')],
+      userAction: ''
+    })
+    expect(noAction.some((m) => m.content === 'Prev: only question')).toBe(true)
+  })
+})
+
+describe('resolveEffectivePrompts (ST getPromptCollection + overrides)', () => {
+  const p = (identifier: string, over: any = {}): any => ({
+    identifier,
+    name: identifier,
+    role: 'system',
+    content: identifier,
+    enabled: true,
+    marker: 'none',
+    injection_depth: null,
+    injection_trigger: [],
+    forbid_overrides: false,
+    ...over
+  })
+
+  it('keeps a structural empty main when disabled, drops other disabled blocks', () => {
+    const out = resolveEffectivePrompts(
+      [p('main', { enabled: false }), p('note', { enabled: false })],
+      'normal',
+      {}
+    )
+    expect(out.map((b) => b.identifier)).toEqual(['main'])
+    expect(out[0].content).toBe('')
+    expect(out[0].enabled).toBe(true)
+  })
+
+  it('applies overrides only to enabled, non-forbidden main/jailbreak', () => {
+    const out = resolveEffectivePrompts(
+      [p('main'), p('jailbreak', { forbid_overrides: true })],
+      'normal',
+      { system: 'S', postHistory: 'J' }
+    )
+    expect(out.find((b) => b.identifier === 'main')!.content).toBe('S')
+    expect(out.find((b) => b.identifier === 'jailbreak')!.content).toBe('jailbreak') // forbidden
+  })
+
+  it('shouldTrigger: empty/absent list = all; else lowercased membership', () => {
+    expect(shouldTrigger({}, 'normal')).toBe(true)
+    expect(shouldTrigger({ injection_trigger: [] }, 'normal')).toBe(true)
+    expect(shouldTrigger({ injection_trigger: ['continue'] }, 'normal')).toBe(false)
+    expect(shouldTrigger({ injection_trigger: ['normal'] }, 'normal')).toBe(true)
+  })
+
+  it('records an exclude decision for every dropped block + denied override (invariant 2)', () => {
+    const calls: Array<{ id: string; reason: string }> = []
+    const journal: any = {
+      exclude: (source: any, reason: string) => calls.push({ id: source.id, reason })
+    }
+    const out = resolveEffectivePrompts(
+      [
+        p('note', { enabled: false }), // disabled → dropped
+        p('lore', { injection_trigger: ['continue'] }), // trigger-filtered for 'normal' → dropped
+        p('jailbreak', { forbid_overrides: true }) // override offered but forbidden → kept, denied
+      ],
+      'normal',
+      { postHistory: 'J' },
+      journal
+    )
+    // The denied-override block still ships; the two dropped blocks do not.
+    expect(out.map((b) => b.identifier)).toEqual(['jailbreak'])
+    // Every absence / denial left a machine-reason decision — nothing dropped silently.
+    expect(calls).toEqual([
+      { id: 'note', reason: 'disabled' },
+      { id: 'lore', reason: 'trigger-filtered:normal' },
+      { id: 'jailbreak', reason: 'override-denied' }
+    ])
+  })
+})
+
 // prompt.preset composer (context-epochs plan §3): the historyOverride / worldInfoOverride args on
 // buildPrompt. These are the ports assemblePrompt threads through; verified at the pure buildPrompt
 // level. (No-override parity is the generateParity*.test.ts gate, left untouched.)
@@ -984,8 +1410,8 @@ describe('buildPrompt — historyOverride / worldInfoOverride', () => {
     expect(last(messages)).toEqual({ role: 'user', content: 'the action' })
   })
 
-  it('historyOverride turns are markHistory-tagged so fitToBudget trims the oldest ones', () => {
-    const messages = buildPrompt({
+  it('historyOverride turns are classed history so fitToBudget trims the oldest ones', () => {
+    const { messages, budgetClasses } = buildPromptDetailed({
       card: card(),
       preset: preset([blk('chat_history')]),
       lorebooks: [],
@@ -996,8 +1422,15 @@ describe('buildPrompt — historyOverride / worldInfoOverride', () => {
         { role: 'assistant', content: 'A'.repeat(200) }
       ]
     })
-    const { messages: fit, dropped } = fitToBudget(messages, 5)
-    expect(dropped).toBeGreaterThan(0) // tagged history was trimmable
+    // Each override turn + the appended action is classed 'history' (the explicit-data successor to the
+    // retired HISTORY_TAG), so fitToBudget can drop the oldest. This preset omits the char_description
+    // marker, so RPT now injects the character description (here the folded native "Name: Aria") just
+    // before the action (owner directive, KNOWN-DIVERGENCES §10); that injected block is 'pinned', so
+    // not EVERY class is 'history' — the history turns are what fitToBudget trims.
+    expect(budgetClasses.filter((c) => c === 'history').length).toBe(3) // 2 override turns + the action
+    expect(budgetClasses.filter((c) => c === 'pinned').length).toBe(1) // the injected char description
+    const { messages: fit, dropped } = fitToBudget(messages, 5, budgetClasses)
+    expect(dropped).toBeGreaterThan(0)
     expect(last(fit).content).toBe('latest') // final action always kept
   })
 
@@ -1014,5 +1447,205 @@ describe('buildPrompt — historyOverride / worldInfoOverride', () => {
     })
     expect(messages.some((m) => m.content === 'World Info:\nOVERRIDE WORLD INFO')).toBe(true)
     expect(messages.some((m) => m.content.includes('SCANNED LORE'))).toBe(false)
+  })
+})
+
+// WP-2.2 (issue 12): ST `populationInjectionPrompts` grouping semantics (openai.js:801-866).
+// The pure grouping function is pinned directly; buildPrompt integration verifies positions + the
+// order-100 extension merge with RPT's existing lorebook depth injections.
+describe('groupDepthInjections (ST populationInjectionPrompts grouping)', () => {
+  it('same depth+order, three roles → net order assistant, user, system (openai.js:838 + reverse)', () => {
+    // ST builds roles [system,user,assistant] then reverses the whole array; the net is the reverse.
+    const out = groupDepthInjections([
+      { depth: 1, order: 100, role: 'system', content: 'S' },
+      { depth: 1, order: 100, role: 'user', content: 'U' },
+      { depth: 1, order: 100, role: 'assistant', content: 'A' }
+    ])
+    expect(out.map((g) => [g.role, g.content])).toEqual([
+      ['assistant', 'A'],
+      ['user', 'U'],
+      ['system', 'S']
+    ])
+  })
+
+  it('distinct orders at one depth → net ascending (ST sorts +b-+a descending, then reverses)', () => {
+    const out = groupDepthInjections([
+      { depth: 2, order: 30, role: 'system', content: 'O30' },
+      { depth: 2, order: 20, role: 'system', content: 'O20' },
+      { depth: 2, order: 10, role: 'system', content: 'O10' }
+    ])
+    expect(out.map((g) => g.content)).toEqual(['O10', 'O20', 'O30'])
+  })
+
+  it('same role+order contents join with a newline (openai.js:842-843 separator)', () => {
+    const out = groupDepthInjections([
+      { depth: 1, order: 100, role: 'system', content: 'first' },
+      { depth: 1, order: 100, role: 'system', content: 'second' }
+    ])
+    expect(out).toHaveLength(1)
+    expect(out[0].content).toBe('first\nsecond')
+  })
+
+  it('order-100 merges IN_CHAT extension content AFTER preset prompts, retaining every source id', () => {
+    const out = groupDepthInjections([
+      {
+        depth: 1,
+        order: 100,
+        role: 'system',
+        content: 'PRESET',
+        source: { kind: 'preset-block', id: 'p' }
+      },
+      {
+        depth: 1,
+        extension: true,
+        role: 'system',
+        content: 'EXT',
+        source: { kind: 'lorebook-entry', id: 'l' }
+      }
+    ])
+    expect(out).toHaveLength(1)
+    expect(out[0].content).toBe('PRESET\nEXT') // ST [rolePrompts, extensionPrompt] (openai.js:846-849)
+    expect(out[0].sources.map((s) => s.id)).toEqual(['p', 'l']) // multi-source lineage (issue 07)
+  })
+
+  it('extension content is always order 100 even when a lower-order preset shares the depth', () => {
+    const out = groupDepthInjections([
+      { depth: 1, order: 50, role: 'system', content: 'LOW' },
+      { depth: 1, extension: true, role: 'system', content: 'EXT' }
+    ])
+    // net-ascending: order-50 preset first, then the order-100 extension group.
+    expect(out.map((g) => g.content)).toEqual(['LOW', 'EXT'])
+  })
+})
+
+describe('buildPrompt — ST in-chat injection grouping (WP-2.2)', () => {
+  it('groups same-depth/same-order injections by role (assistant, user, system); action stays last', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'SYS', 'system'), identifier: 'a', injection_depth: 1 },
+        { ...blk('none', 'USR', 'user'), identifier: 'b', injection_depth: 1 },
+        { ...blk('none', 'ASST', 'assistant'), identifier: 'c', injection_depth: 1 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'go'
+    })
+    expect(last(messages).content).toBe('go')
+    const seq = messages.slice(-4, -1) // the three injected messages, just before the action
+    expect(seq.map((m) => [m.role, m.content])).toEqual([
+      ['assistant', 'ASST'],
+      ['user', 'USR'],
+      ['system', 'SYS']
+    ])
+  })
+
+  it('groups same-depth injections by injection_order, ascending net order (openai.js:833)', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'O10', 'system'), identifier: 'a', injection_depth: 2, injection_order: 10 },
+        { ...blk('none', 'O30', 'system'), identifier: 'b', injection_depth: 2, injection_order: 30 },
+        { ...blk('none', 'O20', 'system'), identifier: 'c', injection_depth: 2, injection_order: 20 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0'), floor(1, 'u1', 'a1')],
+      userAction: 'go'
+    })
+    const c = messages.map((m) => m.content)
+    expect(c.indexOf('O10')).toBeGreaterThan(0)
+    expect(c.indexOf('O10') < c.indexOf('O20') && c.indexOf('O20') < c.indexOf('O30')).toBe(true)
+  })
+
+  it('merges a lorebook depth entry (order-100 extension) with a same-depth preset block into one message', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'AUTHOR NOTE', 'system'), identifier: 'note', injection_depth: 1 },
+        blk('chat_history')
+      ]),
+      lorebooks: [book([{ keys: ['dragon'], content: 'DRAGON-LORE', insertion_depth: 1 }])],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'attack the dragon'
+    })
+    expect(last(messages).content).toBe('attack the dragon')
+    const merged = messages[messages.length - 2]
+    expect(merged.role).toBe('system')
+    // preset prompt first, then the IN_CHAT extension (World Info) content, joined by '\n'.
+    expect(merged.content).toBe('AUTHOR NOTE\nWorld Info:\nDRAGON-LORE')
+  })
+
+  it('depth 0 with a trailing user action: RPT keeps the action last (deliberate L4-last divergence from ST)', () => {
+    // ADR 0016 tracked divergence: ST places depth 0 AFTER the newest message; RPT keeps the pending
+    // action last so nothing volatile sits past the provider cache breakpoint.
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'D0', 'system'), identifier: 'd0', injection_depth: 0 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'go'
+    })
+    expect(last(messages).content).toBe('go')
+    expect(messages[messages.length - 2].content).toBe('D0')
+  })
+
+  it('depth 0 with no trailing user (continue): injects after the last message, matching ST', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'D0', 'system'), identifier: 'd0', injection_depth: 0 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: ''
+    })
+    expect(last(messages).content).toBe('D0')
+  })
+
+  it('a very deep injection (depth 10000) clamps to the top of the chat region', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'DEEP', 'system'), identifier: 'deep', injection_depth: 10000 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0')],
+      userAction: 'go'
+    })
+    const c = messages.map((m) => m.content)
+    expect(c.indexOf('DEEP')).toBeLessThan(c.indexOf('u0')) // above the first chat message
+    expect(last(messages).content).toBe('go')
+  })
+
+  it('a near-history-length depth injects high in the chat region', () => {
+    const messages = buildPrompt({
+      card: card(),
+      preset: preset([
+        blk('char_description'),
+        { ...blk('none', 'NEAR', 'system'), identifier: 'near', injection_depth: 4 },
+        blk('chat_history')
+      ]),
+      lorebooks: [],
+      floors: [floor(0, 'u0', 'a0'), floor(1, 'u1', 'a1')],
+      userAction: 'go'
+    })
+    const c = messages.map((m) => m.content)
+    // history is [u0,a0,u1,a1,go]; depth 4 sits one message below the top of the chat region.
+    expect(c.indexOf('u0')).toBeLessThan(c.indexOf('NEAR'))
+    expect(c.indexOf('NEAR')).toBeLessThan(c.indexOf('a0'))
+    expect(last(messages).content).toBe('go')
   })
 })

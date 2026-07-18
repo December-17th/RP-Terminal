@@ -7,6 +7,7 @@ import {
   parseResponseNode,
   applyState
 } from '../../src/main/services/nodes/builtin/generationNodes'
+import { wrapMessages } from '../../src/main/services/nodes/promptArtifact'
 import { RunContext } from '../../src/main/services/nodes/types'
 
 vi.mock('../../src/main/services/generation/callModel', () => ({
@@ -63,6 +64,39 @@ describe('llm.sample', () => {
     const result = await llmSample.run(baseCtx, { gen: {}, sendMessages: [], params: {} })
 
     expect(result).toEqual({ outputs: {} })
+  })
+
+  // 18e SEAM 2 — the pre-dispatch transformation seam reads the artifact's `shaped` flag.
+  describe('pre-dispatch shaping seam (18e)', () => {
+    // A native (anthropic) turn: providerShape merges consecutive same-role messages. gen carries the
+    // real settings providerShape reads.
+    const gen = {
+      profileId: 'p1',
+      settings: {
+        api: { provider: 'anthropic', endpoint: '', api_key: '', model: '' },
+        generation: {}
+      }
+    }
+    const rows: { role: 'user'; content: string }[] = [
+      { role: 'user', content: 'a' },
+      { role: 'user', content: 'b' }
+    ]
+
+    it('shapes an UNSHAPED Prompt artifact exactly once before dispatch', async () => {
+      vi.mocked(callModel).mockResolvedValue({ raw: 'ok', rawUsage: {}, stopped: false } as never)
+      const artifact = wrapMessages(rows, { kind: 'pipeline', id: 't' }, false)
+      await llmSample.run(baseCtx, { gen, prompt: artifact, params: {} })
+      // The two consecutive user rows were merged by the seam's single providerShape pass.
+      expect(vi.mocked(callModel).mock.lastCall![1]).toEqual([{ role: 'user', content: 'a\nb' }])
+    })
+
+    it('passes an already-shaped artifact through untouched (never double-shapes)', async () => {
+      vi.mocked(callModel).mockResolvedValue({ raw: 'ok', rawUsage: {}, stopped: false } as never)
+      const artifact = wrapMessages(rows, { kind: 'pipeline', id: 't' }, true)
+      await llmSample.run(baseCtx, { gen, prompt: artifact, params: {} })
+      // shaped: true → no re-shape; the rows reach the provider exactly as authored.
+      expect(vi.mocked(callModel).mock.lastCall![1]).toEqual(rows)
+    })
   })
 })
 

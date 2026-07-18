@@ -72,6 +72,19 @@ export const resolveYuzuMaxTokens = (settings: Settings): number => {
     : YUZU_DEFAULT_MAX_TOKENS
 }
 
+/** Default rolling-retention window for forensic execution records (issue 09): keep the most-recent
+ *  N generations per chat. Player-adjustable via `settings.records.retention`. */
+export const DEFAULT_EXECUTION_RECORD_RETENTION = 50
+
+/** The effective execution-record retention: the stored setting floored, or the default when
+ *  absent/invalid (non-finite or negative). 0 is a valid value meaning "keep none" (disabled). */
+export const resolveExecutionRecordRetention = (settings: Settings): number => {
+  const v = settings.records?.retention
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0
+    ? Math.floor(v)
+    : DEFAULT_EXECUTION_RECORD_RETENTION
+}
+
 export const getDefaultSettings = (): Settings => ({
   api: {
     provider: 'openai',
@@ -181,7 +194,9 @@ export const getDefaultSettings = (): Settings => ({
   },
   pricing: {},
   // Diagnostics: full untruncated log capture is OFF by default (detail is bounded).
-  logs: { full_trace: false }
+  logs: { full_trace: false },
+  // Forensic execution records: keep the most-recent 50 generations per chat (issue 09).
+  records: { retention: DEFAULT_EXECUTION_RECORD_RETENTION }
 })
 
 /**
@@ -227,6 +242,10 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   yuzu.max_tokens = resolveYuzuMaxTokens({ yuzu } as Settings)
   const pricing = { ...d.pricing, ...(stored.pricing || {}) }
   const logs = { ...d.logs, ...(stored.logs || {}) }
+  // Execution-record retention: merge stored over the default, then coerce an invalid window back to
+  // the default (a corrupt value must not silently disable or unbound the forensic journal).
+  const records = { ...d.records, ...(stored.records || {}) }
+  records.retention = resolveExecutionRecordRetention({ records } as Settings)
 
   // Agent mode: accept the three-way enum; migrate the legacy boolean `enabled` toggle
   // (true → manual), else default off.
@@ -315,7 +334,8 @@ export const normalize = (stored: Partial<Settings>): Settings => {
     yuzu,
     combat,
     pricing,
-    logs
+    logs,
+    records
   }
 }
 

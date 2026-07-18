@@ -39,7 +39,10 @@ export const registerScriptIpc = (ipcMain: IpcMain): void => {
   // The merged runtime script set for a chat: card-embedded (World) + active-scope store
   // scripts (raw — remote `import`s load natively in the sandbox under the remoteScripts
   // grant, 1B). Also reports the remote hosts those scripts import from (grant + CSP).
-  ipcMain.handle('get-runtime-scripts', (_, profileId, cardId, chatId) => {
+  // `isolatedRealm` = the caller is the WCV transport (the isolated card realm). Only then do high-trust
+  // remote-code scripts (ADR 0017) resolve; the inline transport (app renderer) omits it, so they stay out.
+  ipcMain.handle('get-runtime-scripts', (_, profileId, cardId, chatId, isolatedRealm) => {
+    const presetId = getActivePresetId(profileId)
     const card = cardId ? characterService.getCharacter(profileId, cardId) : null
     const cardScripts = (card?.data.extensions?.rp_terminal?.scripts || [])
       .filter((s) => s && s.enabled !== false)
@@ -49,9 +52,21 @@ export const registerScriptIpc = (ipcMain: IpcMain): void => {
       ...scriptService.getActiveScripts(profileId, {
         cardId,
         chatId,
-        presetId: getActivePresetId(profileId)
+        presetId,
+        isolatedRealm: isolatedRealm === true
       })
     ]
-    return { scripts, remoteHosts: scriptService.runtimeImportHosts(scripts) }
+    // The subset of `scripts` authorized by the ACTIVE preset's per-preset high-trust grant (ADR 0017).
+    // These run under the PRESET's trust — not the card's — so the card-trust consent gate must never
+    // block them (issue 19). High-trust scripts only resolve in the isolated realm (so this is empty
+    // otherwise), which keeps this a strict subset of `scripts` above (the remainder is card-trust-gated).
+    const presetHighTrustScripts =
+      isolatedRealm === true && presetId
+        ? scriptService
+            .listScripts(profileId)
+            .filter((s) => s.highTrust && s.scope === 'preset' && s.owner === presetId && !s.disabled)
+            .map((s) => ({ name: s.name, code: s.code, ...(s.id ? { id: s.id } : {}) }))
+        : []
+    return { scripts, remoteHosts: scriptService.runtimeImportHosts(scripts), presetHighTrustScripts }
   })
 }

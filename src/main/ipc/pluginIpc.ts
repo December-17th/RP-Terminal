@@ -1,5 +1,6 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import * as pluginService from '../services/pluginService'
+import * as extensionSettingsService from '../services/extensionSettingsService'
 import * as scriptApiService from '../services/scriptApiService'
 import * as pluginHostService from '../services/pluginHostService'
 import * as pluginStorageService from '../services/pluginStorageService'
@@ -24,6 +25,19 @@ export const registerPluginIpc = (ipcMain: IpcMain): void => {
   })
   ipcMain.handle('plugin-globals-set', (_, profileId, vars) => {
     pluginService.setGlobalVars(String(profileId), vars && typeof vars === 'object' ? vars : {})
+    return true
+  })
+  // TavernHelper extensionSettings durable backing (issue 19) — the inline card host + any extension-style
+  // card. SYNC read at boot (mirrors plugin-globals-get-sync); whole-object write flushed by
+  // saveSettingsDebounced.
+  ipcMain.on('extension-settings-get-sync', (e, profileId) => {
+    e.returnValue = extensionSettingsService.getExtensionSettings(String(profileId))
+  })
+  ipcMain.handle('extension-settings-set', (_, profileId, settings) => {
+    extensionSettingsService.setExtensionSettings(
+      String(profileId),
+      settings && typeof settings === 'object' ? settings : {}
+    )
     return true
   })
   ipcMain.handle('plugin-get-messages', (_, profileId, chatId) =>

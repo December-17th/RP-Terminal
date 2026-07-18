@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.6-spreset-macronest",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom" },
+  "note": "SYNTHESIZED from docs/research/spreset-behavior-2026-07-17.md §MacroNest (clean-room; no SPreset source read). Prose is RPT-authored + scrambled; no ST default utility strings. MacroNest gates RECURSIVE innermost-first macro expansion (spec:523-566). RPT maps this onto its multi-pass macro engine (issue 13): `MacroNest:true`/absent keeps RPT's default nesting cap (a macro whose expansion is itself a macro resolves inside-out); `MacroNest:false` runs a SINGLE non-nesting pass, leaving an inner macro literal — matching SPreset's original shallow substituteParams. The true-vs-false pass-count divergence and the inside-out resolution are pinned directly by test/spreset.test.ts (they need a seeded chat var, which the conformance fixture schema has no channel for). This fixture pins the simpler surface: a MacroNest-carrying preset assembles and its core macros expand ({{char}} → the card name). Structural-only until the conformance adapter is wired.",
+  "input": {
+    "description": "Preset with SPreset MacroNest:true and a system prompt embedding core macros; asserts the macro engine ran.",
+    "preset": {
+      "name": "Oracle SPreset MacroNest (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "Summon {{char}} and hold the lantern-oath." },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ],
+      "extensions": {
+        "SPreset": { "MacroNest": true }
+      }
+    },
+    "character": { "name": "Vael", "description": "Vael, keeper of the tide-glass at Sill." },
+    "chatMessages": [{ "role": "user", "content": "Begin the rite." }],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom" },
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "system", "user"],
+    "messageCount": 3,
+    "mustContain": ["Summon Vael and hold the lantern-oath.", "Begin the rite."],
+    "mustNotContain": ["{{char}}", "[Start a new Chat]"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "Summon Vael and hold the lantern-oath." },
+      { "role": "system", "content": "Vael, keeper of the tide-glass at Sill." },
+      { "role": "user", "content": "Begin the rite." }
+    ]
+  }
+}

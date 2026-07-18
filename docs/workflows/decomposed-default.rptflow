@@ -3,7 +3,7 @@
   "name": "Decomposed Generation",
   "version": 1,
   "schemaVersion": 1,
-  "description": "The default pipeline with the prompt built from visible components instead of the opaque Assemble Prompt node: card + persona + lorebook search compose a system frame, history and the pending user action follow as messages. Edit the 'frame' node to reshape the prompt. NOT byte-identical to the builtin: no ST preset prompt-order walk, no prompt regex passes, no cache-level freezing, no budget trimming (History count is the cap).",
+  "description": "The default pipeline with the prompt built from visible components instead of the opaque Assemble Prompt node: card + persona + lorebook search compose a system frame, history and the pending user action follow as messages. Edit the 'frame' node to reshape the prompt. This example forgoes the assemble node's ST-faithful assembly BY DESIGN, for legibility: the ST preset prompt-order walk, the prompt regex passes, and budget trimming now live in the prompt.assemble Prompt port (wire that node, or a messages.trim node, to opt back in) — here History count (12) is the cap. Cache-level freezing is the one semantic that remains unimplemented anywhere.",
   "nodes": [
     { "id": "ctx", "type": "input.context", "position": { "x": 0, "y": 380 } },
     { "id": "action", "type": "context.action", "position": { "x": 280, "y": 40 } },

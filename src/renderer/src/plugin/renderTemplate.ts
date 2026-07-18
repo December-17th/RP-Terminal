@@ -53,6 +53,11 @@ export function buildRenderContext(vars: Record<string, unknown>): TemplateConte
  * - render-time off / this mode off → leave the text raw (unprocessed),
  * - otherwise → evaluate against the floor's variables.
  * `mode` selects the per-mode toggle (final pass on complete vs live during streaming).
+ *
+ * This is the ST-Prompt-Template RENDER phase, so `<%=` uses the real HTML escaper (`escape: 'html'`) —
+ * a `<%= value %>` interpolated into displayed message text is escaped so it can't break the rendered DOM,
+ * while `<%- raw %>` still emits raw HTML. Generation and the card `EjsTemplate` bridge keep the identity
+ * escaper (`buildRenderContext` default), so `<%=` == `<%-` in prompt text. See docs/rpt-api.md §EJS.
  */
 export function renderTemplate(
   text: string,
@@ -65,5 +70,5 @@ export function renderTemplate(
   const r = t?.render
   const modeOn = mode === 'final' ? r?.final_pass !== false : r?.live !== false
   if (r?.enabled === false || !modeOn) return text
-  return evalTemplate(text, buildRenderContext(vars))
+  return evalTemplate(text, { ...buildRenderContext(vars), escape: 'html' })
 }

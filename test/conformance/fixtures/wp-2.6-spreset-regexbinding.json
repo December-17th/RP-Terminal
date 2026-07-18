@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.6-spreset-regexbinding",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom" },
+  "note": "SYNTHESIZED from docs/research/spreset-behavior-2026-07-17.md §RegexBinding (clean-room; no SPreset source read). Prose is RPT-authored + scrambled; no ST default utility strings. Pins that regex stored INSIDE the preset under `extensions.SPreset.RegexBinding.regexes[]` (core-ST-shaped, placement 1 = user input) is INSTALLED and APPLIED — unblocking a preset whose only regex lives here. RPT installs it as preset-scoped regex tagged `origin:'spreset'` (kept DISTINCT from core `regex_scripts`) and, because RegexBinding is active, selects the `preset-first` regex tier order (spec default [2,0,1] = preset → global → character) — an explicit ordering MODE, not the upstream Object.values monkeypatch. Here the bound rule rewrites `kithara` → `lyre` on the user turn. Structural-only until the conformance adapter is wired (rptAdapter still returns null); the preset-first ORDER and the merge itself are pinned by unit tests (test/regexOrder.test.ts, test/spreset.test.ts).",
+  "input": {
+    "description": "Preset carrying a single SPreset RegexBinding rule (placement 1) that rewrites a token on the user turn; one system prompt; one user message.",
+    "preset": {
+      "name": "Oracle SPreset RegexBinding (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "Keep Vael's tide-cadence steady." },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ],
+      "extensions": {
+        "SPreset": {
+          "RegexBinding": {
+            "enabled": true,
+            "activationOrder": [2, 0, 1],
+            "regexes": [
+              {
+                "scriptName": "[s] kithara→lyre",
+                "findRegex": "/kithara/g",
+                "replaceString": "lyre",
+                "placement": [1],
+                "markdownOnly": false,
+                "promptOnly": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    "character": { "name": "Vael", "description": "Vael, keeper of the tide-glass at Sill." },
+    "chatMessages": [{ "role": "user", "content": "Tune the kithara before dusk." }],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom" },
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "system", "user"],
+    "messageCount": 3,
+    "mustContain": ["Keep Vael's tide-cadence steady.", "Tune the lyre before dusk."],
+    "mustNotContain": ["kithara", "[Start a new Chat]"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "Keep Vael's tide-cadence steady." },
+      { "role": "system", "content": "Vael, keeper of the tide-glass at Sill." },
+      { "role": "user", "content": "Tune the lyre before dusk." }
+    ]
+  }
+}

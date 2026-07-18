@@ -1,42 +1,41 @@
-// Pure section-shaping for the next-prompt injection preview (agent-packs plan WP3.4). Given the
-// assembled prompt (the flat ChatMessage[] prompt.assemble produced), the composition metadata (which
-// pack fed which prompt-assembly lane — ADR 0002 attribution-by-construction), and the engine's node
-// outputs (the exact pack rejoin values), classify the prompt into attributed sections + list what was
-// omitted. Side-effect-free + main/renderer-free imports so it is unit-testable directly under Node
+// Pure section-shaping for the next-prompt injection preview (agent-packs plan WP3.4; issue 08 —
+// "preview becomes a reader of the execution record"). Given the forensic Execution Record the
+// assembler produced (issue 07), the composition metadata (which pack fed which prompt-assembly lane
+// — ADR 0002 attribution-by-construction), and the engine's node outputs (the exact pack rejoin
+// values), decompose the assembly into attributed sections + an omitted list. Side-effect-free +
+// main/renderer-free imports so it is unit-testable directly under Node
 // (test/generation/previewSections.test.ts); the preview SERVICE (previewService.ts) does the engine
-// run and calls this to shape the result.
+// run, captures the record, and calls this to shape the result.
 //
-// GROUNDING — the REAL section structure (verified against src/main/services/promptBuilder.ts):
-//   `prompt.assemble` → `buildPrompt` returns a FLAT `ChatMessage[]` (role + content). There is NO
-//   per-section provenance object; the only structural signals are the message ROLE and content-PREFIX
-//   conventions the builder writes:
-//     · `World Info:\n…`        — a world_info preset marker OR the safety-net (promptBuilder.ts)
-//     · `Example dialogue:\n…`  — the mes_example marker (promptBuilder.ts)
-//     · persona                 — RAW description at a persona_description marker (no header), OR
-//                                 `[<name>'s Persona]\n…` from the header-ed safety-net (promptBuilder.ts)
-//     · char description        — `Name: …\nDescription: …` (buildCharDescription, promptBuilder.ts)
-//     · history turns           — role user/assistant, appended by buildHistory (promptBuilder.ts:208)
-//     · preset literal blocks    — arbitrary content, authored role (promptBuilder.ts:559)
-//     · the memory `block` tail  — a system message injected just before the final user action
-//                                  (promptBuilder.ts:637-640) — this is the `prompt-assembly.block` lane.
-//   So sectioning is HEURISTIC over role + prefix. Pack attribution, by contrast, is EXACT: a pack's
-//   rejoin output value (read from the engine outputs map by the rejoinEdges' `from` end) is the literal
-//   text/entries it contributed, so we attribute by matching that value into the assembled messages —
-//   the attributable channel ADR 0002 promises.
+// GROUNDING — this reads the RECORD, it does NOT guess by content. The old shaper classified a FLAT
+// `ChatMessage[]` by content prefix (`World Info:\n`, `Example dialogue:\n`, `Name: `), a persona
+// regex, and substring/exact-text matching — a heuristic that could not tell a pack's world-info from
+// the card's, nor decompose a merged system block. The Execution Record removes the guessing: every
+// controlled transform is journaled with its REAL source identity (a card field, a preset block's
+// `identifier`, a persona/memory marker, a lorebook entry, the history span) at the moment it placed
+// its text (`src/shared/executionRecord.ts`; the journal call sites in `promptBuilder.ts`). So a
+// section's kind + source is the entry's OWN `source`, not a content sniff. Bulk history is hashed in
+// the record (perf) so its per-turn text is read from `record.wire` (the authoritative wire copy),
+// still without content matching — the turns are the wire's non-system messages, the pending action is
+// the last user turn. Pack attribution stays by-construction: a pack that rejoined the `entries` lane
+// merged into the top-level World Info block, one that rejoined the `block` lane merged into the memory
+// tail — the composition meta names the lane, so the matching narrator section is re-attributed to the
+// pack WITHOUT scanning its text.
 
+import { createHash } from 'node:crypto'
 import type { CompositionMeta } from '../../../shared/workflow/compose'
 import type { CheckpointId } from '../../../shared/workflow/attachments'
-
-/** One message of the assembled prompt (role + content) — the shape prompt.assemble emits. */
-export interface AssembledMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-}
+import type {
+  ExecutionRecord,
+  RecordContent,
+  RecordEntry,
+  RecordMessage,
+  RecordSource
+} from '../../../shared/executionRecord'
 
 /** Where a section's text came from. `narrator` = the base workflow's own assembly (card / persona /
- *  world-info / history / preset). `pack` = a gate-open pack's prompt-assembly rejoin (packId + name).
- *  `lorebook`/`memory` are reserved for future finer attribution; today narrator world-info is reported
- *  as `narrator` (we cannot split matched-lorebook from card-authored world-info from the flat prompt). */
+ *  world-info / history / preset / memory). `pack` = a gate-open pack's prompt-assembly rejoin
+ *  (packId + name). `lorebook`/`memory` are reserved for future finer attribution. */
 export interface SectionSource {
   kind: 'narrator' | 'pack' | 'lorebook' | 'memory'
   packId?: string
@@ -71,11 +70,12 @@ export interface PreviewSection {
   text: string
 }
 
-/** Something that would have contributed but did not, with a machine reason. `gate` = a pack that
- *  declares a prompt-assembly rejoin but whose gate is CLOSED for this chat (so it is not in the
- *  effective graph at all — enumerated from the closed-pack list the service passes in). */
+/** Something that would have contributed but did not, with a machine reason. `gate` = a pack whose gate
+ *  is CLOSED for this chat (not in the effective graph); `empty` = a pack that produced no text this
+ *  run (or whose text never reached the prompt); `budget` = history the trim stage dropped to fit the
+ *  context window (the record's `trim` entry). */
 export interface OmittedItem {
-  /** Localizable label: for a gated pack this is its name; the renderer prefixes the reason. */
+  /** Localizable label: for a gated pack this is its name; for a trim it is the stage's summary. */
   label: string
   reason: 'gate' | 'empty' | 'budget'
   source?: SectionSource
@@ -86,51 +86,6 @@ export interface OmittedItem {
 export interface GatedInjector {
   packId: string
   name: string
-}
-
-/** The character-card description block starts with `Name: ` (buildCharDescription). */
-const CARD_PREFIX = 'Name: '
-const WORLD_INFO_PREFIX = 'World Info:\n'
-const EXAMPLE_PREFIX = 'Example dialogue:\n'
-// Persona is `[<name>'s Persona]\n…` — matched by the bracketed "'s Persona]" fragment (name varies).
-const PERSONA_RE = /^\[[^\]]*'s Persona\]\n/
-
-/** Does a flat assembled message carry the raw persona as a complete newline-delimited block?
- * Prompt assembly has no per-message provenance, so preview attribution must use content. Exact equality
- * covers an unmerged marker; newline boundaries cover same-role merging with adjacent authored
- * envelopes while avoiding a broad substring match inside unrelated prose. */
-const messageCarriesPersona = (content: string, personaText?: string): boolean => {
-  const persona = personaText?.trim().replace(/\r\n/g, '\n')
-  if (!persona) return false
-  const message = content.trim().replace(/\r\n/g, '\n')
-  if (message === persona) return true
-  let from = 0
-  while (from <= message.length - persona.length) {
-    const at = message.indexOf(persona, from)
-    if (at === -1) return false
-    const startsAtBoundary = at === 0 || message[at - 1] === '\n'
-    const end = at + persona.length
-    const endsAtBoundary = end === message.length || message[end] === '\n'
-    if (startsAtBoundary && endsAtBoundary) return true
-    from = at + 1
-  }
-  return false
-}
-
-/** Classify one narrator message using the builder's prefixes plus the active-persona hint. Prompt
- * Manager role overrides mean a raw persona marker may be system, user, or assistant. */
-const classifyNarrator = (
-  role: AssembledMessage['role'],
-  content: string,
-  personaText?: string
-): SectionKind => {
-  if (PERSONA_RE.test(content)) return 'persona'
-  if (messageCarriesPersona(content, personaText)) return 'persona'
-  if (role === 'user' || role === 'assistant') return 'history'
-  if (content.startsWith(WORLD_INFO_PREFIX)) return 'worldInfo'
-  if (content.startsWith(EXAMPLE_PREFIX)) return 'card'
-  if (content.startsWith(CARD_PREFIX)) return 'card'
-  return 'system'
 }
 
 /** Read a pack's contributed prompt-assembly value from the engine outputs map, keyed by its rejoin
@@ -144,8 +99,8 @@ export function packRejoinValue(
 }
 
 /** Coerce a pack's rejoin value (Text `block` lane, or LorebookEntry[] `entries` lane) to the literal
- *  string(s) it injected, for content-matching against the assembled messages. The `entries` lane
- *  carries objects with a `content` field (LorebookEntry); the `block` lane is a plain string. */
+ *  string(s) it injected. The `entries` lane carries objects with a `content` field (LorebookEntry);
+ *  the `block` lane is a plain string. */
 export function rejoinTexts(value: unknown): string[] {
   if (typeof value === 'string') return value.trim() ? [value] : []
   if (Array.isArray(value)) {
@@ -159,8 +114,9 @@ export function rejoinTexts(value: unknown): string[] {
   return []
 }
 
-/** Per-pack attribution derived from meta.composition: which prompt-assembly rejoin edges a pack
- *  contributed, and the literal texts it produced (from the engine outputs). Only packs that landed a
+/** Per-pack attribution derived from meta.composition: which prompt-assembly rejoin edge a pack
+ *  contributed on, the lane it landed (`to.port`: `entries` → top-level World Info, `block` → memory
+ *  tail), and the literal texts it produced (from the engine outputs). Only packs that landed a
  *  prompt-assembly rejoin appear here. */
 export interface PackInjection {
   packId: string
@@ -168,8 +124,11 @@ export interface PackInjection {
   checkpoint: CheckpointId
   /** The producing (prefixed) node + port whose output value the pack rejoined with. */
   from: { node: string; port: string }
-  /** The literal contributed text(s), for matching into the assembled prompt. Empty when the pack's
-   *  branch produced nothing this run (fail-open — attributed as omitted-empty, not a section). */
+  /** The assemble anchor node + LANE port the rejoin landed on (`entries` | `block`) — the by-
+   *  construction signal for WHICH narrator section the pack merged into. */
+  to: { node: string; port: string }
+  /** The literal contributed text(s). Empty when the pack's branch produced nothing this run
+   *  (fail-open — surfaced as omitted-empty, not a section). */
   texts: string[]
 }
 
@@ -192,6 +151,7 @@ export function packInjections(
         name: packNames[packId] ?? packId,
         checkpoint: edge.checkpoint,
         from: { node: edge.from.node, port: edge.from.port },
+        to: { node: edge.to.node, port: edge.to.port },
         texts: rejoinTexts(value)
       })
     }
@@ -200,17 +160,15 @@ export function packInjections(
 }
 
 export interface ShapeArgs {
-  /** The assembled prompt (prompt.assemble's sendMessages). */
-  messages: AssembledMessage[]
-  /** Per-message estimated token counts (parallel to `messages`) — the service computes these with the
-   *  codebase's estimateTokens so this pure module stays import-light. */
-  tokensPerMessage: number[]
+  /** The forensic Execution Record the assembler produced for this (previewed) turn. */
+  record: ExecutionRecord
   /** Pack injections at prompt-assembly (from packInjections). */
   injections: PackInjection[]
   /** Gate-closed packs that WOULD inject at prompt-assembly (enumerated omitted-by-gate). */
   gatedInjectors: GatedInjector[]
-  /** Active persona description — lets a header-less (marker-placed) persona block classify as `persona`. */
-  personaText?: string
+  /** Estimate a text's token count (the codebase's char heuristic; passed so this module stays
+   *  import-light — the app has no real tokenizer). */
+  estimate: (text: string) => number
 }
 
 export interface PreviewShape {
@@ -218,70 +176,192 @@ export interface PreviewShape {
   omitted: OmittedItem[]
 }
 
-/** Does `content` contain (or equal) any of the pack's contributed texts? Substring match because the
- *  builder wraps injected values (`World Info:\n<entries>` / the block verbatim) — the pack text is a
- *  sub-run of the final message. */
-const messageCarriesInjection = (content: string, texts: string[]): boolean =>
-  texts.some((t) => content.includes(t.trim()) || t.includes(content.trim()))
+/** Map a record entry's REAL source to the preview section-kind. This is attribution by identity — the
+ *  entry says what it is (a card field, a preset block, a persona/memory marker, the history span), so
+ *  there is no content sniffing. */
+const sectionKindFor = (src: RecordSource): SectionKind => {
+  switch (src.kind) {
+    case 'card-field':
+      return 'card'
+    case 'persona':
+      return 'persona'
+    case 'memory':
+      return 'memory'
+    case 'history':
+      return 'history'
+    case 'lorebook-entry':
+      return 'worldInfo'
+    case 'marker':
+      return src.id.startsWith('world_info') ? 'worldInfo' : 'system'
+    case 'preset-block':
+      return 'system'
+    case 'pipeline':
+      return 'system'
+    default:
+      return 'other'
+  }
+}
+
+const sha256 = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex')
+
+/** Slice exactly `bytes` UTF-8 bytes out of `s` starting at char index `startCharIdx`. Returns '' when
+ *  the tail is shorter than `bytes` (nothing to reconstruct). A byte cut that lands mid-character yields
+ *  replacement chars whose hash won't match the span's — the caller's hash guard rejects it, so this is
+ *  safe to attempt speculatively. */
+const sliceBytes = (s: string, startCharIdx: number, bytes: number): string => {
+  const rest = Buffer.from(s.slice(startCharIdx), 'utf8')
+  if (rest.length < bytes) return ''
+  return rest.subarray(0, bytes).toString('utf8')
+}
+
+/** Rehydrate a hash-referenced span's FULL text from the authoritative wire (issue 08 M1 review finding
+ *  1). A bulk/opaque span at/above INLINE_LIMIT is stored as a `ref` (hash + byte length + an 80-char
+ *  anchor prefix), NOT the text — so the record stays small for storage (issue 09 wire dedup). But the
+ *  full text still lives in `record.wire`, possibly folded into a larger role-merged message. We locate
+ *  the anchor prefix in each wire message and slice exactly `bytes` UTF-8 bytes from there, then VERIFY
+ *  by hash before trusting it. On any miss (anchor absent, or a later transform altered the placed text
+ *  so no wire slice hashes equal) we fall back to the 80-char preview — i.e. today's behavior, no
+ *  regression — never a wrong-text guess. */
+const resolveRef = (c: Extract<RecordContent, { kind: 'ref' }>, wire: RecordMessage[]): string => {
+  const anchor = c.preview ?? ''
+  if (!anchor) return ''
+  for (const m of wire) {
+    let from = m.content.indexOf(anchor)
+    while (from >= 0) {
+      const span = sliceBytes(m.content, from, c.bytes)
+      if (span && sha256(span) === c.hash) return span
+      from = m.content.indexOf(anchor, from + 1)
+    }
+  }
+  return anchor
+}
+
+/** The FULL text an entry carries. Small controlled transforms keep their exact inline text; a bulk /
+ *  opaque span is hash-referenced (its authoritative copy is the wire). For a ref span we REHYDRATE the
+ *  full text from `wire` at preview time (issue 08 M1 finding 1) — so a >512-byte world-info / card /
+ *  memory block renders in full with token estimates on the full text, not an 80-char stub. History
+ *  refs never reach here (they resolve per-turn from the wire in emitHistory). Display-only: the record
+ *  stays hash-referenced for storage. */
+const entryText = (c: RecordContent | undefined, wire: RecordMessage[]): string => {
+  if (!c) return ''
+  return c.kind === 'text' ? c.text : resolveRef(c, wire)
+}
 
 /**
- * Shape the assembled prompt into attributed sections + an omitted list. Rules:
- *   · Consecutive same-role history turns each become one `history` section (narrator).
- *   · A system message matching a pack injection's text is a `packInject` section (attributed to the
- *     pack — the exact ADR 0002 channel). World-info that carries a pack's `entries` value is likewise
- *     re-attributed to that pack.
- *   · Other system messages classify by builder prefix (persona / card / worldInfo / system).
- *   · The final user message is the `action` section.
- *   · A pack injection whose texts are EMPTY (branch produced nothing) → omitted-empty.
- *   · Each gate-closed injector → omitted-gate.
- * Token counts ride `tokensPerMessage` (estimated).
+ * Shape the Execution Record into attributed sections + an omitted list. Rules:
+ *   · Each controlled-transform PLACEMENT entry (marker expand, non-empty non-depth literal, depth /
+ *     marker inject, safety net) becomes one section attributed to the entry's OWN source — merged
+ *     same-role messages are therefore decomposed to their contributing sources (the record journals
+ *     each contribution BEFORE role-merge/provider-shape reshape the array).
+ *   · The bulk history span expands to one `history` section per conversation turn + the final user
+ *     turn as the `action` section, read from `record.wire` (the record hashes history for size).
+ *   · A pack that rejoined the `entries` lane (→ top-level World Info) or the `block` lane (→ memory
+ *     tail) re-attributes that narrator section to the pack — by construction (the composition meta
+ *     names the lane), never by scanning the pack's text.
+ *   · A `trim` entry (fitToBudget dropped oldest turns) → omitted-budget.
+ *   · A pack whose branch produced nothing, or whose lane surfaced no section → omitted-empty; each
+ *     gate-closed injector → omitted-gate.
  */
 export function shapePreview(args: ShapeArgs): PreviewShape {
-  const { messages, tokensPerMessage, injections, gatedInjectors, personaText } = args
+  const { record, injections, gatedInjectors, estimate } = args
   const sections: PreviewSection[] = []
   const omitted: OmittedItem[] = []
 
-  // Injections with real text — used to re-attribute the messages that carry them. Track which
-  // injections we actually matched into a section so an unmatched (non-empty) one is still honest.
-  const liveInjections = injections.filter((i) => i.texts.length > 0)
+  const push = (id: SectionKind, source: SectionSource, text: string): void => {
+    sections.push({ id, label: id, source, tokens: estimate(text), estimated: true, text })
+  }
+
+  // Pack rejoins that landed real text, grouped by the assemble anchor LANE they targeted. Attribution
+  // by construction (ADR 0002): the lane tells us which narrator section the pack merged into, so we
+  // never scan its content. `matched` tracks packs whose section actually surfaced (an unmatched live
+  // pack is honestly reported omitted-empty).
+  const live = injections.filter((i) => i.texts.length > 0)
+  const entriesPacks = live.filter((i) => i.to.port === 'entries')
+  const blockPacks = live.filter((i) => i.to.port === 'block')
   const matched = new Set<PackInjection>()
 
-  const lastUserIdx = (() => {
-    for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === 'user') return i
-    return -1
-  })()
-
-  const push = (id: SectionKind, source: SectionSource, text: string, tokens: number): void => {
-    sections.push({ id, label: id, source, tokens, estimated: true, text })
+  /** The packs (if any) that merged into the narrator section this entry produces. */
+  const lanePacks = (src: RecordSource): PackInjection[] => {
+    if (src.kind === 'marker' && (src.id === 'world_info' || src.id === 'world_info-net')) return entriesPacks
+    if (src.kind === 'memory' && src.id === 'memory-tail') return blockPacks
+    return []
   }
 
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i]
-    const tok = tokensPerMessage[i] ?? 0
+  // Source ids that were depth-injected — their `macro` (literal) entry is the raw→rendered transform,
+  // NOT the placement (the placement is the matching `depth-inject` entry), so we skip the macro one.
+  const depthInjectedIds = new Set(
+    record.entries.filter((e) => e.stage === 'depth-inject').map((e) => e.source.id)
+  )
 
-    // The trailing user action is its own section.
-    if (i === lastUserIdx) {
-      push('action', { kind: 'narrator' }, m.content, tok)
-      continue
+  const emitContent = (e: RecordEntry, precomputed?: string): void => {
+    const text = precomputed ?? entryText(e.after, record.wire)
+    if (!text.trim()) return
+    const packs = lanePacks(e.source)
+    if (packs.length) {
+      for (const p of packs) matched.add(p)
+      const primary = packs[0]
+      push('packInject', { kind: 'pack', packId: primary.packId, name: primary.name }, text)
+      return
     }
-
-    // A message carrying a pack's contributed text is attributed to that pack (block tail OR the
-    // world-info that concatenated the pack's entries).
-    const inj = liveInjections.find((x) => messageCarriesInjection(m.content, x.texts))
-    if (inj) {
-      matched.add(inj)
-      push('packInject', { kind: 'pack', packId: inj.packId, name: inj.name }, m.content, tok)
-      continue
-    }
-
-    push(classifyNarrator(m.role, m.content, personaText), { kind: 'narrator' }, m.content, tok)
+    push(sectionKindFor(e.source), { kind: 'narrator' }, text)
   }
 
-  // A pack that DID produce text but whose text we could not locate in the prompt (e.g. trimmed, or a
-  // lane the assembler dropped) is reported omitted-empty is wrong; report it as a zero-length section
-  // only if it truly landed. Here: a non-empty injection we never matched is surfaced omitted (its
-  // contribution did not reach the assembled prompt).
-  for (const inj of liveInjections) {
+  // Expand the bulk history span into per-turn sections from the wire (its authoritative text). The
+  // conversation turns are the wire's non-system messages; the pending action is the last user turn
+  // (matching provider ordering's end-on-user). Structural, from the record — not a content sniff. The
+  // history turns emit in place (at the chat_history entry's position); the action is DEFERRED to the
+  // end so any post-history / memory-tail block precedes it, matching the wire order.
+  let historyEmitted = false
+  let pendingAction: string | null = null
+  const emitHistory = (wire: RecordMessage[]): void => {
+    if (historyEmitted) return
+    historyEmitted = true
+    const conv = wire.filter((m) => m.role !== 'system')
+    let lastUser = -1
+    for (let i = 0; i < conv.length; i++) if (conv[i].role === 'user') lastUser = i
+    conv.forEach((m, i) => {
+      if (i === lastUser) pendingAction = m.content
+      else push('history', { kind: 'narrator' }, m.content)
+    })
+  }
+
+  for (const e of record.entries) {
+    switch (e.stage) {
+      case 'trim':
+        omitted.push({ label: e.note ?? 'trim', reason: 'budget', source: { kind: 'narrator' } })
+        break
+      case 'marker-expand':
+        // A history span (bulk) expands from the wire; every other marker/card-field expand is inline.
+        if (e.source.kind === 'history') emitHistory(record.wire)
+        else emitContent(e)
+        break
+      case 'macro': {
+        // Literal preset block: skip when it evaluated to nothing, and skip the depth-placed ones (their
+        // `depth-inject` entry is the placement) so a depth block is not counted twice.
+        const text = entryText(e.after, record.wire)
+        if (!text.trim() || depthInjectedIds.has(e.source.id)) break
+        emitContent(e, text)
+        break
+      }
+      case 'depth-inject':
+      case 'marker-inject':
+      case 'safety-net':
+        emitContent(e)
+        break
+      // regex / opaque / system-as-user / role-merge / provider-shape: transforms + array reshapes, not
+      // placements — they change existing sections' text/order, they add no new attributed section.
+      default:
+        break
+    }
+  }
+
+  // The pending user action closes the prompt (end-on-user), so it is the last section — after any
+  // post-history / memory tail journaled between the history span and the action.
+  if (pendingAction !== null) push('action', { kind: 'narrator' }, pendingAction)
+
+  // A live pack whose lane never surfaced a section (empty world info, or the block was trimmed) — its
+  // contribution did not reach the assembled prompt. Honest omitted-empty.
+  for (const inj of live) {
     if (!matched.has(inj)) {
       omitted.push({
         label: inj.name,
@@ -291,8 +371,7 @@ export function shapePreview(args: ShapeArgs): PreviewShape {
     }
   }
 
-  // A pack whose branch produced NOTHING this run (empty rejoin value) — its attachment exists but
-  // contributed no content. Honest omitted-empty.
+  // A pack whose branch produced NOTHING this run (empty rejoin value). Honest omitted-empty.
   for (const inj of injections) {
     if (inj.texts.length === 0) {
       omitted.push({

@@ -245,6 +245,13 @@ export interface CardGrants {
    * the frame can reach the app (incl. API keys) — only for a world whose card you trust.
    * Scoped to the world card's scripts + what they import. */
   trusted?: boolean
+  /**
+   * High trust (ADR 0017) — the per-preset opt-in that lets this owner's remote-code scripts RUN.
+   * DELIBERATELY WEAKER than `trusted`: it unlocks network fetch + DOM freedom INSIDE the isolated
+   * WCV realm ONLY (implies `remoteScripts`), and never grants app-renderer / main / key reach. Set
+   * on a `preset:<id>` grant key by `setPresetHighTrust`. "No real harm" survives as realm isolation.
+   */
+  highTrust?: boolean
   /** The user has made an EXPLICIT trust decision (via the import-time trust modal or the
    * legacy run-time prompt). When true the run-time script hosts must NOT re-prompt — a denial
    * is respected and a grant runs the scripts. The user can still change it from Settings → Scripts. */

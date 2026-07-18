@@ -3,6 +3,8 @@ import {
   normalize,
   getDefaultSettings,
   resolveModeConfig,
+  resolveExecutionRecordRetention,
+  DEFAULT_EXECUTION_RECORD_RETENTION,
   encryptSecret,
   decryptSecret,
   maskSecret,
@@ -188,6 +190,31 @@ describe('settings tables section (memory-table reminder)', () => {
     expect(s.tables.remind_set_template).toBe(false)
     expect(s.tables.default_update_frequency).toBe(3) // default preserved
     expect(s.tables.injection_max_rows).toBe(20) // default preserved
+  })
+})
+
+describe('settings records section (execution-record retention — issue 09)', () => {
+  it('defaults retention to 50', () => {
+    expect(DEFAULT_EXECUTION_RECORD_RETENTION).toBe(50)
+    expect(getDefaultSettings().records?.retention).toBe(50)
+    expect(normalize({}).records?.retention).toBe(50) // legacy settings file: absent section
+  })
+
+  it('round-trips a stored retention window and preserves an explicit 0 (disabled)', () => {
+    expect(normalize({ records: { retention: 200 } } as any).records?.retention).toBe(200)
+    expect(normalize({ records: { retention: 0 } } as any).records?.retention).toBe(0)
+  })
+
+  it('coerces an invalid retention back to the default', () => {
+    expect(normalize({ records: { retention: -5 } } as any).records?.retention).toBe(50)
+    expect(normalize({ records: { retention: NaN } } as any).records?.retention).toBe(50)
+    expect(normalize({ records: { retention: 'lots' } } as any).records?.retention).toBe(50)
+  })
+
+  it('resolveExecutionRecordRetention floors a fractional value and defaults on absence', () => {
+    expect(resolveExecutionRecordRetention({ records: { retention: 12.9 } } as any)).toBe(12)
+    expect(resolveExecutionRecordRetention({} as any)).toBe(50)
+    expect(resolveExecutionRecordRetention({ records: {} } as any)).toBe(50)
   })
 })
 

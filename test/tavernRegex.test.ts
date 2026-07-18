@@ -105,6 +105,33 @@ describe('tavernRegexToStoreObject', () => {
   })
 })
 
+describe('ST placement 3/5 + runOnEdit + depths (issue 14 parity)', () => {
+  it('maps slash_command (3) and world_info (5) placements to source flags', () => {
+    const tr = storeRuleToTavernRegex(
+      rule({ placement: [3, 5], runOnEdit: true, minDepth: 1, maxDepth: 4 })
+    )
+    expect(tr.source).toEqual({
+      user_input: false,
+      ai_output: false,
+      slash_command: true,
+      world_info: true
+    })
+    expect(tr.run_on_edit).toBe(true)
+    expect(tr.min_depth).toBe(1)
+    expect(tr.max_depth).toBe(4)
+  })
+
+  it('round-trips slash/world_info/run_on_edit/depths back to the store shape', () => {
+    const back = tavernRegexToStoreObject(
+      storeRuleToTavernRegex(rule({ placement: [3, 5], runOnEdit: true, minDepth: 0, maxDepth: 2 }))
+    )
+    expect(back.placement).toEqual([3, 5])
+    expect(back.runOnEdit).toBe(true)
+    expect(back.minDepth).toBe(0)
+    expect(back.maxDepth).toBe(2)
+  })
+})
+
 describe('round-trip preserves the key fields', () => {
   it('store → TavernRegex → store keeps find/replace/placement/scriptName/enabled', () => {
     const original = rule({ placement: [1, 2], markdownOnly: false, promptOnly: false })

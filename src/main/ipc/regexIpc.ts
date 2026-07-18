@@ -14,6 +14,11 @@ export const registerRegexIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('get-plot-block-regex', (_, profileId, ctx) =>
     regexService.getPlotBlockRules(profileId, { ...ctx, presetId: getActivePresetId(profileId) })
   )
+  // Reasoning panel: display rules for ST placement 6 (reasoning), so a card can beautify/clean the
+  // <think> text (RPT strips reasoning from the prompt, so display is the only faithful application).
+  ipcMain.handle('get-reasoning-regex', (_, profileId, ctx) =>
+    regexService.getReasoningRules(profileId, { ...ctx, presetId: getActivePresetId(profileId) })
+  )
   ipcMain.handle('list-regex', (_, profileId) => regexService.listScripts(profileId))
   // 'panel'-promoted regex UIs (with their loader URL) for the active context → selectable workspace panels.
   ipcMain.handle('list-panel-regex', (_, profileId, ctx) =>

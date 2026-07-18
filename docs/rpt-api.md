@@ -72,7 +72,7 @@ low-level bridge name and how the DOM libs are injected differ per transport.
 
 | Global                                         | Purpose                                                                                                                                                                                                                                           | Source                        |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `window.SillyTavern`                           | `getContext()`, `chat[]` (+ swipes), `chatMetadata.variables` + `saveMetadata()`, `saveChat()`, `reloadCurrentChat()`, `substituteParams()`, `saveSettingsDebounced()` (no-op)                                                                    | thRuntime                     |
+| `window.SillyTavern`                           | `getContext()`, `chat[]` (+ swipes), `chatMetadata.variables` + `saveMetadata()`, `saveChat()`, `reloadCurrentChat()`, `substituteParams()`, `getContext().extensionSettings` (durable) + `saveSettingsDebounced()` (durable flush)               | thRuntime                     |
 | `window.TavernHelper` (+ bare helpers)         | the TH JS API (variables, messages, worldbook CRUD, events, generate, `triggerSlash`, …)                                                                                                                                                          | thRuntime                     |
 | `window.Mvu`                                   | MagVarUpdate API (`getMvuData`/`getMvuVariable`/`setMvuVariable`/`replaceMvuData`/`parseMessage`/`events`)                                                                                                                                        | thRuntime                     |
 | `window.EjsTemplate`                           | the EJS engine API (`evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`/…)                                                                                                                                        | thRuntime                     |
@@ -103,7 +103,7 @@ through the host bridge as RFC-6902 JSON Patch.
 - `Mvu.setMvuVariable(path, value)` · `insertOrAssignVariables(vars, option)` · `updateVariablesWith(fn)` — ✅ (→ selected scope; default `stat_data` uses `applyVariableOps` JSONPatch → persisted)
 - `Mvu.replaceMvuData(d)` / `replaceVariables(vars)` — ✅
 - `insertVariables(vars)` — ✅ insert-if-**absent** (never overwrites an existing key); the no-overwrite sibling of `insertOrAssignVariables`, used to seed initial MVU vars.
-- `injectPrompts(prompts, {once})` / `uninjectPrompts(ids)` — 🟡 **safe no-op** (returns the `{ uninject }` handle). The prompt is assembled in the MAIN process, so a renderer-side injection doesn't reach the build yet; cards that call these per-turn degrade gracefully instead of throwing. Depth-positioned injection into the build is a future bridge.
+- `injectPrompts(prompts, {once})` / `uninjectPrompts(ids)` — 🟡 **safe no-op** (returns the `{ uninject }` handle). The prompt is assembled in the MAIN process, so a renderer-side injection doesn't reach the build yet; cards that call these per-turn degrade gracefully instead of throwing. Depth-positioned injection into the build is a future bridge. A separate main-side **pre-dispatch mutation seam** (issue 19 / ADR 0017 — the `CHAT_COMPLETION_PROMPT_READY` analogue) rewrites the FINAL message array at the 18e dispatch boundary; every real change is delta-recorded as an `opaque` execution-record entry (script id + hook + before/after hashes, never a raw swap). Wiring a live high-trust card's late-hook into it across the realm boundary is F2/F3-guarded (docs-silent event name + payload mutability). See `src/main/services/nodes/dispatchHooks.ts` + `promptArtifact.applyDispatchTransforms`.
 - **Script scope** — `getVariables({type:'script'})` / `insertOrAssignVariables(obj, {type:'script'})` / `insertVariables(obj, {type:'script'})` / `updateVariablesWith(fn, {type:'script'})` — ✅ (sync read) a card-owned KV store (owner `card:<id>`), **per-card across all its chats**, not in-prompt. Backed by `pluginStorageService` (`profiles/<profileId>/plugin-storage/card:<id>.json`).
 - **Chat scope** — `getVariables({type:'chat'})` / `insertOrAssignVariables(obj, {type:'chat'})` / `insertVariables(obj, {type:'chat'})` / `updateVariablesWith(fn, {type:'chat'})` / `replaceVariables(obj, {type:'chat'})` — ✅ (sync read) a per-chat, card-scoped KV store, **general scope for session UI/state** (e.g., adaptive-regex selections and the 命定之诗 party panel). Not in-prompt. **Namespace your keys** (e.g. `party.members`) to avoid collisions across multiple widgets in the same chat. **NOT `stat_data`** — use this for UI state, not story variables. Backed by `chatCardVarsService` (`profiles/<profileId>/chat-card-vars.json`), exposed via `Host.getChatVars`/`setChatVars`.
 - **Global scope** — `getVariables({type:'global'})` / `insertOrAssignVariables(obj, {type:'global'})` / `insertVariables(obj, {type:'global'})` / `replaceVariables(obj, {type:'global'})` / `updateVariablesWith(fn, {type:'global'})` — ✅ (sync read) a **per-profile** KV bag shared across every chat and character; survives restarts, not in-prompt. Use it for app-wide UI prefs a card persists everywhere (e.g. the 艾莉亚 beautification's UI settings under `dialog_beauty.ui`). **Namespace your keys.** Backed by the per-profile globals (`profiles/<profileId>/template-globals.json`, `templateService`), exposed via `Host.getGlobalVarsSync`/`setGlobalVars`. Editable in the Variables panel's **全局变量 / Global variables** tab. (Per-key STScript access — `triggerSlash('/setglobalvar key val')` / `'/getglobalvar key'` — hits the SAME store via `Host.getGlobalVars`/`setGlobalVar`.)
@@ -114,7 +114,7 @@ through the host bridge as RFC-6902 JSON Patch.
 
 - `SillyTavern.chat[]` — ✅ built from floors (each message carries `swipes`/`swipe_id`); `saveChat()` + `reloadCurrentChat()` — ✅
 - `SillyTavern.getContext().chatMetadata.variables` + `saveMetadata()` (also `SillyTavern.saveMetadata()`) — ✅ backed by the same persistent per-chat KV bag as `getVariables({type:'chat'})`. Supports legacy cards that mutate metadata variables in place before saving (for example 读者对话渲染's persona, appearance, silent-mode, and narrative-curve settings).
-- `SillyTavern.saveSettingsDebounced()` / `getContext().saveSettingsDebounced` — 🟡 **safe no-op** (RP Terminal has no ST `settings.json`). Extension-style cards call it after mutating `extensionSettings`; without it they throw `saveSettingsDebounced is not a function`.
+- `SillyTavern.saveSettingsDebounced()` / `getContext().saveSettingsDebounced` — ✅ **durable** (issue 19). RP Terminal has no ST `settings.json`, so `getContext().extensionSettings` is backed by a per-profile store (`extensionSettingsService` → `profiles/<id>/extension-settings.json`, via `Host.getExtensionSettingsSync`/`setExtensionSettings`). The bag is seeded from that store at runtime boot (an extension card reads its saved settings), `EjsTemplate.enabled` is force-defaulted, and `saveSettingsDebounced()` now PERSISTS the whole bag on a 200 ms debounce (a pending write is also flushed on runtime dispose). Was a no-op stub (`{ EjsTemplate:{enabled:true} }`) whose edits evaporated.
 - `getChatMessages(range?)` (returns `message_id` = compact chat-array index; an integer selects one
   message, with negative indexes counting from the end, so `-1` returns the latest message) /
   `getCurrentMessageId()` / `getLastMessageId()` (alias of `getCurrentMessageId`) — ✅ (read)
@@ -132,10 +132,15 @@ through the host bridge as RFC-6902 JSON Patch.
 - **Entry shape:** entries cross the card boundary in the TavernHelper `WorldbookEntry` shape (`strategy.{type,keys,keys_secondary}` / `position` / `recursion` / `extra`) and are mapped to/from our native `LorebookEntry` (`keys`/`constant`/`selective`/…) by the shared [`thRuntime/worldbookEntry`](../src/shared/thRuntime/worldbookEntry.ts) on EVERY read+write path, so `strategy.type:'constant'`↔`constant`, `strategy.keys`↔`keys`, and `extra` (card tags like `cw_project_id`) round-trip. (`LorebookEntrySchema` gained an optional `extra`.)
 - Backing: file-based [`lorebookService`](../src/main/services/lorebookService.ts) (+ `scriptApiService`). The card's own book is at `id == characterId`.
 
-### Character / preset — ✅ (read)
+### Character / preset — ✅ (read + preset write)
 
-- `getCharData()` / `getCharAvatarPath()` — ✅ (sync, ctx-scoped) · `getPreset()` (active preset name + sampler params) / `getPresetNames()` — ✅ (sync) · `SillyTavern.getContext()` — ✅
+- `getCharData()` / `getCharAvatarPath()` — ✅ (sync, ctx-scoped) · `SillyTavern.getContext()` — ✅
+- `getPreset('in_use')` / `getPresetNames()` / `getLoadedPresetName()` — ✅ (sync). `getPreset` returns the TavernHelper `Preset` shape (docs-confirmed spec §7): `{ name, settings, parameters, prompts, prompts_unused, extensions }`. `prompts` is the **live control surface** a card (the 狐神抚 case) reads + toggles — each entry carries `{ id (===identifier), name, role, content, enabled, marker, injection_depth, injection_order }`. `settings` is the sampler params (`parameters` kept as the legacy alias). `prompts_unused` + `extensions` come from the lossless envelope; BOTH transports source them from the same main-side `presetService.getActivePresetView` projection (WCV via its sync channel, the inline `cardBridge` via the `getActivePresetViewSync` sync IPC), so they are at parity (`[]`/`{}` only for a pre-envelope import). A non-`in_use` name resolves only when it names the active preset, else `null`.
+- **Preset writes** — `replacePreset(['in_use',] preset)` / `setPreset(…)` / `updatePresetWith(fn)` — ✅. The card mutates the object it got from `getPreset` (e.g. flips a prompt's `enabled`) and hands it back; the runtime MERGES it onto the current normalized view by identifier (a partial edit never drops prompts; a card can't invent prompts) and persists a full normalized preset via `Host.savePreset` → `presetService.saveActivePreset` (`PresetSchema.parse` + write). Durable + immediate. TH's exact in-chat-edit-vs-saved divergence semantics are docs-silent (**F6-guarded**); RPT has no un-persisted overlay layer.
 - `getCurrentCharacterName()` (from `charData().name`) · `SillyTavern.getCurrentChatId()` (the WCV ctx is empty — resolved from `e.sender` via `-get-chat-id-sync`) · `getScriptId()` (stable per-runtime id) — ✅ (sync)
+- **Preset/card scripts preserve their upstream TavernHelper `id`** on import (docs-confirmed `Script.id`, spec §1 — issue 03 used to discard it → a random file id). Enabled scripts run in **ID-sorted** runtime order (`scriptService.getActiveScripts`). TH's real enabled-script execution order is docs-silent (**F1-guarded**) — ID-sorted is the most faithful order the docs support; if F1 shows tree/array order, only the comparator changes (the id is already preserved end-to-end).
+
+**High-trust mode (ADR 0017 / issue 19).** A preset's **remote-code scripts** (a remote ES module / `<script src>` / `importScripts` / fetch of a remote `.js`) are dropped INERT at import. A **per-preset high-trust opt-in** (`presetSetHighTrust` / `presetIsHighTrust`; grant key `preset:<id>`) installs them to RUN — but pinned to the **isolated WCV realm only**: they resolve only when the caller is the isolated realm (`getRuntimeScripts(..., isolatedRealm=true)`, set by `CardScriptWcvHost`), never in the inline app-renderer host. High trust implies the isolated-realm network/CSP grant (`remoteScripts`) but NEVER the app-reaching `trusted` grant — the app renderer, main process, and API keys stay unreachable at every trust level. Worst case is a wrecked card view. All such scripts' variable writes are journaled like any card write; their pre-dispatch mutations are `opaque`-recorded (above).
 
 ### Generation — ✅ (request)
 
@@ -186,6 +191,27 @@ through the host bridge as RFC-6902 JSON Patch.
 ### EJS / macros — ✅
 
 - `EjsTemplate.*` (`evalTemplate`/`prepareContext`/`getSyntaxErrorInfo`/`allVariables`/`saveVariables`) — ✅ (the clean-room ST-Prompt-Template engine; see [st-prompt-template-plan.md](st-prompt-template-plan.md)).
+- **Pinned ST-Prompt-Template profile (WP-2.7).** The engine matches the extension's bundled EJS 3.1.9 +
+  wrapper options, verified against `docs/research/sillytavern-prompt-compatibility.md` §6 (clean-room from
+  the documented behavior — EJS/ST-PT source is **not** vendored). What the profile guarantees, all in
+  [`templateEngine.ts`](../src/shared/templateEngine.ts) `compile`/`evalTemplateDetailed`:
+  - **Async templates / top-level `await`.** Each template compiles into an `async` function body, so
+    `<% const x = await … %>` and `<%= await … %>` work. RPT resolves the promise **synchronously**
+    (drain microtasks + read the settled state) because the renderer loads a sync quickjs variant — template
+    `await`s resolve against already-available values, not real host async.
+  - **`print()` output function.** `print(x)` appends to the template output (the `outputFunctionName`
+    profile), equivalent to a `<%- x %>` raw write.
+  - **Bare-identifier context** (`_with:true` / `localsName`): context constants (`userName`, `charName`,
+    `lastMessageId`, …) and the hoisted `variables` object resolve as bare identifiers.
+  - **Generation escaper is IDENTITY** — `<%=` and `<%-` produce **identical** prompt text (the generation
+    escaper returns its value unchanged). The **render/display** path selects a distinct **HTML escaper**
+    (`<%=` escapes `& < > " '`, `<%-` stays raw) via `TemplateContext.escape: 'html'` — set it on the
+    display context; generation/`EjsTemplate` default to identity.
+  - **`include(...)` is a no-op** returning an empty template (RPT has no server-side filesystem include).
+  - **Protected regions** `<thinking>` / `<think>` / `<reasoning>` / `<escape-ejs>` are emitted literally —
+    EJS-looking text inside is **not** evaluated. Reasoning tags keep their wrapper; `<escape-ejs>` drops it.
+  - **Whitespace-slurp** exactness (EJS 3.1.9): `<%_` / `_%>` strip same-line spaces/tabs around the tag,
+    `-%>` / `_%>` trim a single following newline; `<%%` / `%%>` emit literal `<%` / `%>`.
 - `substituteParams`/`substitudeMacros` (expand `{{macros}}`) — ✅ · `{{get_X_variable}}`/`{{format_X_variable}}` (X ∈ global/chat/message/preset/character) — ✅ · `registerMacroLike` — ⬜ (cross-process).
 - **Persona macros** (ST-faithful): `{{user}}` = active persona **name**; `{{persona}}` = active persona **description**. The macro is **ungated** (ST parity): it returns the description even when prompt injection is off — only the prompt *injection* respects the inject toggle. Both transports resolve `{{persona}}` via the `personaDescription` host facet — inline (`cardBridge`) and WCV (`wcvPreload`) are at parity. The description is injected into the prompt (IN_PROMPT) at the preset's `personaDescription` marker position — emitted **raw** there (the preset author owns the framing, e.g. a `<{{user}}_setting>…</{{user}}_setting>` envelope, matching ST). When the preset has no such marker it falls back to a pre-conversation system block prefixed `[<user>'s Persona]`.
   Implementation: [`promptBuilder.ts`](../src/main/services/promptBuilder.ts), the
@@ -359,6 +385,11 @@ preserves the invariant (review WS-9). When you add a new template surface, pick
 
 Rule of thumb: **author infrastructure fails loud; card-supplied content degrades; non-errors strip; unknown
 passes through.**
+
+This is RPT's mapping of the ST-Prompt-Template layered failure model (research §6): the inner evaluation
+logs the error **with a source/line diagnostic** (`evalTemplateDetailed` appends `compiled L{n}: …`); the
+handler tier returns the null-equivalent (empty output + error string); and the outer final-prompt caller
+either **rethrows** (`ejsStrict`, presets) or keeps/skips the content (`renderLoreEntry`, lore).
 
 ## 8. WebContentsView card layout compatibility
 

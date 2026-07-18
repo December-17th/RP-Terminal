@@ -13,7 +13,7 @@ import { buildRenderContext } from '../plugin/renderTemplate'
 import { storeRuleToTavernRegex } from '../../../shared/thRuntime/tavernRegex'
 import { categoryForType } from '../../../shared/worldAssets/types'
 import type { AssetType } from '../../../shared/worldAssets/types'
-import type { Host, CardCtx, FloorLike } from '../../../shared/thRuntime/types'
+import type { Host, CardCtx, FloorLike, HostPresetView } from '../../../shared/thRuntime/types'
 import type { VarOp } from '../../../shared/thRuntime/ops'
 
 // Global vars are per-PROFILE, so ALL inline card hosts in this renderer realm share ONE cache per profile
@@ -130,11 +130,32 @@ export function createInlineHost(ctx: CardCtx): Host {
     floors: () => floorsOf(),
     charData: () => cardOf(),
     charAvatarPath: () => null,
+    // getPreset('in_use') — the envelope-backed active preset VIEW, sourced synchronously from the SAME
+    // main-side projection (presetService.getActivePresetView) the WCV transport reads. Both transports
+    // bottom out in getActivePresetView, so prompts_unused/extensions are identical (transport parity —
+    // CLAUDE.md "two transports at parity"); the shared runtime maps this view into the TH getPreset shape.
     preset: () => {
-      const p = usePresetStore.getState().preset as any
-      return p ? { name: p.name, parameters: p.parameters } : null
+      try {
+        return (window.api.getActivePresetViewSync(ctx.profileId) as HostPresetView | null) ?? null
+      } catch {
+        return null
+      }
     },
     presetNames: () => usePresetStore.getState().presets.map((p: any) => p.name),
+    // Persist a card's preset edits (the 狐神抚 control surface). The runtime hands a full
+    // normalized-preset-shaped patch (merged onto the current view). Write it through the same
+    // main preset service the WCV transport uses, then refresh the store so the UI reflects it.
+    savePreset: async (patch: unknown) => {
+      const { activeId } = usePresetStore.getState()
+      if (!activeId) return false
+      try {
+        await window.api.savePreset(ctx.profileId, activeId, patch as any)
+        await usePresetStore.getState().load(ctx.profileId)
+        return true
+      } catch {
+        return false
+      }
+    },
     worldbookNames: () => {
       // The card's OWN lorebook NAME (faithful to WCV: lb.name || characterId) — so getWorldbook(primary)
       // resolves back to its real library id. NOT activeCharacter's display name (a different value that
@@ -336,6 +357,28 @@ export function createInlineHost(ctx: CardCtx): Host {
         )
       } catch (e) {
         console.error('[inline setGlobalVars]', e)
+      }
+    },
+    // TavernHelper extensionSettings durable backing (issue 19) — a per-profile store distinct from the
+    // card KV scopes. SYNC read at boot; whole-object write is what saveSettingsDebounced flushes.
+    // Returns the saved bag ({} when the store is genuinely empty). On a transient IPC failure it returns
+    // `undefined` — NOT `{}` — so the shared runtime can tell "read failed" from "empty" and refuse to flush
+    // an unloaded bag over valid stored settings (the hydration gate in thRuntime/index.ts).
+    getExtensionSettingsSync: () => {
+      try {
+        return window.api.extensionSettingsGetSync(ctx.profileId) || {}
+      } catch {
+        return undefined
+      }
+    },
+    setExtensionSettings: async (settings) => {
+      try {
+        await window.api.extensionSettingsSet(
+          ctx.profileId,
+          settings && typeof settings === 'object' ? settings : {}
+        )
+      } catch (e) {
+        console.error('[inline setExtensionSettings]', e)
       }
     },
     // Resolve an asset to an rptasset:// URL for this card's world, or null. The category is inferred

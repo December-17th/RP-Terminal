@@ -163,7 +163,7 @@ describe('text.template', () => {
 })
 
 describe('prompt.messages', () => {
-  it('descriptor: gen:Context + in1-in4:Any + when:Signal inputs, messages:Messages output', () => {
+  it('descriptor: gen:Context + in1-in4:Any + when:Signal inputs, messages + prompt outputs', () => {
     expect(promptMessages.type).toBe('prompt.messages')
     expect(promptMessages.inputs).toEqual([
       { name: 'gen', type: 'Context' },
@@ -173,7 +173,12 @@ describe('prompt.messages', () => {
       { name: 'in4', type: 'Any' },
       { name: 'when', type: 'Signal' }
     ])
-    expect(promptMessages.outputs).toEqual([{ name: 'messages', type: 'Messages' }])
+    // Issue 18b: the legacy Messages output stays; the additive `prompt` output wraps the same list
+    // as a Prompt artifact (synthetic contributions).
+    expect(promptMessages.outputs).toEqual([
+      { name: 'messages', type: 'Messages' },
+      { name: 'prompt', type: 'Prompt' }
+    ])
   })
 
   it('builds role rows from config and interpolates each row (slots + macros)', async () => {
@@ -188,12 +193,16 @@ describe('prompt.messages', () => {
       ]
     })
     const res = await promptMessages.run(ctx, { gen, in1: 'hi there' }, node)
+    const messages = [
+      { role: 'system', content: 'You are Bob.' },
+      { role: 'user', content: 'hi there' }
+    ]
+    // Issue 18b: the `messages` port is unchanged; the additive `prompt` artifact wraps the same
+    // resolved list (shaped, since gen is wired).
     expect(res).toEqual({
       outputs: {
-        messages: [
-          { role: 'system', content: 'You are Bob.' },
-          { role: 'user', content: 'hi there' }
-        ]
+        messages,
+        prompt: expect.objectContaining({ kind: 'prompt-artifact', messages, shaped: true })
       }
     })
   })
@@ -207,13 +216,16 @@ describe('prompt.messages', () => {
       ]
     })
     const res = await promptMessages.run(ctx, {}, node)
-    // No gen -> no providerShape call -> consecutive system rows stay unmerged.
+    // No gen -> no providerShape call -> consecutive system rows stay unmerged. Issue 18b: the
+    // additive `prompt` artifact wraps the same UNSHAPED list (shaped:false, since gen is unwired).
+    const messages = [
+      { role: 'system', content: 'sys' },
+      { role: 'system', content: 'sys2' }
+    ]
     expect(res).toEqual({
       outputs: {
-        messages: [
-          { role: 'system', content: 'sys' },
-          { role: 'system', content: 'sys2' }
-        ]
+        messages,
+        prompt: expect.objectContaining({ kind: 'prompt-artifact', messages, shaped: false })
       }
     })
   })
@@ -232,8 +244,14 @@ describe('prompt.messages', () => {
     })
     const res = await promptMessages.run(ctx, { gen }, node)
     // system_as_user relabels both rows to 'user', then merge_consecutive_roles (default on)
-    // coalesces them into one message.
-    expect(res).toEqual({ outputs: { messages: [{ role: 'user', content: 'sys1\nsys2' }] } })
+    // coalesces them into one message. Issue 18b: the additive `prompt` artifact wraps the shaped list.
+    const messages = [{ role: 'user', content: 'sys1\nsys2' }]
+    expect(res).toEqual({
+      outputs: {
+        messages,
+        prompt: expect.objectContaining({ kind: 'prompt-artifact', messages, shaped: true })
+      }
+    })
   })
 
   it('provider-shapes with default settings (anthropic, no system_as_user): merges consecutive roles only', async () => {
@@ -246,7 +264,38 @@ describe('prompt.messages', () => {
       ]
     })
     const res = await promptMessages.run(ctx, { gen }, node)
-    expect(res).toEqual({ outputs: { messages: [{ role: 'user', content: 'a\nb' }] } })
+    // Issue 18b: the additive `prompt` artifact wraps the shaped list.
+    const messages = [{ role: 'user', content: 'a\nb' }]
+    expect(res).toEqual({
+      outputs: {
+        messages,
+        prompt: expect.objectContaining({ kind: 'prompt-artifact', messages, shaped: true })
+      }
+    })
+  })
+
+  it('wraps the produced list as a Prompt artifact with synthetic contributions (issue 18b)', async () => {
+    // The Prompt-port half of the migration: prompt.messages is a legacy Messages producer, so its
+    // artifact carries one SYNTHETIC contribution per row (no execution record / params — it is not
+    // a full assembly). The final adapter later re-exposes `messages` to a legacy consumer.
+    const ctx = makeCtx()
+    const node = meta(promptMessages, 'msg-node', {
+      messages: [{ role: 'system', content: 'S' }]
+    })
+    const res = await promptMessages.run(ctx, {}, node)
+    const prompt = (res.outputs as { prompt: any }).prompt
+    expect(prompt.kind).toBe('prompt-artifact')
+    expect(prompt.record).toBeUndefined()
+    expect(prompt.params).toBeUndefined()
+    expect(prompt.contributions).toEqual([
+      {
+        source: { kind: 'pipeline', id: 'msg-node', label: 'prompt.messages' },
+        role: 'system',
+        content: 'S',
+        order: 0,
+        synthetic: true
+      }
+    ])
   })
 })
 

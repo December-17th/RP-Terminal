@@ -6,6 +6,12 @@ import { providerShape } from '../../generation/providerShape'
 import { GenContext } from '../../generation/types'
 import { NodeImpl } from '../types'
 import { log } from '../../logService'
+import {
+  wrapMessages,
+  isPromptArtifact,
+  artifactBudgetClasses,
+  withTrimmedMessages
+} from '../promptArtifact'
 
 /**
  * Text-authoring built-in nodes (Phase 2b-2 task 5): renders card/workflow-authored templates
@@ -119,7 +125,13 @@ export const promptMessages: NodeImpl = {
     { name: 'in4', type: 'Any' },
     { name: 'when', type: 'Signal' }
   ],
-  outputs: [{ name: 'messages', type: 'Messages' }],
+  outputs: [
+    { name: 'messages', type: 'Messages' },
+    // Issue 18b: the SAME authored list, also wrapped as a `Prompt` artifact — each row a SYNTHETIC
+    // contribution (this node is a legacy `Messages` producer, so provenance is synthesized). ADDITIVE:
+    // the `messages` port stays so existing docs (e.g. the decomposed-default example) wire unchanged.
+    { name: 'prompt', type: 'Prompt' }
+  ],
   configSchema: messagesConfig,
   run: (_ctx, inputs, node) => {
     const cfg = node.config as z.infer<typeof messagesConfig>
@@ -128,7 +140,19 @@ export const promptMessages: NodeImpl = {
       role: m.role,
       content: interpolate(m.content, slotsOf(inputs), gen)
     }))
-    return { outputs: { messages: gen ? providerShape(gen.settings, rows) : rows } }
+    // Provider shaping stays gated on a wired `gen` (unchanged); `shaped` records whether it ran so
+    // the model-dispatch seam (18e) can avoid shaping twice.
+    const messages = gen ? providerShape(gen.settings, rows) : rows
+    return {
+      outputs: {
+        messages,
+        prompt: wrapMessages(
+          messages,
+          { kind: 'pipeline', id: node.id, label: 'prompt.messages' },
+          !!gen
+        )
+      }
+    }
   }
 }
 
@@ -138,28 +162,57 @@ const trimConfig = z.object({
   budget_tokens: z.number().int().min(0).optional()
 })
 
-/** Trims a Messages array to a token budget via the shared fitToBudget (the same trimmer assemble
- *  uses). Hand-built arrays (prompt.messages / merge.messages) lack fitToBudget's non-enumerable
- *  HISTORY_TAG, so trimming falls back to its legacy path — keep the leading system prefix, drop the
- *  oldest from the first non-system message, always keep the last turn. Messages that came from
- *  prompt.preset's history path ARE tagged, so those trim on the preferred history-only path. */
+/** Trims a message list to a token budget via the shared fitToBudget (the same trimmer assemble uses).
+ *
+ *  Two lanes (issue 18c):
+ *   · legacy `messages: Messages` — a hand-built array (prompt.messages / merge.messages) with no
+ *     budget policy → fitToBudget's legacy fallback: keep the leading system prefix, drop the oldest
+ *     from the first non-system message, always keep the last turn. Byte-identical to before.
+ *   · Prompt-aware `prompt: Prompt` — trims the artifact's messages under the EXPLICIT budget policy
+ *     its contributions declare (`budgetClass` — history dropped oldest-first, pinned kept), and emits
+ *     an updated artifact whose execution record carries the budget omission (the issue 07/08 omitted-
+ *     by-budget concept). An artifact whose policy is not per-message aligned falls back to the legacy
+ *     position-based trim on its wire. The legacy `messages` input wins when both are wired. */
 export const messagesTrim: NodeImpl = {
   type: 'messages.trim',
   title: 'Trim Messages',
   inputs: [
     { name: 'gen', type: 'Context' },
-    { name: 'messages', type: 'Messages' }
+    { name: 'messages', type: 'Messages' },
+    // Issue 18c: an alternative to the legacy `messages` input — a Prompt artifact whose contributions
+    // carry the explicit budget policy. Additive; unwired in every seeded doc (behavior-neutral).
+    { name: 'prompt', type: 'Prompt' }
   ],
-  outputs: [{ name: 'messages', type: 'Messages' }],
+  outputs: [
+    { name: 'messages', type: 'Messages' },
+    // The trimmed artifact (record updated with the budget omission) — only when a Prompt was the source.
+    { name: 'prompt', type: 'Prompt' }
+  ],
   configSchema: trimConfig,
   run: (_ctx, inputs, node) => {
     const cfg = (node?.config ?? {}) as z.infer<typeof trimConfig>
-    const gen = inputs.gen as GenContext
-    const messages = (inputs.messages as ChatMessage[] | undefined) ?? []
-    const budget = cfg.budget_tokens || gen.settings.generation?.max_context_tokens || 200000
-    const { messages: trimmed, dropped } = fitToBudget(messages, budget)
-    if (dropped > 0) log('info', `messages.trim: budget ${budget} tok — dropped ${dropped} message(s)`)
-    return { outputs: { messages: trimmed } }
+    const gen = inputs.gen as GenContext | undefined
+    const artifact = isPromptArtifact(inputs.prompt) ? inputs.prompt : undefined
+    // Legacy Messages input wins (pre-18c path); otherwise trim the Prompt artifact's wire.
+    const legacy = inputs.messages as ChatMessage[] | undefined
+    const messages = legacy ?? artifact?.messages ?? []
+    const budget = cfg.budget_tokens || gen?.settings?.generation?.max_context_tokens || 200000
+    // Honor the artifact's explicit per-message budget policy (18c) only for the Prompt lane; the
+    // legacy lane (and any artifact without an aligned policy) → undefined → legacy fallback.
+    const classes = !legacy && artifact ? artifactBudgetClasses(artifact) : undefined
+    const { messages: trimmed, dropped } = fitToBudget(messages, budget, classes)
+    const note = `budget ${budget} tok — dropped ${dropped} message(s)`
+    if (dropped > 0) log('info', `messages.trim: ${note}`)
+    return {
+      outputs: {
+        messages: trimmed,
+        // Emit an updated artifact ONLY when a Prompt was the source: record the budget omission when
+        // something was dropped, else pass the artifact through unchanged.
+        ...(artifact && !legacy
+          ? { prompt: dropped > 0 ? withTrimmedMessages(artifact, trimmed, note) : artifact }
+          : {})
+      }
+    }
   }
 }
 

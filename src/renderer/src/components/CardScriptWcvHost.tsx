@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCardScriptsStore } from '../stores/cardScriptsStore'
 import { useToolbarStore } from '../stores/toolbarStore'
 import { CARD_CSP } from '../../../shared/cardCsp'
+import { resolveCardScriptGate, GateScript } from './cardScriptGate'
 
 /**
  * The card **script engine** (Phase 2–4) — a single, invisible, process-isolated `WebContentsView` that runs
@@ -74,11 +75,14 @@ export function CardScriptWcvHost({
   const slotId = `card-scripts:${cardId}:${chatId}`
   const enabled = useCardScriptsStore((s) => s.enabledByCard[cardId] ?? true)
   const trustedGrant = useCardScriptsStore((s) => s.trustedByCard[cardId])
+  const decidedGrant = useCardScriptsStore((s) => s.decidedByCard[cardId])
 
   const grantsRef = useRef<Grants>({})
   const [grantsLoaded, setGrantsLoaded] = useState(false)
   const [scripts, setScripts] = useState<RuntimeScript[] | null>(null)
-  const [remoteHosts, setRemoteHosts] = useState<string[]>([])
+  // Scripts the ACTIVE preset's high-trust grant authorizes (a subset of `scripts`) — run regardless
+  // of card trust (ADR 0017). Populated from get-runtime-scripts alongside the full set.
+  const [presetHighTrustScripts, setPresetHighTrustScripts] = useState<GateScript[]>([])
 
   // Load persisted grants (enabled + trusted/remoteScripts) for this card.
   useEffect(() => {
@@ -97,14 +101,17 @@ export function CardScriptWcvHost({
     }
   }, [profileId, cardId])
 
-  // Fetch the merged runtime script set (card-embedded + active store scopes) + the remote hosts it imports.
+  // Fetch the merged runtime script set (card-embedded + active store scopes) + the subset the active
+  // preset's high-trust grant authorizes (a strict subset — runs regardless of card trust, ADR 0017).
   useEffect(() => {
     if (!enabled || !grantsLoaded) return
     let alive = true
-    window.api.getRuntimeScripts(profileId, cardId, chatId).then((res: any) => {
+    // isolatedRealm=true: this is the WCV transport, the only realm where high-trust remote-code
+    // scripts (ADR 0017) are allowed to resolve. The inline CardScriptHost never sets this.
+    window.api.getRuntimeScripts(profileId, cardId, chatId, true).then((res: any) => {
       if (!alive) return
       setScripts(res?.scripts || [])
-      setRemoteHosts(res?.remoteHosts || [])
+      setPresetHighTrustScripts(res?.presetHighTrustScripts || [])
     })
     return () => {
       alive = false
@@ -112,10 +119,22 @@ export function CardScriptWcvHost({
   }, [profileId, cardId, chatId, enabled, grantsLoaded, trustedGrant])
 
   const trusted = trustedGrant === true || grantsRef.current.trusted === true
-  // Scripts that pull remote code need the per-world trust grant before we run them in a real page.
-  const needsConsent = (remoteHosts.length > 0 || (scripts?.length ?? 0) > 0) && !trusted
+  const decided = decidedGrant === true || grantsRef.current.decided === true
+  // Reconcile the two INDEPENDENT trust grants (ADR 0017): a high-trusted preset's scripts run
+  // regardless of card trust; the card's own scripts still wait for the card decision. `runScripts` is
+  // the authorized subset the WCV doc actually runs; `needsConsent` gates only the card-trust prompt.
+  const { runScripts, needsConsent } = useMemo(
+    () =>
+      resolveCardScriptGate({
+        scripts: scripts ?? [],
+        presetHighTrustScripts,
+        cardTrusted: trusted,
+        cardDecided: decided
+      }),
+    [scripts, presetHighTrustScripts, trusted, decided]
+  )
 
-  const doc = useMemo(() => (scripts && scripts.length ? buildScriptDoc(scripts) : ''), [scripts])
+  const doc = useMemo(() => (runScripts.length ? buildScriptDoc(runScripts) : ''), [runScripts])
   const dataUrl = useMemo(
     () => (doc ? 'data:text/html;charset=utf-8,' + encodeURIComponent(doc) : ''),
     [doc]
@@ -126,7 +145,7 @@ export function CardScriptWcvHost({
   // `enabled` is a dep so toggling card scripts OFF tears the WCV down (its cleanup runs) — otherwise it
   // would keep running the card's scripts despite the off switch.
   useEffect(() => {
-    if (!enabled || !dataUrl || needsConsent) return
+    if (!enabled || !dataUrl) return
     const off = {
       x: -100000,
       y: 0,
@@ -135,7 +154,7 @@ export function CardScriptWcvHost({
     }
     window.api.wcvEnsure(slotId, off, dataUrl, { profileId, chatId, characterId: cardId })
     return () => window.api.wcvDestroy(slotId)
-  }, [slotId, dataUrl, needsConsent, enabled, profileId, chatId, cardId])
+  }, [slotId, dataUrl, enabled, profileId, chatId, cardId])
 
   // Card scripts (replaceScriptButtons) → the menu above the input. Each button posts back to the engine on
   // click (the script's eventOn(getButtonEvent(name)) fires). Scoped to OUR slot; cleared on unmount.
@@ -172,12 +191,11 @@ export function CardScriptWcvHost({
   if (!enabled || !grantsLoaded) return null
   if (scripts && scripts.length === 0) return null
 
-  // Untrusted world that ships scripts → a small consent prompt (the engine is otherwise invisible).
+  // Untrusted card that ships its OWN scripts → a small consent prompt (the engine is otherwise
+  // invisible). Any high-trust PRESET scripts already run via the effect above regardless of this gate.
+  // `needsConsent` is false once the user has decided (grant or deny) — a denial keeps the card's scripts
+  // off silently. The prompt survives mainly for legacy cards imported before the import-time flow.
   if (needsConsent) {
-    // The trust decision is now made at IMPORT time (CardTrustPrompt), and persists. If the user
-    // already decided (grant or deny), never re-prompt here — a denial keeps the scripts off silently.
-    // The inline prompt below only survives as a fallback for legacy cards imported before that flow.
-    if (grantsRef.current.decided) return null
     return (
       <div
         style={{

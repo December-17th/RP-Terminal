@@ -336,7 +336,23 @@ const zh: Record<string, string> = {
   'preset.noPresets': '（无预设）',
   'preset.importST': '导入 ST',
   'preset.imported': '已导入预设“{{name}}”',
-  'preset.importedBundle': '（附带 {{regex}} 条正则、{{scripts}} 个脚本）',
+  'preset.inv.summary':
+    '{{prompts}} 条提示词（{{enabled}} 启用）· {{regex}} 正则 · {{spreset}} SPreset 正则 · {{scripts}} 脚本 · {{ejs}} 含模板',
+  'preset.inv.unknownExt': ' · 未知扩展：{{names}}',
+  'preset.inv.anomalies': ' · {{dupes}} 重复 / {{orphans}} 孤立标识',
+  'preset.inv.remoteCode': '{{count}} 个脚本会加载远程代码 — 已保持停用（需高信任授权后方可运行）',
+  'preset.inv.spresetUnsupported': 'RP Terminal 不执行的 SPreset ChatSquash 功能：{{features}}（已登记，绝不运行）',
+  'preset.highTrust.heading': '远程代码脚本（高信任）',
+  'preset.highTrust.statusGranted': '已授予高信任 —— 此预设的远程代码脚本在隔离环境中运行',
+  'preset.highTrust.statusInert': '{{count}} 个远程代码脚本已保持停用',
+  'preset.highTrust.note':
+    '启用高信任后，此预设的脚本可从互联网加载并运行代码，仅在具有会话访问权限的隔离进程中执行 —— 绝不触及应用、主进程或你的 API 密钥。请仅对你信任的预设启用。',
+  'preset.highTrust.enable': '启用高信任',
+  'preset.highTrust.revoke': '撤销高信任',
+  'preset.highTrust.confirm':
+    '为此预设启用高信任？其远程代码脚本将从互联网加载并运行代码（在隔离进程中）。请仅对你信任的预设执行此操作。',
+  'preset.highTrust.enabled': '已启用高信任 —— {{count}} 个远程代码脚本现已运行',
+  'preset.highTrust.disabled': '已撤销高信任 —— 已移除 {{count}} 个脚本',
   'preset.confirmDelete': '删除此预设？此操作无法撤销。',
   'preset.empty': '未选择预设。新建一个或导入 SillyTavern 预设。',
   'preset.name': '预设名称',
@@ -356,8 +372,12 @@ const zh: Record<string, string> = {
   'preset.depthNote':
     '留空 = 内联，按预设顺序。数字会将此块注入到聊天记录中，从底部往上数该数量的消息处（类似深度世界书条目）。',
   'preset.markerChar': '角色描述',
+  'preset.markerPersonality': '角色性格',
+  'preset.markerScenario': '场景',
   'preset.markerExamples': '示例对话',
   'preset.markerWorldInfo': '世界信息',
+  'preset.markerWorldInfoBefore': '世界信息（角色前）',
+  'preset.markerWorldInfoAfter': '世界信息（角色后）',
   'preset.markerPersona': '用户人设',
   'preset.markerChatHistory': '聊天记录',
   'preset.markerPostHistory': '历史后指令',
@@ -1221,6 +1241,8 @@ const zh: Record<string, string> = {
   'workflowEditor.portDesc.common.in2': '{{in2}} 占位符的上游值',
   'workflowEditor.portDesc.common.in3': '{{in3}} 占位符的上游值',
   'workflowEditor.portDesc.common.in4': '{{in4}} 占位符的上游值',
+  'workflowEditor.portDesc.common.prompt':
+    '组装好的提示词，作为富对象（消息 + 来源溯源 + 执行记录 + 采样参数）。可直接接入采样 / 解析回复 / 写入楼层，替代 Messages；消费端会从中读取消息数组。',
   // 逐节点端口说明
   'workflowEditor.portDesc.input.context.gen': '供所有下游节点读取的回合包',
   'workflowEditor.portDesc.prompt.assemble.block': '拼入提示词尾部的可选文本（未接时为空）',

@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.2-depth-cap",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 source, not captured. populationInjectionPrompts loops i=0..getExtensionPromptMaxDepth() where MAX_INJECTION_DEPTH=10000 (script.js:499, getExtensionPromptMaxDepth script.js:3222-3223 returns MAX with NO clamping) and each step keeps only `prompt.injection_depth === i` (openai.js:813). So a block at depth 10000 (== MAX) matches at i=10000; after the final whole-array reverse (openai.js:864) it lands at the TOP of the chat region. This fixture pins that boundary case, which BOTH ST and RPT inject at the top. ST does NOT clamp out-of-range depths — a depth > MAX matches no `i` and is DROPPED (never injected); RPT instead CLAMPS the index into the conversation region (idx = max(start, min(base-depth, maxIdx)), promptBuilder.ts), so it would inject a > MAX depth at the top where ST drops it. That divergence is enumerated in KNOWN-DIVERGENCES §8; this fixture stays on the convergent MAX value so `expected.chat` is a true ST oracle. Two-message history. Prose is RPT-authored + scrambled.",
+  "input": {
+    "description": "One in-chat system injection at depth 10000 (== MAX_INJECTION_DEPTH, the loop boundary ST includes); lands above all chat messages. Both ST and RPT inject here (convergent).",
+    "preset": {
+      "name": "Oracle Depth Cap (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "ORP_cap_main: mind the glass, mind the tide." },
+        { "identifier": "inj_deep", "name": "Deep Inject", "role": "system", "content": "ORP_cap_inj_top", "injection_position": 1, "injection_depth": 10000 },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "inj_deep", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ]
+    },
+    "character": { "name": "Sol", "description": "Character brindle: Sol, a shelf-watcher counting the quorlish swell." },
+    "chatMessages": [
+      { "role": "assistant", "content": "ORP_cap_hist_asst" },
+      { "role": "user", "content": "ORP_cap_hist_action" }
+    ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "worldInfo": [],
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "system", "assistant", "system", "user"],
+    "messageCount": 5,
+    "mustContain": ["ORP_cap_inj_top"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "ORP_cap_main: mind the glass, mind the tide." },
+      { "role": "system", "content": "ORP_cap_inj_top" },
+      { "role": "assistant", "content": "ORP_cap_hist_asst" },
+      { "role": "system", "content": "Character brindle: Sol, a shelf-watcher counting the quorlish swell." },
+      { "role": "user", "content": "ORP_cap_hist_action" }
+    ]
+  }
+}

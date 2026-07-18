@@ -348,7 +348,26 @@ const en: Record<string, string> = {
   'preset.noPresets': '(no presets)',
   'preset.importST': 'Import ST',
   'preset.imported': 'Imported preset “{{name}}”',
-  'preset.importedBundle': ' (+{{regex}} regex, +{{scripts}} scripts)',
+  'preset.inv.summary':
+    '{{prompts}} prompts ({{enabled}} enabled) · {{regex}} regex · {{spreset}} SPreset regex · {{scripts}} scripts · {{ejs}} templated',
+  'preset.inv.unknownExt': ' · unknown extensions: {{names}}',
+  'preset.inv.anomalies': ' · {{dupes}} duplicate / {{orphans}} orphan identifiers',
+  'preset.inv.remoteCode':
+    '{{count}} script(s) load remote code — kept inert (requires a high-trust opt-in to run)',
+  'preset.inv.spresetUnsupported':
+    'SPreset ChatSquash feature(s) not run by RP Terminal: {{features}} (inventoried, never executed)',
+  'preset.highTrust.heading': 'Remote-code scripts (high trust)',
+  'preset.highTrust.statusGranted':
+    'High trust granted — this preset’s remote-code scripts run in the isolated realm',
+  'preset.highTrust.statusInert': '{{count}} remote-code script(s) kept inert',
+  'preset.highTrust.note':
+    'Enabling high trust lets this preset’s scripts load and run code from the internet, in an isolated process with session access only — never the app, the main process, or your API keys. Only enable it for presets you trust.',
+  'preset.highTrust.enable': 'Enable high trust',
+  'preset.highTrust.revoke': 'Revoke high trust',
+  'preset.highTrust.confirm':
+    'Enable high trust for this preset? Its remote-code scripts will load and run code from the internet (in an isolated process). Only do this for presets you trust.',
+  'preset.highTrust.enabled': 'High trust enabled — {{count}} remote-code script(s) now run',
+  'preset.highTrust.disabled': 'High trust revoked — {{count}} script(s) removed',
   'preset.confirmDelete': 'Delete this preset? This cannot be undone.',
   'preset.empty': 'No preset selected. Create a new one or import a SillyTavern preset.',
   'preset.name': 'Preset Name',
@@ -368,8 +387,12 @@ const en: Record<string, string> = {
   'preset.depthNote':
     'Blank = inline, in preset order. A number injects this block into the chat history that many messages up from the bottom (like a depth lorebook entry).',
   'preset.markerChar': 'Character',
+  'preset.markerPersonality': 'Personality',
+  'preset.markerScenario': 'Scenario',
   'preset.markerExamples': 'Examples',
   'preset.markerWorldInfo': 'World Info',
+  'preset.markerWorldInfoBefore': 'World Info (↑Char)',
+  'preset.markerWorldInfoAfter': 'World Info (↓Char)',
   'preset.markerPersona': 'Persona',
   'preset.markerChatHistory': 'Chat History',
   'preset.markerPostHistory': 'Post-History',
@@ -1267,6 +1290,8 @@ const en: Record<string, string> = {
   'workflowEditor.portDesc.common.in2': 'Upstream value for the {{in2}} placeholder',
   'workflowEditor.portDesc.common.in3': 'Upstream value for the {{in3}} placeholder',
   'workflowEditor.portDesc.common.in4': 'Upstream value for the {{in4}} placeholder',
+  'workflowEditor.portDesc.common.prompt':
+    'The assembled prompt as a rich artifact (messages + provenance + execution record + sampler params). Wire it into Sample / Parse Response / Write Floor instead of Messages; a consumer reads the message array from it.',
   // Port descriptions, per node.
   'workflowEditor.portDesc.input.context.gen': 'The turn bundle every downstream node reads',
   'workflowEditor.portDesc.prompt.assemble.block':

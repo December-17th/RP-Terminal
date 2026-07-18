@@ -23,6 +23,8 @@ export function createNullHost(ctx?: CardCtx): Host {
     setGlobalVar: async () => {},
     getGlobalVarsSync: () => ({}),
     setGlobalVars: async () => {},
+    getExtensionSettingsSync: () => ({}),
+    setExtensionSettings: async () => {},
     onVarsChanged: () => () => {},
 
     // --- WorldbookHost ---
@@ -51,6 +53,7 @@ export function createNullHost(ctx?: CardCtx): Host {
     charAvatarPath: () => null,
     preset: () => null,
     presetNames: () => [],
+    savePreset: async () => false,
 
     // --- RegexHost ---
     regexes: () => [],

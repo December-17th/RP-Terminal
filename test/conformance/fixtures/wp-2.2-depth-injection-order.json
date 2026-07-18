@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.2-depth-injection-order",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 source, not captured. populationInjectionPrompts (openai.js:801-866) walks depth 0..10000; at each depth it groups same-depth prompts by injection_order into orderGroups (openai.js:820-830), processes orders DESCENDING (`sort((a,b)=>+b-+a)`, openai.js:833), and within a group joins each role. ST builds that sequence then reverses the whole message array (openai.js:864), so the NET order of the three order-30/20/10 system injections at depth 2 is ASCENDING (10,20,30). Three-message base history plus the pending user action; injections land above the depth-1 assistant reply. Prose is RPT-authored + scrambled.",
+  "input": {
+    "description": "Three in-chat (injection_position=1) system injections at depth 2 with injection_order 30/20/10; four-message history ending on the user action.",
+    "preset": {
+      "name": "Oracle Depth Order (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "ORP_dio_main: hold the vellum ledger steady." },
+        { "identifier": "inj_o30", "name": "Order 30", "role": "system", "content": "ORP_inj_order_30", "injection_position": 1, "injection_depth": 2, "injection_order": 30 },
+        { "identifier": "inj_o20", "name": "Order 20", "role": "system", "content": "ORP_inj_order_20", "injection_position": 1, "injection_depth": 2, "injection_order": 20 },
+        { "identifier": "inj_o10", "name": "Order 10", "role": "system", "content": "ORP_inj_order_10", "injection_position": 1, "injection_depth": 2, "injection_order": 10 },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "inj_o30", "enabled": true },
+            { "identifier": "inj_o20", "enabled": true },
+            { "identifier": "inj_o10", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ]
+    },
+    "character": { "name": "Marn", "description": "Character brindle: Marn, a tide-clerk of the quorlish shelf." },
+    "chatMessages": [
+      { "role": "assistant", "content": "ORP_dio_hist_a_greeting" },
+      { "role": "user", "content": "ORP_dio_hist_u_first" },
+      { "role": "assistant", "content": "ORP_dio_hist_a_reply" },
+      { "role": "user", "content": "ORP_dio_hist_u_action" }
+    ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "worldInfo": [],
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "assistant", "user", "system", "system", "system", "assistant", "system", "user"],
+    "messageCount": 9,
+    "mustContain": ["ORP_inj_order_10", "ORP_inj_order_20", "ORP_inj_order_30"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "ORP_dio_main: hold the vellum ledger steady." },
+      { "role": "assistant", "content": "ORP_dio_hist_a_greeting" },
+      { "role": "user", "content": "ORP_dio_hist_u_first" },
+      { "role": "system", "content": "ORP_inj_order_10" },
+      { "role": "system", "content": "ORP_inj_order_20" },
+      { "role": "system", "content": "ORP_inj_order_30" },
+      { "role": "assistant", "content": "ORP_dio_hist_a_reply" },
+      { "role": "system", "content": "Character brindle: Marn, a tide-clerk of the quorlish shelf." },
+      { "role": "user", "content": "ORP_dio_hist_u_action" }
+    ]
+  }
+}

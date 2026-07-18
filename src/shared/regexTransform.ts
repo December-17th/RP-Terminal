@@ -15,6 +15,13 @@ export interface RegexLikeRule {
    * when a `depth` is supplied to `applyRegexRules` (prompt-time per-message); ignored otherwise. */
   minDepth?: number | null
   maxDepth?: number | null
+  /** ST `substituteRegex` (substitute_find_regex — engine.js:298-302): how to macro-expand the FIND
+   * pattern before compiling. 0/undefined = NONE (raw source), 1 = RAW ({{user}}/{{char}} expanded
+   * verbatim), 2 = ESCAPED (expanded, then regex-escaped so the value is matched literally). Only the
+   * {{user}}/{{char}} macro subset is expanded here (this module is pure — no full macro engine). */
+  substituteRegex?: number
+  /** ST `runOnEdit` (engine.js:356): when false, the rule is skipped on an EDIT call (`isEdit`). */
+  runOnEdit?: boolean
 }
 
 export interface RegexApplyContext {
@@ -50,38 +57,92 @@ export const isCardPayload = (s: string): boolean =>
  * idiom contains `$&`, never `$0`, so keeping `$0` live costs the protection above nothing.
  *
  * Numbered groups still resolve and the "no group N ⇒ literal" guard keeps a card's `$6` intact. */
+/** Expand the {{user}}/{{char}} macro subset in a string (the only macros this pure module knows). */
+const subUserChar = (s: string, ctx: RegexApplyContext): string =>
+  s.replace(/\{\{user\}\}/gi, ctx.user ?? '').replace(/\{\{char\}\}/gi, ctx.char ?? '')
+
+/** Escape regex metacharacters in a substituted find-macro value (ST `sanitizeRegexMacro`,
+ * engine.js:304-324) so a RAW value with e.g. `.` or `*` matches literally in ESCAPED mode. */
+const escapeRegexValue = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Build the effective FIND source for ST `substituteRegex` RAW(1)/ESCAPED(2): expand the
+ * {{user}}/{{char}} subset in the pattern, escaping the value in ESCAPED mode. Pure-module scope —
+ * full macro expansion of the find pattern is out of scope (issue 13 owns the macro engine). */
+const substituteFindSource = (
+  source: string,
+  mode: number,
+  ctx: RegexApplyContext
+): string => {
+  const user = mode === 2 ? escapeRegexValue(ctx.user ?? '') : ctx.user ?? ''
+  const char = mode === 2 ? escapeRegexValue(ctx.char ?? '') : ctx.char ?? ''
+  return source.replace(/\{\{user\}\}/gi, user).replace(/\{\{char\}\}/gi, char)
+}
+
+/** Remove every trimString from a captured value, mirroring ST's `filterString` (engine.js:457-465):
+ * each trimString is macro-expanded ({{user}}/{{char}}) before being stripped. */
+const filterTrims = (value: string | undefined, rule: RegexLikeRule, ctx: RegexApplyContext): string => {
+  let out = value ?? ''
+  for (const t of rule.trimStrings) {
+    if (!t) continue
+    const sub = subUserChar(t, ctx)
+    if (sub) out = out.split(sub).join('')
+  }
+  return out
+}
+
 const buildReplacement = (
   rule: RegexLikeRule,
   match: string,
   groups: Array<string | undefined>,
+  named: Record<string, string | undefined>,
   ctx: RegexApplyContext
 ): string => {
-  let trimmed = match
-  for (const t of rule.trimStrings) if (t) trimmed = trimmed.split(t).join('')
   const card = isCardPayload(rule.replace)
+  const filt = (v: string | undefined): string => filterTrims(v, rule, ctx)
+  // {{match}} is ST's alias for $0 (engine.js:421 `replaceString.replace(/{{match}}/gi, '$0')`) — the
+  // whole match with trimStrings removed. {{user}}/{{char}} expand from the apply context.
   let out = rule.replace
-    .replace(/\{\{match\}\}/gi, trimmed)
+    .replace(/\{\{match\}\}/gi, filt(match))
     .replace(/\{\{user\}\}/gi, ctx.user ?? '')
     .replace(/\{\{char\}\}/gi, ctx.char ?? '')
+  // `$&` — RPT extension (native String.replace whole-match). LEFT LITERAL in a card payload: a card's
+  // <script> routinely carries the regex-escape idiom `.replace(/…/g,'\\$&')` and splicing the whole
+  // match there breaks it (the 2026-07-17 fix, fix/regex-dollar0-card-payload). ST never touches `$&`.
   if (!card) out = out.replace(/\$&/g, match)
-  out = out.replace(/\$(\d{1,2})/g, (m, n) => {
-    const groupNumber = Number(n)
-    if (groupNumber === 0) return match
+  // Numbered ($0/$N) + named ($<name>) capture groups in ONE pass (ST engine.js:422). trimStrings are
+  // applied to every substituted value (ST filterString). $0 is the whole match and ALWAYS resolves —
+  // even in a card payload — because it is ST's own injection token (the 2026-07-17 $0 fix, PR #100);
+  // only `$&` (JS's token, which ST never substitutes) stays literal there. A $N with no such group in
+  // the find-regex stays LITERAL (preserves a card's own backreference).
+  out = out.replace(/\$(\d{1,2})|\$<([^>]+)>/g, (m, num, name) => {
+    if (name !== undefined) {
+      // Named group: ST returns '' when the group is absent/undefined (engine.js:428-435). In a card
+      // payload keep an unknown $<name> literal (same protection as an unknown $N).
+      if (name in named) return filt(named[name])
+      return card ? m : ''
+    }
+    const groupNumber = Number(num)
+    if (groupNumber === 0) return filt(match)
     const i = groupNumber - 1
-    return i < groups.length ? (groups[i] ?? '') : m
+    return i < groups.length ? filt(groups[i]) : m
   })
   if (!card) out = out.replace(/\\n/g, '\n')
   return out
 }
 
-/** Pull (match, capture groups) out of a String.prototype.replace callback's args,
- * dropping the trailing offset/string and an optional named-groups object. */
-const replaceArgs = (args: unknown[]): { match: string; groups: Array<string | undefined> } => {
+/** Pull (match, capture groups, named-groups object) out of a String.prototype.replace callback's
+ * args, dropping the trailing offset/string. The named-groups object is present only when the
+ * find-regex declares named groups (it is then the LAST arg, after the whole input string). */
+const replaceArgs = (
+  args: unknown[]
+): { match: string; groups: Array<string | undefined>; named: Record<string, string | undefined> } => {
   const rest = [...args]
-  if (typeof rest[rest.length - 1] === 'object') rest.pop() // named-groups object (if any)
+  let named: Record<string, string | undefined> = {}
+  const last = rest[rest.length - 1]
+  if (last !== null && typeof last === 'object') named = rest.pop() as Record<string, string | undefined>
   rest.pop() // whole input string
   rest.pop() // match offset
-  return { match: rest[0] as string, groups: rest.slice(1) as Array<string | undefined> }
+  return { match: rest[0] as string, groups: rest.slice(1) as Array<string | undefined>, named }
 }
 
 export interface ApplyOptions<R> {
@@ -98,6 +159,17 @@ export interface ApplyOptions<R> {
    * replacement output (e.g. a per-card render-mode HTML comment). Undefined → no marker.
    */
   marker?: (rule: R) => string | undefined
+  /** ST edit call (engine.js:356): when true, a rule with `runOnEdit !== true` is skipped. No live
+   * RPT caller sets this today (edits re-run generation); present for model + fixture parity. */
+  isEdit?: boolean
+  /**
+   * PER-RULE LINEAGE (issue 14 / M1 finding 3): invoked once for every rule that ACTUALLY changed the
+   * text, with that rule and its before/after span. Lets a caller (promptBuilder's forensic journal)
+   * attribute a regex change to the RULE that fired rather than the whole turn. A rule that matches
+   * nothing (before === after) does not fire it. Intended for the non-freeze prompt path (on the
+   * display path `freezePayloads` rewrites payloads to tokens, so before/after carry placeholders).
+   */
+  onRuleApplied?: (rule: R, before: string, after: string) => void
   /**
    * DISPLAY-path only: when a rule injects a card payload (beautification HTML — see isCardPayload),
    * replace that injected region with an opaque placeholder so LATER rules don't rescan it, then
@@ -160,6 +232,8 @@ export const applyRegexRules = <R extends RegexLikeRule>(
     ) {
       continue
     }
+    // ST edit gating (engine.js:356): on an edit call, skip a rule that doesn't opt into runOnEdit.
+    if (opts.isEdit && rule.runOnEdit !== true) continue
     // ST depth-scoping (regex/engine.js): when a depth is supplied, skip a rule whose
     // [minDepth, maxDepth] excludes it. The latest turn is depth 0, so a `minDepth:1` rule
     // (e.g. "keep only the latest user input") never touches the live input — only older turns.
@@ -172,22 +246,33 @@ export const applyRegexRules = <R extends RegexLikeRule>(
         continue
       }
     }
+    // ST substituteRegex (engine.js:397-409): macro-expand the FIND pattern before compiling. When set
+    // (RAW/ESCAPED) the effective source depends on ctx, so bypass the compile cache and build fresh.
+    const subMode = Number(rule.substituteRegex ?? 0)
     let re: RegExp
     try {
-      re = opts.compile ? opts.compile(rule) : new RegExp(rule.source, rule.flags)
+      re =
+        subMode === 1 || subMode === 2
+          ? new RegExp(substituteFindSource(rule.source, subMode, ctx), rule.flags)
+          : opts.compile
+            ? opts.compile(rule)
+            : new RegExp(rule.source, rule.flags)
     } catch {
       continue
     }
     re.lastIndex = 0 // reset stateful (global) regexes — important for cached instances
+    const before = out
     out = out.replace(re, (...args) => {
-      const { match, groups } = replaceArgs(args)
-      const repl = buildReplacement(rule, match, groups, ctx)
+      const { match, groups, named } = replaceArgs(args)
+      const repl = buildReplacement(rule, match, groups, named, ctx)
       const mk = opts.marker?.(rule)
       const full = mk ? mk + repl : repl
       // Freeze a genuine card payload so LATER rules scan the token, not the paste. Plain-text
       // replacements (the common case, and every prompt-path rule) pass through unchanged.
       return canFreeze && isCardPayload(full) ? freeze(full) : full
     })
+    // Per-rule lineage: report only when this rule actually changed the text (issue 14 / M1 finding 3).
+    if (opts.onRuleApplied && out !== before) opts.onRuleApplied(rule, before, out)
   }
   // Restore frozen payloads. REVERSE creation order: a later payload may embed an earlier token (a
   // rule that echoed its match via `$&`/`{{match}}`), so the outer token must expand first. split/join

@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.5-squash-off",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 source (public/scripts/openai.js:1599-1601 — squashSystemMessages is called ONLY when oai_settings.squash_system_messages is true), not captured. Prose is RPT-authored + scrambled. Pins `squash_system_messages: false`: ST performs NO squashing, so the four adjacent unnamed `system` messages stay DISCRETE. This is the frozen ST-OFF spec. DELIBERATE RPT DIVERGENCE (KNOWN-DIVERGENCES §5): RPT keeps its merge-all `mergeConsecutiveRoles` for an imported preset with squash OFF (and for native presets), so RPT would coalesce these adjacent same-role messages where ST-off leaves them discrete — a behavior RPT retains on purpose to preserve the split-block (`<X_setting>` open/body/close) coalescing fix. squashSystemMessages is applied ONLY when the flag is true (see providerShape). `expected.chat` below is ST's discrete-message spec; the `knownDivergence` marker tells the conformance runner to xfail the exact-match diff once the adapter is wired (M5) rather than hard-fail on RPT's coalesced output.",
+  "knownDivergence": {
+    "ref": "KNOWN-DIVERGENCES §5",
+    "reason": "RPT keeps merge-all mergeConsecutiveRoles for imported squash-off (and native) presets; ST-off leaves adjacent unnamed system messages discrete."
+  },
+  "input": {
+    "description": "Four adjacent unnamed system literals; one trailing user turn; squash off — discrete systems preserved.",
+    "preset": {
+      "name": "Oracle Squash Off (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "squash_system_messages": false,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "Prime directive: keep the vorrel cadence steady." },
+        { "identifier": "secondary", "name": "Secondary", "role": "system", "content": "Secondary clause: mind the sennet frame." },
+        { "identifier": "tertiary", "name": "Tertiary", "role": "system", "content": "Tertiary clause: never break the quell line." },
+        { "identifier": "quaternary", "name": "Quaternary", "role": "system", "content": "Quaternary clause: hold the lantern-oath." },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "secondary", "enabled": true },
+            { "identifier": "tertiary", "enabled": true },
+            { "identifier": "quaternary", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ]
+    },
+    "character": {
+      "name": "Kaevo",
+      "description": "Kaevo, a quiet dock-warden of Sill."
+    },
+    "chatMessages": [
+      { "role": "user", "content": "Kaevo — is the night skiff back?" }
+    ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "system", "system", "system", "user"],
+    "messageCount": 5,
+    "mustContain": [
+      "Prime directive: keep the vorrel cadence steady.",
+      "Secondary clause: mind the sennet frame.",
+      "Quaternary clause: hold the lantern-oath."
+    ],
+    "mustNotContain": ["[Start a new Chat]", "point of view of {{user}}, using the chat history"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "Prime directive: keep the vorrel cadence steady." },
+      { "role": "system", "content": "Secondary clause: mind the sennet frame." },
+      { "role": "system", "content": "Tertiary clause: never break the quell line." },
+      { "role": "system", "content": "Quaternary clause: hold the lantern-oath." },
+      { "role": "user", "content": "Kaevo — is the night skiff back?" }
+    ]
+  },
+  "actualDivergent": {
+    "note": "RPT's CURRENT real ASSEMBLY output for this input (pinned so future drift fails — the knownDivergence xfail exempts this fixture from matching `expected`, ST's golden, NOT from pinning RPT's own behavior). It differs from `expected` in TWO ways, both deliberate: (1) the four adjacent system blocks stay DISCRETE — RPT's merge-all `mergeConsecutiveRoles` is a PRODUCTION provider-shape reshape applied AFTER assembly, which the adapter (KNOWN-DIVERGENCES §5) excludes; (2) the extra `system` char-description message before the user turn — this preset omits the `char_description` marker, and RPT now injects the character description immediately before the player action (owner directive, KNOWN-DIVERGENCES §10). This snapshot catches any drift in either.",
+    "chat": [
+      { "role": "system", "content": "Prime directive: keep the vorrel cadence steady." },
+      { "role": "system", "content": "Secondary clause: mind the sennet frame." },
+      { "role": "system", "content": "Tertiary clause: never break the quell line." },
+      { "role": "system", "content": "Quaternary clause: hold the lantern-oath." },
+      { "role": "system", "content": "Kaevo, a quiet dock-warden of Sill." },
+      { "role": "user", "content": "Kaevo — is the night skiff back?" }
+    ]
+  }
+}

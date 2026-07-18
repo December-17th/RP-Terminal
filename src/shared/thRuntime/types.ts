@@ -33,7 +33,9 @@ export type {
   ThMessage,
   StMessage,
   FloorLike,
-  GenCfgNormalized
+  GenCfgNormalized,
+  HostPresetPrompt,
+  HostPresetView
 } from './hostPrimitives'
 
 /**

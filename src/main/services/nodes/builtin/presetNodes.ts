@@ -5,6 +5,7 @@ import { GenContext } from '../../generation/types'
 import { ChatMessage } from '../../promptBuilder'
 import { LorebookEntry } from '../../../types/character'
 import { NodeImpl, NodeRunFailure } from '../types'
+import { assembledArtifact } from '../promptArtifact'
 
 /**
  * prompt.preset composer (context-epochs plan §3): `prompt.assemble` with its ingredients exposed
@@ -37,7 +38,10 @@ export const promptPreset: NodeImpl = {
   ],
   outputs: [
     { name: 'sendMessages', type: 'Messages' },
-    { name: 'params', type: 'Any' }
+    { name: 'params', type: 'Any' },
+    // Issue 18b: parity with prompt.assemble — the same assembly, also emitted as the rich `Prompt`
+    // artifact. ADDITIVE; the legacy ports stay so existing composers wire unchanged.
+    { name: 'prompt', type: 'Prompt' }
   ],
   configSchema: presetConfig,
   run: (_ctx, inputs, node) => {
@@ -68,12 +72,22 @@ export const promptPreset: NodeImpl = {
     // Unwired memory = '' (assemble's behavior for an empty memory block — NOT the default graph's
     // recall, which it wires explicitly).
     const memory = (inputs.memory as string | undefined) ?? ''
-    const { sendMessages, params } = assemblePrompt(
+    const { sendMessages, params, record, authored } = assemblePrompt(
       gen,
       extra.length ? [...matched, ...extra] : matched,
       memory,
       overrides
     )
-    return { outputs: { sendMessages, params } }
+    // Stamp the forensic record onto the shared gen (issue 09; parity with prompt.assemble) so a
+    // graph routing preset.gen → write.gen persists it too. Behavior-neutral: the record travels
+    // inside the `prompt` artifact but is not a standalone port.
+    if (record) gen.executionRecord = record
+    return {
+      outputs: {
+        sendMessages,
+        params,
+        prompt: assembledArtifact(sendMessages, params, record, authored)
+      }
+    }
   }
 }

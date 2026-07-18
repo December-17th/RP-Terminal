@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.5-squash-on",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": true },
+  "note": "SYNTHESIZED from ST 1.18.0 source (public/scripts/openai.js:3827-3866 squashSystemMessages; gated at :1599-1601), not captured. Prose is RPT-authored + scrambled; no ST default utility strings appear. Pins `squash_system_messages: true`: consecutive UNNAMED `system` messages are merged with a single '\\n' (openai.js:3846), and an EMPTY system message is force-dropped (openai.js:3835-3837) WITHOUT breaking the surrounding run — so main+secondary+tertiary+quaternary collapse into ONE system message across the dropped empty `spacer`. The two consecutive USER turns stay DISCRETE, proving squash is system-only (unlike RPT's merge-all `mergeConsecutiveRoles`, which native presets keep). ST's protected control identifiers (newMainChat/newChat/groupNudge, openai.js:3828) are ST-internal separators RPT does not emit; their survival is pinned by the providerShape unit test, not this fixture. Adapter-verify at Phase-2 wiring.",
+  "input": {
+    "description": "Four adjacent unnamed system literals with an empty `spacer` between the 3rd and 4th; two trailing consecutive user turns; squash on.",
+    "preset": {
+      "name": "Oracle Squash On (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "squash_system_messages": true,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "Prime directive: keep the vorrel cadence steady." },
+        { "identifier": "secondary", "name": "Secondary", "role": "system", "content": "Secondary clause: mind the sennet frame." },
+        { "identifier": "tertiary", "name": "Tertiary", "role": "system", "content": "Tertiary clause: never break the quell line." },
+        { "identifier": "spacer", "name": "Spacer", "role": "system", "content": "" },
+        { "identifier": "quaternary", "name": "Quaternary", "role": "system", "content": "Quaternary clause: hold the lantern-oath." },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "secondary", "enabled": true },
+            { "identifier": "tertiary", "enabled": true },
+            { "identifier": "spacer", "enabled": true },
+            { "identifier": "quaternary", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true }
+          ]
+        }
+      ]
+    },
+    "character": {
+      "name": "Kaevo",
+      "description": "Kaevo, a quiet dock-warden of Sill."
+    },
+    "chatMessages": [
+      { "role": "user", "content": "Kaevo — is the night skiff back?" },
+      { "role": "user", "content": "And did Mirren come with it?" }
+    ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": true },
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "user", "system", "user"],
+    "messageCount": 4,
+    "mustContain": [
+      "Prime directive: keep the vorrel cadence steady.\nSecondary clause: mind the sennet frame.\nTertiary clause: never break the quell line.\nQuaternary clause: hold the lantern-oath.",
+      "And did Mirren come with it?"
+    ],
+    "mustNotContain": ["[Start a new Chat]", "point of view of {{user}}, using the chat history"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "Prime directive: keep the vorrel cadence steady.\nSecondary clause: mind the sennet frame.\nTertiary clause: never break the quell line.\nQuaternary clause: hold the lantern-oath." },
+      { "role": "user", "content": "Kaevo — is the night skiff back?" },
+      { "role": "system", "content": "Kaevo, a quiet dock-warden of Sill." },
+      { "role": "user", "content": "And did Mirren come with it?" }
+    ]
+  }
+}

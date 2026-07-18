@@ -143,6 +143,11 @@ const api = {
   listPresets: (profileId: string) => ipcRenderer.invoke('list-presets', profileId),
   getActivePresetId: (profileId: string) => ipcRenderer.invoke('get-active-preset-id', profileId),
   getActivePreset: (profileId: string) => ipcRenderer.invoke('get-active-preset', profileId),
+  // Envelope-backed active preset VIEW, read SYNCHRONOUSLY — the inline cardBridge host uses this at
+  // getPreset() time so its prompts_unused/extensions match the WCV transport (both read the same
+  // presetService.getActivePresetView). Mirrors the other sync card getters (pluginGlobalsGetSync, …).
+  getActivePresetViewSync: (profileId: string) =>
+    ipcRenderer.sendSync('get-active-preset-view-sync', profileId),
   getPreset: (profileId: string, presetId: string) =>
     ipcRenderer.invoke('get-preset', profileId, presetId),
   setActivePreset: (profileId: string, presetId: string) =>
@@ -154,6 +159,14 @@ const api = {
   deletePreset: (profileId: string, presetId: string) =>
     ipcRenderer.invoke('delete-preset', profileId, presetId),
   importPresetDialog: (profileId: string) => ipcRenderer.invoke('import-preset-dialog', profileId),
+  // High-trust opt-in (ADR 0017 / issue 19) — unlock a preset's remote-code scripts to run in the
+  // isolated WCV realm only.
+  presetIsHighTrust: (profileId: string, presetId: string) =>
+    ipcRenderer.invoke('preset-is-high-trust', profileId, presetId),
+  presetSetHighTrust: (profileId: string, presetId: string, on: boolean) =>
+    ipcRenderer.invoke('preset-set-high-trust', profileId, presetId, on),
+  presetGetInventory: (profileId: string, presetId: string) =>
+    ipcRenderer.invoke('get-preset-inventory', profileId, presetId),
   // Node-workflow graphs (Phase 3 persistence)
   listNodeTypes: () => ipcRenderer.invoke('list-node-types'),
   listWorkflows: (profileId: string) => ipcRenderer.invoke('list-workflows', profileId),
@@ -518,6 +531,12 @@ const api = {
     ipcRenderer.sendSync('plugin-globals-get-sync', profileId),
   pluginGlobalsSet: (profileId: string, vars: Record<string, any>) =>
     ipcRenderer.invoke('plugin-globals-set', profileId, vars),
+  // TavernHelper extensionSettings durable backing (issue 19). SYNC read so a card reads its saved
+  // settings at boot; whole-object write flushed by saveSettingsDebounced.
+  extensionSettingsGetSync: (profileId: string) =>
+    ipcRenderer.sendSync('extension-settings-get-sync', profileId),
+  extensionSettingsSet: (profileId: string, settings: Record<string, any>) =>
+    ipcRenderer.invoke('extension-settings-set', profileId, settings),
   pluginGetMessages: (profileId: string, chatId: string) =>
     ipcRenderer.invoke('plugin-get-messages', profileId, chatId),
   pluginSetMessage: (profileId: string, chatId: string, floorIndex: number, patch: any) =>
@@ -638,6 +657,11 @@ const api = {
     profileId: string,
     ctx?: { cardId?: string | null; chatId?: string | null }
   ) => ipcRenderer.invoke('get-plot-block-regex', profileId, ctx),
+  // Reasoning-panel display rules (ST placement 6).
+  getReasoningRegex: (
+    profileId: string,
+    ctx?: { cardId?: string | null; chatId?: string | null }
+  ) => ipcRenderer.invoke('get-reasoning-regex', profileId, ctx),
   listRegex: (profileId: string) => ipcRenderer.invoke('list-regex', profileId),
   listPanelRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('list-panel-regex', profileId, ctx),
@@ -664,8 +688,12 @@ const api = {
     ipcRenderer.invoke('delete-script', profileId, file),
   importScriptDialog: (profileId: string, scope?: string, owner?: string) =>
     ipcRenderer.invoke('import-script-dialog', profileId, scope, owner),
-  getRuntimeScripts: (profileId: string, cardId: string | null, chatId: string | null) =>
-    ipcRenderer.invoke('get-runtime-scripts', profileId, cardId, chatId),
+  getRuntimeScripts: (
+    profileId: string,
+    cardId: string | null,
+    chatId: string | null,
+    isolatedRealm?: boolean
+  ) => ipcRenderer.invoke('get-runtime-scripts', profileId, cardId, chatId, isolatedRealm === true),
   getRegexRules: (profileId: string, file: string) =>
     ipcRenderer.invoke('regex-script-rules', profileId, file),
   updateRegexRule: (profileId: string, file: string, index: number, patch: any) =>

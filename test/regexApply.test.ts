@@ -113,3 +113,19 @@ describe('regexStore.apply', () => {
     expect(apply('cat', rules)).toBe('fox')
   })
 })
+
+describe('regexStore.applyReasoning (ST placement 6 display)', () => {
+  it('transforms extracted <think> text with the reasoning rules', () => {
+    useRegexStore.setState({
+      reasoningRules: [rule({ source: '\\bdraft\\b', replace: 'plan', placement: [6] })]
+    })
+    expect(useRegexStore.getState().applyReasoning('first draft of the move')).toBe(
+      'first plan of the move'
+    )
+  })
+
+  it('is identity when no reasoning rule is active', () => {
+    useRegexStore.setState({ reasoningRules: [] })
+    expect(useRegexStore.getState().applyReasoning('untouched thought')).toBe('untouched thought')
+  })
+})
