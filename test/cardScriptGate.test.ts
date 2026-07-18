@@ -22,7 +22,7 @@ describe('resolveCardScriptGate - explicit source authorization', () => {
     expect(resolveRuntimeScriptAuthorization('session')).toBe('import-trust')
   })
 
-  it('runs ordinary and high-trust preset scripts on an untrusted card', () => {
+  it('runs ordinary preset scripts, including card-bundled preset content, on an untrusted card', () => {
     const ordinary = s('ordinary-preset', 'import-trust')
     const remote = s('remote-preset', 'preset-high-trust')
     const result = resolveCardScriptGate({

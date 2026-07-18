@@ -41,8 +41,9 @@ export interface ScriptInfo extends StoredScript {
  * Why a runtime script is allowed to execute in the isolated WCV.
  *
  * Card/world-owned code is the only class controlled by the per-card trust decision. Ordinary
- * library and preset scripts were authorized when the user installed/imported them; remote-code
- * preset scripts require the separate per-preset high-trust grant.
+ * library and preset scripts were authorized when the user installed/imported them — including a
+ * character-bundled preset activated later — while remote-code preset scripts require the separate
+ * per-preset high-trust grant.
  */
 export type RuntimeScriptAuthorization = 'card-trust' | 'import-trust' | 'preset-high-trust'
 

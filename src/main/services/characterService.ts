@@ -519,7 +519,9 @@ const installBundleArtifacts = (
     scripts++
   }
 
-  // Route bundled chat-completion presets into the preset store (never made active). Preset install
+  // Route bundled chat-completion presets into the preset store (never made active). Activating one
+  // later runs its non-remote scripts under import trust without a card-consent prompt (ADR 0017);
+  // remote-code scripts still need the preset's separate high-trust opt-in. Preset install
   // name-dedupes (presetService), so re-running on update is safe — no skip flag needed here.
   let presets = 0
   for (const p of collectBundledPresets(card)) {
