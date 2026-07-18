@@ -1,0 +1,29 @@
+[
+  {
+    "name": "openai-gpt4o",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "api_key": "sk-REPLACE_ME",
+    "model": "gpt-4o",
+    "rpm_limit": 60,
+    "max_concurrent": 4
+  },
+  {
+    "name": "anthropic-sonnet",
+    "provider": "anthropic",
+    "endpoint": "https://api.anthropic.com/v1",
+    "api_key": "sk-ant-REPLACE_ME",
+    "model": "claude-sonnet-4-5",
+    "rpm_limit": 50,
+    "max_concurrent": 4
+  },
+  {
+    "name": "gemini-flash",
+    "provider": "gemini",
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta",
+    "api_key": "REPLACE_ME",
+    "model": "gemini-2.5-flash",
+    "rpm_limit": 0,
+    "max_concurrent": 2
+  }
+]

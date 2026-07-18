@@ -13,6 +13,10 @@ example sillytarvern character card, presets, extensions and scripts/
 # App data folder created next to the app in dev (storage relocation)
 /rp-terminal-data/
 
+# Project Yuzu P0 harness: real-provider keys + generated run results (kept LOCAL)
+test/yuzu/p0/providers.local.json
+test/yuzu/p0/results/
+
 # Subagent-driven-development runtime scratch (briefs, reports, diffs, ledger)
 /.superpowers/
 .superpowers/
