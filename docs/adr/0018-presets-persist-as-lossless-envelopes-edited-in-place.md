@@ -17,3 +17,4 @@ RPT's `PresetSchema` keeps only name + sampler parameters + a reduced prompt lis
 - After any edit, the stored SHA-256 and original bytes describe the *import*, not the current state — deliberate: provenance, not integrity enforcement.
 - ADR 0006's copy-on-edit pattern is deliberately **not** extended to presets: forks earn their ceremony in workflow docs where sharing matters; presets are personal working objects.
 - Storage grows by one original-file blob per import (0.1–2 MB observed) — negligible.
+- **The byte-lossless guarantee is the stored ENVELOPE (original bytes + SHA), not the semantic export.** Semantic export is not guaranteed byte-equal for *pathological* presets: duplicate-id `prompt_order` entries collapse (first-seen wins, matching the parser), and parser-dropped order entries migrate to the tail. A never-edited preset can still be re-exported byte-exact via `exportPresetOriginal` from the original bytes.

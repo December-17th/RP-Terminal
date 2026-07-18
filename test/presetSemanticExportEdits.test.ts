@@ -128,6 +128,47 @@ describe('exportPresetSemantic reflects the edited state (ADR 0018 lossless expo
     expect(JSON.stringify(out)).not.toContain('Alpha wobble as {{char}}.')
   })
 
+  it('carries an injection_depth edit through semantic export', () => {
+    // A prompt at absolute position (injection_position:1) carries an injection_depth the parser surfaces
+    // and the Preset Manager lets you edit; the edit must survive export like content/role/order do.
+    const raw = {
+      name: 'Depth Export',
+      prompts: [
+        { identifier: 'main', name: 'Main', role: 'system', content: 'Alpha as {{char}}.', marker: false },
+        {
+          identifier: 'deepnote',
+          name: 'Deep Note',
+          role: 'system',
+          content: 'Zeta murmurs at depth.',
+          marker: false,
+          injection_position: 1,
+          injection_depth: 3
+        }
+      ],
+      prompt_order: [
+        {
+          character_id: 100001,
+          order: [
+            { identifier: 'main', enabled: true },
+            { identifier: 'deepnote', enabled: true }
+          ]
+        }
+      ]
+    }
+    importPresetFromFile(profileId, writeTmp(raw))
+    const id = getActivePresetId(profileId)!
+
+    const view = getPresetById(profileId, id)!
+    const deep = view.prompts.find((p) => p.identifier === 'deepnote')!
+    expect(deep.injection_depth).toBe(3) // parser surfaced the imported depth
+    deep.injection_depth = 7 // edit the depth
+    savePreset(profileId, id, view)
+
+    const out = JSON.parse(exportPresetSemantic(profileId, id)!)
+    expect(promptById(out, 'deepnote').injection_depth).toBe(7) // edit survived export, not reverted to 3
+    expect(promptById(out, 'deepnote').injection_position).toBe(1) // position untouched
+  })
+
   it('leaves an UNEDITED preset export JSON.parse-equal to the import (round-trip invariant intact)', () => {
     const raw = synthPreset('Unedited Export')
     importPresetFromFile(profileId, writeTmp(raw))

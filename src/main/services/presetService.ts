@@ -588,6 +588,12 @@ const overlayPromptEdits = (rawPrompt: Record<string, any>, vp: PromptBlock): vo
   if ('injection_order' in rawPrompt && typeof vp.injection_order === 'number') {
     rawPrompt.injection_order = vp.injection_order
   }
+  // Depth is editable in the Preset Manager (~PresetManager:423); overlay it like the other scalars so a
+  // depth edit survives semantic export instead of reverting to the imported value (runtime kept it; export
+  // dropped it). Touch only when the raw carries the key, so an unedited export stays byte-equal.
+  if ('injection_depth' in rawPrompt && typeof vp.injection_depth === 'number') {
+    rawPrompt.injection_depth = vp.injection_depth
+  }
 }
 
 /** An ST-shaped raw prompt object for a prompt ADDED in the editor (no matching raw definition). */
@@ -649,20 +655,18 @@ const overlayPromptsAndOrder = (root: any, originalRoot: any, view: Preset): voi
     if (rp) overlayPromptEdits(rp, vp)
   }
 
-  // 2) Reflect order + enablement. Prefer the `prompt_order` list ST resolves against (the 100001
-  //    record, else the first list carrying an `order`); rebuild it from the view. When a preset has
+  // 2) Reflect order + enablement. Resolve the active `prompt_order` list via the SHARED selector
+  //    (100001 record, else the first list carrying an `order`) so export selection can't drift from the
+  //    list the parser assembled from — the drift hazard selectPromptOrder's own comment warns about. It
+  //    returns the live `order` array (by reference), which we rebuild IN PLACE below. When a preset has
   //    NO `prompt_order`, order + enablement live on `prompts[]` (the parser's fallback) — reorder there.
-  const orderBlock = Array.isArray(root.prompt_order)
-    ? root.prompt_order.find((o: any) => o?.character_id === 100001 && Array.isArray(o?.order)) ||
-      root.prompt_order.find((o: any) => Array.isArray(o?.order)) ||
-      null
-    : null
+  const activeOrder = selectPromptOrder(root)
 
-  if (orderBlock) {
+  if (activeOrder) {
     // Additions need a prompt DEFINITION too (the order alone can't carry content).
     for (const vp of view.prompts) if (!rawById.has(vp.identifier)) root.prompts.push(newRawPrompt(vp))
 
-    const existing: any[] = orderBlock.order
+    const existing: any[] = activeOrder
     const entryById = new Map<string, any>()
     for (const e of existing) {
       if (e && typeof e.identifier === 'string' && !entryById.has(e.identifier)) {
@@ -681,7 +685,9 @@ const overlayPromptsAndOrder = (root: any, originalRoot: any, view: Preset): voi
       if (importIds.has(id)) continue // in the import view but not now → a user DELETION, drop it
       rebuilt.push(e) // parser-dropped but defined → preserve (lossless)
     }
-    orderBlock.order = rebuilt
+    // Mutate the selector's array in place (it IS the block's `order`), so the block the parser reads
+    // from is the one we rewrite — no second block-selection to drift from the one above.
+    activeOrder.splice(0, activeOrder.length, ...rebuilt)
   } else {
     // No `prompt_order`: reorder `prompts[]` to the view and reflect enablement, P1-safe (only write
     // `enabled` when it actually changed from import, or the raw prompt already carries the key).
