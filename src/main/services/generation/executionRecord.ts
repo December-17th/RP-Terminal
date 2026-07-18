@@ -113,6 +113,12 @@ export const createRecordBuilder = (): RecordBuilder => {
       // Arbitrary script mutation: NEVER copy — before/after as hashes only.
       push({ stage: 'opaque', source, before: ref(before), after: ref(after) })
     },
+    exclude(source: RecordSource, reason: string): void {
+      // A decision, not a transform: the block/override never reached the wire. `note` carries the
+      // machine reason (disabled / trigger-filtered:<genType> / override-denied) so the preview
+      // reader can explain the absence — no before/after payload (nothing was placed).
+      push({ stage: 'exclude', source, note: reason })
+    },
     arrayStage(stage, beforeCount, afterCount, note): void {
       // Array→array pipeline stage: counts live in `note` (both explicit args are captured there by
       // the caller); no positional `at` since it reshapes the whole list, not one index.

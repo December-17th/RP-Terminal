@@ -95,11 +95,17 @@ describe('oracle conformance scenarios', () => {
         }
         if (fixture.knownDivergence) {
           // DOCUMENTED DIVERGENCE (KNOWN-DIVERGENCES): `expected.chat` pins ST's behavior, which RPT
-          // deliberately diverges from. Don't hard-fail the exact-match diff — treat it as an expected
-          // divergence (xfail), asserting only that it's on record. When RPT's actual output happens to
-          // still match, that's fine too. See KNOWN-DIVERGENCES.md for the enumerated boundary.
+          // deliberately diverges from. Don't hard-fail against ST's golden — the xfail exempts the
+          // fixture from matching `expected` ONLY. RPT's OWN behavior must still be pinned so silent
+          // drift fails: every knownDivergence fixture records `actualDivergent` (RPT's real assembly
+          // output) and we assert the adapter still matches it. See KNOWN-DIVERGENCES.md.
           expect(fixture.knownDivergence.ref).toContain('KNOWN-DIVERGENCES')
           expect(fixture.knownDivergence.reason.length).toBeGreaterThan(0)
+          expect(
+            fixture.actualDivergent,
+            'a knownDivergence fixture must pin RPT actual output in actualDivergent'
+          ).toBeDefined()
+          expect(produced.chat).toEqual(fixture.actualDivergent!.chat)
           return
         }
         expect(produced.chat).toEqual(fixture.expected.chat)

@@ -80,6 +80,10 @@ export type RecordStage =
   | 'chat-squash' // SPreset ChatSquash role-based adjacent merge (issue 16) — distinct from `squash`/`role-merge`
   | 'provider-shape' // orderForProvider reordering (end-on-user, etc.)
   | 'opaque' // arbitrary card/preset SCRIPT mutation — before/after hashes only, no copy
+  | 'exclude' // a DECISION, not a transform: a preset block (or a card override) excluded from the
+  //            request — disabled / trigger-filtered / override-denied; `note` carries the reason,
+  //            `source` its identity. Behavior-neutral (never on the wire), but pins invariant 2 so
+  //            the preview reader can explain why a source is absent.
 
 /** One ordered forensic entry. Controlled transforms carry span lineage (`before`/`after`
  *  as `text`); bulk and opaque ones carry `ref` hashes. `at`/`role` describe positional
@@ -137,4 +141,8 @@ export interface AssemblyJournal {
   history(source: RecordSource, turnCount: number, joined: string): void
   /** An arbitrary card/preset SCRIPT mutation — before/after recorded as hashes only. */
   opaque(source: RecordSource, before: string, after: string): void
+  /** A prompt block (or a card override) EXCLUDED from the request — a recorded DECISION, not a
+   *  transform (invariant 2: every source excluded from the request leaves a decision). `reason` is
+   *  the machine cause: `disabled`, `trigger-filtered:<genType>`, or `override-denied`. */
+  exclude(source: RecordSource, reason: string): void
 }

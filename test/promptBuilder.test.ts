@@ -1266,6 +1266,31 @@ describe('resolveEffectivePrompts (ST getPromptCollection + overrides)', () => {
     expect(shouldTrigger({ injection_trigger: ['continue'] }, 'normal')).toBe(false)
     expect(shouldTrigger({ injection_trigger: ['normal'] }, 'normal')).toBe(true)
   })
+
+  it('records an exclude decision for every dropped block + denied override (invariant 2)', () => {
+    const calls: Array<{ id: string; reason: string }> = []
+    const journal: any = {
+      exclude: (source: any, reason: string) => calls.push({ id: source.id, reason })
+    }
+    const out = resolveEffectivePrompts(
+      [
+        p('note', { enabled: false }), // disabled → dropped
+        p('lore', { injection_trigger: ['continue'] }), // trigger-filtered for 'normal' → dropped
+        p('jailbreak', { forbid_overrides: true }) // override offered but forbidden → kept, denied
+      ],
+      'normal',
+      { postHistory: 'J' },
+      journal
+    )
+    // The denied-override block still ships; the two dropped blocks do not.
+    expect(out.map((b) => b.identifier)).toEqual(['jailbreak'])
+    // Every absence / denial left a machine-reason decision — nothing dropped silently.
+    expect(calls).toEqual([
+      { id: 'note', reason: 'disabled' },
+      { id: 'lore', reason: 'trigger-filtered:normal' },
+      { id: 'jailbreak', reason: 'override-denied' }
+    ])
+  })
 })
 
 // prompt.preset composer (context-epochs plan §3): the historyOverride / worldInfoOverride args on

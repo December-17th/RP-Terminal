@@ -347,16 +347,27 @@ export type EffectivePromptBlock = PromptBlock & { originalContent?: string }
  *    literal's content, but ONLY when that block exists, is enabled + triggered, and does not set
  *    `forbid_overrides` (openai.js:1487-1504).
  *
+ * `journal` (issue 07 invariant 2) is a PURE observer: every block dropped here (disabled /
+ * trigger-filtered) AND every override the card offered but the block forbade is recorded as an
+ * `exclude` decision, so no source leaves the request without a journal entry explaining the
+ * absence. It never affects the returned list — the wire is byte-identical with or without it.
+ *
  * Pure; exported for characterization tests.
  */
 export const resolveEffectivePrompts = (
   prompts: PromptBlock[],
   generationType: string,
-  overrides: CardPromptOverrides
+  overrides: CardPromptOverrides,
+  journal?: AssemblyJournal
 ): EffectivePromptBlock[] => {
   const gt = String(generationType || 'normal')
     .toLowerCase()
     .trim()
+  const blockSource = (b: PromptBlock): RecordSource => ({
+    kind: 'preset-block',
+    id: b.identifier,
+    ...(b.name ? { label: b.name } : {})
+  })
   const out: EffectivePromptBlock[] = []
   for (const p of prompts) {
     const triggered = p.enabled !== false && shouldTrigger(p, gt)
@@ -372,13 +383,24 @@ export const resolveEffectivePrompts = (
           out.push({ ...p, content: overrides.postHistory, originalContent: p.content })
           continue
         }
+      } else if (
+        p.marker === 'none' &&
+        p.forbid_overrides === true &&
+        ((p.identifier === 'main' && !!overrides.system) ||
+          (p.identifier === 'jailbreak' && !!overrides.postHistory))
+      ) {
+        // The card offered an override but the block forbids it: the OVERRIDE text is excluded (the
+        // original literal is kept). Record the decision (invariant 2) — the block still ships.
+        journal?.exclude(blockSource(p), 'override-denied')
       }
       out.push(p)
     } else if (p.identifier === 'main' && p.marker === 'none') {
       // Structural empty main (never overridden — the block is disabled/filtered).
       out.push({ ...p, content: '', enabled: true })
+    } else {
+      // Dropped (disabled / trigger-filtered) — record WHY so no source leaves silently (invariant 2).
+      journal?.exclude(blockSource(p), p.enabled === false ? 'disabled' : `trigger-filtered:${gt}`)
     }
-    // else: dropped (disabled / trigger-filtered)
   }
   return out
 }
@@ -657,10 +679,15 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
   // disabled blocks, keeps a structural empty `main`, and folds the card's system_prompt /
   // post_history_instructions into `main` / `jailbreak`. For a trigger-free preset with no card
   // overrides this is exactly `preset.prompts` (parity). Everything below iterates THIS list.
-  const effectivePrompts = resolveEffectivePrompts(preset.prompts, args.generationType ?? 'normal', {
-    system: card.data.system_prompt || undefined,
-    postHistory: card.data.post_history_instructions || undefined
-  })
+  const effectivePrompts = resolveEffectivePrompts(
+    preset.prompts,
+    args.generationType ?? 'normal',
+    {
+      system: card.data.system_prompt || undefined,
+      postHistory: card.data.post_history_instructions || undefined
+    },
+    args.journal
+  )
   // Whether the preset carries its OWN character-personality / scenario markers (ST imports). When
   // it does, char_description must NOT re-fold those fields (they're emitted by their markers).
   const hasPersonalityMarker = effectivePrompts.some((b) => b.marker === 'char_personality')

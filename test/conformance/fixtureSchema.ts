@@ -93,6 +93,15 @@ export interface Fixture {
    */
   knownDivergence?: { ref: string; reason: string }
   /**
+   * RPT's CURRENT real assembly output for a `knownDivergence` fixture — the counterpart to
+   * `expected` (ST's golden). The xfail exempts the fixture from matching `expected`, but RPT's OWN
+   * behavior must still be pinned so silent drift fails: when present, the conformance runner asserts
+   * the adapter's `produced.chat` equals this. `chat` is the pinned array; `note` is an optional why.
+   * (RPT's assembly output MAY equal `expected` — a divergence that only manifests as a later
+   * provider-shape reshape leaves the assembly layer identical; the snapshot still guards it.)
+   */
+  actualDivergent?: { chat: FixtureMessage[]; note?: string }
+  /**
    * Optional structural invariants the runner asserts even before RPT wiring
    * exists — lets a fixture "flow through" the runner today. All optional.
    */
@@ -179,6 +188,18 @@ export function validateFixture(obj: unknown): ValidationResult {
     }
     if (typeof kd !== 'object' || typeof kd.reason !== 'string' || !kd.reason) {
       errors.push('knownDivergence.reason must be a non-empty string')
+    }
+  }
+  // The pinned RPT-actual output for a divergence, when present, must be a valid chat array.
+  if (f.actualDivergent != null) {
+    const ad = f.actualDivergent
+    if (typeof ad !== 'object' || !Array.isArray(ad.chat)) {
+      errors.push('actualDivergent.chat must be an array')
+    } else {
+      ad.chat.forEach((m, i) => {
+        if (!m || typeof m.role !== 'string') errors.push(`actualDivergent.chat[${i}].role missing`)
+        if (!m || typeof m.content !== 'string') errors.push(`actualDivergent.chat[${i}].content missing`)
+      })
     }
   }
   return { ok: errors.length === 0, errors }

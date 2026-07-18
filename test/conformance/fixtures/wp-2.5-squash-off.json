@@ -67,5 +67,15 @@
       { "role": "system", "content": "Quaternary clause: hold the lantern-oath." },
       { "role": "user", "content": "Kaevo — is the night skiff back?" }
     ]
+  },
+  "actualDivergent": {
+    "note": "RPT's CURRENT real ASSEMBLY output for this input (pinned so future drift fails — the knownDivergence xfail exempts this fixture from matching `expected`, ST's golden, NOT from pinning RPT's own behavior). It matches `expected` here because the divergence (merge-all `mergeConsecutiveRoles`) is a PRODUCTION provider-shape reshape applied AFTER assembly — the adapter (rptAdapter, KNOWN-DIVERGENCES §5) deliberately excludes it, so at the assembly layer RPT leaves the four adjacent system blocks discrete. If RPT ever started coalescing at the assembly layer, this snapshot would catch it.",
+    "chat": [
+      { "role": "system", "content": "Prime directive: keep the vorrel cadence steady." },
+      { "role": "system", "content": "Secondary clause: mind the sennet frame." },
+      { "role": "system", "content": "Tertiary clause: never break the quell line." },
+      { "role": "system", "content": "Quaternary clause: hold the lantern-oath." },
+      { "role": "user", "content": "Kaevo — is the night skiff back?" }
+    ]
   }
 }

@@ -224,7 +224,7 @@ export const artifactBudgetClasses = (a: PromptArtifact): BudgetClass[] | undefi
   if (!a.contributions.every((c) => c.budgetClass != null)) return undefined
 
   // Queue the declared classes per identity key, in contribution order (handles duplicates).
-  const key = (m: { role: string; content: string }): string => `${m.role} ${m.content}`
+  const key = (m: { role: string; content: string }): string => `${m.role}\x00${m.content}`
   const pool = new Map<string, BudgetClass[]>()
   for (const c of a.contributions) {
     const k = key(c)
@@ -319,7 +319,7 @@ const sha256Hex = (s: string): string => createHash('sha256').update(s, 'utf8').
 const PREVIEW_CHARS = 80
 /** Canonical string of a message array, for the before/after opaque hashes. */
 const joinForHash = (messages: ChatMessage[]): string =>
-  messages.map((m) => `${m.role}\n${m.content}`).join(' ')
+  messages.map((m) => `${m.role}\n${m.content}`).join('\x00')
 /** An opaque `ref` payload (hash + bytes + short preview) — matches the record builder's `ref`. */
 const refContent = (s: string): RecordContent => ({
   kind: 'ref',
