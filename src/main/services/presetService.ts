@@ -560,10 +560,142 @@ const SAMPLER_KEYS = [
 ] as const
 
 /**
- * Overlay the current normalized view's editable scalars back onto the lossless raw,
- * touching ONLY keys the raw already carries. Every other ST field (all `prompt_order`
- * lists, `extensions.*`, unknown top-level keys) passes through untouched, and an
- * *unedited* preset re-serializes to a JSON.parse-equal copy of its import.
+ * Overlay a view prompt's editable scalars onto a matching raw prompt object, touching ONLY keys
+ * the raw already carries — exactly like the sampler overlay above. This is what keeps an *unedited*
+ * export byte-equal: for an unedited prompt the view values equal the raw's, so every assignment is a
+ * no-op AND no absent key (e.g. a marker prompt's missing `role`/`content`) is ever introduced. An
+ * edit to a field the raw carries (a literal's `content`/`role`/`name`) is reflected; edits to a field
+ * the raw lacks are out of scope (the niche depth-injection add is left to the runtime view).
+ */
+const overlayPromptEdits = (rawPrompt: Record<string, any>, vp: PromptBlock): void => {
+  if ('name' in rawPrompt) rawPrompt.name = vp.name
+  if ('role' in rawPrompt) rawPrompt.role = vp.role
+  if ('content' in rawPrompt) rawPrompt.content = vp.content
+  if ('injection_order' in rawPrompt && typeof vp.injection_order === 'number') {
+    rawPrompt.injection_order = vp.injection_order
+  }
+}
+
+/** An ST-shaped raw prompt object for a prompt ADDED in the editor (no matching raw definition). */
+const newRawPrompt = (vp: PromptBlock): Record<string, any> => {
+  if (vp.marker !== 'none') {
+    return { identifier: vp.identifier, name: vp.name, role: vp.role, marker: true }
+  }
+  const p: Record<string, any> = {
+    identifier: vp.identifier,
+    name: vp.name,
+    role: vp.role,
+    content: vp.content,
+    system_prompt: false,
+    marker: false
+  }
+  if (vp.injection_depth != null) {
+    p.injection_position = 1
+    p.injection_depth = vp.injection_depth
+  }
+  if (typeof vp.injection_order === 'number' && vp.injection_order !== 100) {
+    p.injection_order = vp.injection_order
+  }
+  return p
+}
+
+/**
+ * Reconcile the edited normalized view's PROMPTS + ORDER back onto the lossless raw (ADR 0018) so a
+ * semantic export reflects the current edited state — content/role edits, reorder, enablement toggles,
+ * additions AND deletions — while everything the view doesn't model (extra `prompt_order` lists,
+ * `extensions.*`, parser-dropped-but-defined prompts) passes through untouched.
+ *
+ * Deletions are distinguished from the prompts the parser routinely DROPS (empty non-override literals,
+ * duplicate markers, orphans) by re-deriving the IMPORT-TIME view from the untouched raw: an identifier
+ * in the import view but no longer in the current view is a user deletion (dropped from the order); an
+ * identifier never in the import view is parser-dropped (preserved for losslessness).
+ */
+const overlayPromptsAndOrder = (root: any, originalRoot: any, view: Preset): void => {
+  if (!Array.isArray(root.prompts)) return
+
+  const importView = ((): Preset | null => {
+    try {
+      return parseStPreset(originalRoot, originalRoot?.name || 'preset') as Preset | null
+    } catch {
+      return null
+    }
+  })()
+  const importIds = new Set<string>((importView?.prompts ?? []).map((p) => p.identifier))
+  const viewIds = new Set(view.prompts.map((p) => p.identifier))
+
+  // 1) Overlay edits onto matching raw prompts (existing keys only, so unedited stays byte-equal).
+  const rawById = new Map<string, any>()
+  for (const rp of root.prompts) {
+    if (rp && typeof rp.identifier === 'string' && !rawById.has(rp.identifier)) {
+      rawById.set(rp.identifier, rp)
+    }
+  }
+  for (const vp of view.prompts) {
+    const rp = rawById.get(vp.identifier)
+    if (rp) overlayPromptEdits(rp, vp)
+  }
+
+  // 2) Reflect order + enablement. Prefer the `prompt_order` list ST resolves against (the 100001
+  //    record, else the first list carrying an `order`); rebuild it from the view. When a preset has
+  //    NO `prompt_order`, order + enablement live on `prompts[]` (the parser's fallback) — reorder there.
+  const orderBlock = Array.isArray(root.prompt_order)
+    ? root.prompt_order.find((o: any) => o?.character_id === 100001 && Array.isArray(o?.order)) ||
+      root.prompt_order.find((o: any) => Array.isArray(o?.order)) ||
+      null
+    : null
+
+  if (orderBlock) {
+    // Additions need a prompt DEFINITION too (the order alone can't carry content).
+    for (const vp of view.prompts) if (!rawById.has(vp.identifier)) root.prompts.push(newRawPrompt(vp))
+
+    const existing: any[] = orderBlock.order
+    const entryById = new Map<string, any>()
+    for (const e of existing) {
+      if (e && typeof e.identifier === 'string' && !entryById.has(e.identifier)) {
+        entryById.set(e.identifier, e)
+      }
+    }
+    const rebuilt: any[] = []
+    for (const vp of view.prompts) {
+      const e = entryById.get(vp.identifier)
+      // Reuse the existing order entry (preserving any extra keys) but write the view's enabled state.
+      rebuilt.push(e ? { ...e, enabled: vp.enabled } : { identifier: vp.identifier, enabled: vp.enabled })
+    }
+    for (const e of existing) {
+      const id = e && typeof e.identifier === 'string' ? e.identifier : null
+      if (!id || viewIds.has(id)) continue // view-controlled — already placed above
+      if (importIds.has(id)) continue // in the import view but not now → a user DELETION, drop it
+      rebuilt.push(e) // parser-dropped but defined → preserve (lossless)
+    }
+    orderBlock.order = rebuilt
+  } else {
+    // No `prompt_order`: reorder `prompts[]` to the view and reflect enablement, P1-safe (only write
+    // `enabled` when it actually changed from import, or the raw prompt already carries the key).
+    const importEnabled = new Map<string, boolean>()
+    for (const ip of importView?.prompts ?? []) importEnabled.set(ip.identifier, ip.enabled !== false)
+    const reordered: any[] = []
+    for (const vp of view.prompts) {
+      const rp = rawById.get(vp.identifier) ?? newRawPrompt(vp)
+      const wasEnabled = importEnabled.has(vp.identifier) ? importEnabled.get(vp.identifier)! : true
+      if (vp.enabled !== wasEnabled || 'enabled' in rp) rp.enabled = vp.enabled
+      reordered.push(rp)
+    }
+    for (const rp of root.prompts) {
+      const id = rp && typeof rp.identifier === 'string' ? rp.identifier : null
+      if (!id || viewIds.has(id)) continue
+      if (importIds.has(id)) continue // user deletion → drop
+      reordered.push(rp) // parser-dropped but defined → preserve
+    }
+    root.prompts = reordered
+  }
+}
+
+/**
+ * Overlay the current normalized view's edits back onto the lossless raw, touching ONLY keys the raw
+ * already carries. Editable scalars (`name`, temperature/max_tokens + samplers) AND the full prompt set
+ * (content/role edits, reorder, enablement, additions, deletions via `overlayPromptsAndOrder`) are
+ * reflected. Every other ST field (extra `prompt_order` lists, `extensions.*`, unknown top-level keys)
+ * passes through untouched, and an *unedited* preset re-serializes to a JSON.parse-equal copy of its import.
  */
 const overlaySemanticView = (parsed: any, view: Preset): any => {
   const clone = JSON.parse(JSON.stringify(parsed))
@@ -581,6 +713,7 @@ const overlaySemanticView = (parsed: any, view: Preset): any => {
     const v = (p as Record<string, unknown>)[k]
     if (k in root && typeof v === 'number') (root as Record<string, unknown>)[k] = v
   }
+  overlayPromptsAndOrder(root, presetRoot(parsed), view)
   return clone
 }
 
