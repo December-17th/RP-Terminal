@@ -342,6 +342,17 @@ const zh: Record<string, string> = {
   'preset.inv.anomalies': ' · {{dupes}} 重复 / {{orphans}} 孤立标识',
   'preset.inv.remoteCode': '{{count}} 个脚本会加载远程代码 — 已保持停用（需高信任授权后方可运行）',
   'preset.inv.spresetUnsupported': 'RP Terminal 不执行的 SPreset ChatSquash 功能：{{features}}（已登记，绝不运行）',
+  'preset.highTrust.heading': '远程代码脚本（高信任）',
+  'preset.highTrust.statusGranted': '已授予高信任 —— 此预设的远程代码脚本在隔离环境中运行',
+  'preset.highTrust.statusInert': '{{count}} 个远程代码脚本已保持停用',
+  'preset.highTrust.note':
+    '启用高信任后，此预设的脚本可从互联网加载并运行代码，仅在具有会话访问权限的隔离进程中执行 —— 绝不触及应用、主进程或你的 API 密钥。请仅对你信任的预设启用。',
+  'preset.highTrust.enable': '启用高信任',
+  'preset.highTrust.revoke': '撤销高信任',
+  'preset.highTrust.confirm':
+    '为此预设启用高信任？其远程代码脚本将从互联网加载并运行代码（在隔离进程中）。请仅对你信任的预设执行此操作。',
+  'preset.highTrust.enabled': '已启用高信任 —— {{count}} 个远程代码脚本现已运行',
+  'preset.highTrust.disabled': '已撤销高信任 —— 已移除 {{count}} 个脚本',
   'preset.confirmDelete': '删除此预设？此操作无法撤销。',
   'preset.empty': '未选择预设。新建一个或导入 SillyTavern 预设。',
   'preset.name': '预设名称',

@@ -32,6 +32,11 @@ export const registerPresetIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('preset-set-high-trust', (_, profileId, presetId, on) =>
     presetTrustService.setPresetHighTrust(profileId, presetId, on === true)
   )
+  // Capability inventory of a stored preset (from its lossless envelope) — the Preset Manager reads
+  // `remoteCodeScripts` to decide whether to surface the high-trust opt-in. null for a pre-envelope import.
+  ipcMain.handle('get-preset-inventory', (_, profileId, presetId) =>
+    presetService.getPresetInventory(profileId, presetId)
+  )
   // GATED: native file picker (import from an arbitrary host path).
   ipcMain.handle('import-preset-dialog', gate('import-preset-dialog', async (event, profileId) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {

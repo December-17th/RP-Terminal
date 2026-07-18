@@ -160,6 +160,8 @@ const api = {
     ipcRenderer.invoke('preset-is-high-trust', profileId, presetId),
   presetSetHighTrust: (profileId: string, presetId: string, on: boolean) =>
     ipcRenderer.invoke('preset-set-high-trust', profileId, presetId, on),
+  presetGetInventory: (profileId: string, presetId: string) =>
+    ipcRenderer.invoke('get-preset-inventory', profileId, presetId),
   // Node-workflow graphs (Phase 3 persistence)
   listNodeTypes: () => ipcRenderer.invoke('list-node-types'),
   listWorkflows: (profileId: string) => ipcRenderer.invoke('list-workflows', profileId),

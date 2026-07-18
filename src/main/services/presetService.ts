@@ -549,6 +549,20 @@ export const getPresetProvenance = (
   }
 }
 
+/**
+ * The capability inventory (ADR 0017) for a STORED preset, recomputed from its lossless envelope — or
+ * null when the preset predates the envelope (a lossy import has no raw to inventory). The Preset
+ * Manager reads it to decide whether to surface the per-preset high-trust opt-in (issue 19): that opt-in
+ * is only meaningful when the preset actually carries remote-code scripts (`remoteCodeScripts > 0`).
+ */
+export const getPresetInventory = (
+  profileId: string,
+  presetId: string
+): PresetInventory | null => {
+  const env = readEnvelope(profileId, presetId)
+  return env ? computePresetInventory(env.parsed) : null
+}
+
 const SAMPLER_KEYS = [
   'top_p',
   'top_k',
