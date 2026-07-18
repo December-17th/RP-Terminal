@@ -521,7 +521,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     // settings at boot); whole-object write is what saveSettingsDebounced flushes. Per-profile store.
     getExtensionSettingsSync: (e) => {
       const ctx = wcvManager.contextFor(e.sender.id)
-      return ctx ? extensionSettingsService.getExtensionSettings(ctx.profileId) : {}
+      // Unresolved ctx = a FAILED read, not a genuinely-empty store: return `undefined` (NOT `{}`) so the
+      // shared runtime's hydration gate (thRuntime/index.ts, B fix 62bc5b3) treats it as not-hydrated and
+      // suppresses the settings flush, instead of clobbering valid stored settings with an empty bag. The
+      // real store returns `{}` for a genuinely-empty profile; only the ctx-miss path signals undefined.
+      return ctx ? extensionSettingsService.getExtensionSettings(ctx.profileId) : undefined
     },
     setExtensionSettings: (e, settings) => {
       const ctx = wcvManager.contextFor(e.sender.id)

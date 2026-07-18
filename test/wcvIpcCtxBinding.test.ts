@@ -43,7 +43,8 @@ const h = vi.hoisted(() => ({
   getChat: vi.fn(() => null),
   getSettings: vi.fn(),
   deleteChatMessages: vi.fn(() => true),
-  afterChatMutation: vi.fn(() => null)
+  afterChatMutation: vi.fn(() => null),
+  getExtensionSettings: vi.fn(() => ({}))
 }))
 
 vi.mock('../src/main/services/wcvManager', () => ({
@@ -79,6 +80,10 @@ vi.mock('../src/main/services/scriptApiService', () => ({}))
 vi.mock('../src/main/services/regexService', () => ({}))
 vi.mock('../src/main/services/pluginStorageService', () => ({}))
 vi.mock('../src/main/services/pluginService', () => ({}))
+vi.mock('../src/main/services/extensionSettingsService', () => ({
+  getExtensionSettings: h.getExtensionSettings,
+  setExtensionSettings: vi.fn()
+}))
 vi.mock('../src/main/services/settingsService', () => ({ getSettings: h.getSettings }))
 vi.mock('../src/main/services/worldAssetService', () => ({}))
 vi.mock('../src/main/services/presetService', () => ({ getActivePresetId: vi.fn(() => '') }))
@@ -193,6 +198,27 @@ describe('in-profile ops still run for a WCV card (deletes included)', () => {
     const out = call('wcv-host-delete-chat-messages', WCV_ID, [0, 1])
     expect(h.deleteChatMessages).toHaveBeenCalledWith('pA', 'cA', [0, 1])
     expect(out).toBe(true)
+  })
+})
+
+describe('extension-settings sync read — unresolved ctx signals FAILURE, not empty', () => {
+  it('returns the store bag for a bound WCV sender', () => {
+    h.getExtensionSettings.mockReturnValue({ MyCard: { n: 1 } })
+    const event = { sender: { id: WCV_ID }, returnValue: undefined as unknown }
+    handlers.get('wcv-host-get-extension-settings-sync')!(event)
+
+    expect(h.getExtensionSettings).toHaveBeenCalledWith('pA')
+    expect(event.returnValue).toEqual({ MyCard: { n: 1 } })
+  })
+
+  it('returns undefined (a failed read, NOT `{}`) when the sender ctx is unresolved', () => {
+    // An unresolved ctx must NOT masquerade as a genuinely-empty store — returning `{}` would let the
+    // runtime hydration gate treat the boot seed as loaded and flush an empty bag over valid settings.
+    const event = { sender: { id: 999 }, returnValue: 'sentinel' as unknown }
+    handlers.get('wcv-host-get-extension-settings-sync')!(event)
+
+    expect(event.returnValue).toBeUndefined()
+    expect(h.getExtensionSettings).not.toHaveBeenCalled() // no profile to read against
   })
 })
 
