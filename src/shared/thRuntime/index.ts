@@ -640,8 +640,7 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     },
     triggerSlash: (c: any) => runTriggerSlash(String(c ?? '')),
     assetUrl: (name: string, type: string, mood?: string) => host.assetUrl(name, type, mood),
-    sceneAssetUrl: (location: string, type: '全景' | '背景') =>
-      host.sceneAssetUrl(location, type),
+    sceneAssetUrl: (location: string, type: '全景' | '背景') => host.sceneAssetUrl(location, type),
     // Enumerate one entry's variants for the card's world (WA-3) — a bare read global in the same family
     // as assetUrl. Behavior lives in the shared runtime so both transports inherit it; the transport Host
     // forwards to the app (WCV: worldAssetService.assetListForWorld; inline: cardBridge/host.ts).
@@ -753,28 +752,85 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
   // saveSettingsDebounced() must NOT flush it, or a card write would overwrite the valid stored settings
   // with `{}`. Track whether hydration succeeded and suppress persistence until it does. Both transports
   // inherit this via the shared runtime.
+  const MAX_SETTINGS_HYDRATION_ATTEMPTS = 3
   let settingsHydrated = false
-  const extensionSettings: Record<string, any> = (() => {
+  let settingsHydrationAttempts = 0
+  let settingsHydrationWarned = false
+  const extensionSettings: Record<string, any> = {}
+  const warnSettingsHydrationOnce = (): void => {
+    if (settingsHydrationWarned) return
+    settingsHydrationWarned = true
+    console.warn(
+      '[thRuntime] extension settings could not be loaded; persistence is paused while retrying'
+    )
+  }
+  const tryHydrateSettings = (): boolean => {
+    if (settingsHydrated || settingsHydrationAttempts >= MAX_SETTINGS_HYDRATION_ATTEMPTS) {
+      return settingsHydrated
+    }
+    settingsHydrationAttempts++
     const saved = host.getExtensionSettingsSync?.()
-    settingsHydrated = saved != null && typeof saved === 'object'
-    const bag: Record<string, any> = saved ?? {}
-    const ejs = bag.EjsTemplate && typeof bag.EjsTemplate === 'object' ? bag.EjsTemplate : {}
-    bag.EjsTemplate = { enabled: true, ...ejs }
-    return bag
-  })()
+    if (saved == null || typeof saved !== 'object') {
+      warnSettingsHydrationOnce()
+      return false
+    }
+    const savedCopy = clone(saved) || {}
+    const localEjs =
+      extensionSettings.EjsTemplate && typeof extensionSettings.EjsTemplate === 'object'
+        ? extensionSettings.EjsTemplate
+        : {}
+    const savedEjs =
+      savedCopy.EjsTemplate && typeof savedCopy.EjsTemplate === 'object'
+        ? savedCopy.EjsTemplate
+        : {}
+    const merged = {
+      ...savedCopy,
+      ...extensionSettings,
+      EjsTemplate: { enabled: true, ...savedEjs, ...localEjs }
+    }
+    for (const key of Object.keys(extensionSettings)) delete extensionSettings[key]
+    Object.assign(extensionSettings, merged)
+    settingsHydrated = true
+    return true
+  }
+  if (!tryHydrateSettings()) {
+    extensionSettings.EjsTemplate = { enabled: true }
+  }
   // Debounced durable flush of the live extensionSettings bag. The debounce coalesces the burst of writes
   // an extension card does on a settings change; on the trailing edge it persists via the Host.
   let saveSettingsTimer: ReturnType<typeof setTimeout> | null = null
-  const saveSettingsDebounced = (): void => {
-    // If the boot seed never hydrated, the live bag is an unloaded stub — flushing it would clobber the
-    // valid stored settings with `{}`. Suppress persistence (and, by never arming the timer, the
-    // __rptDispose flush too) until a run hydrates successfully.
-    if (!settingsHydrated) return
+  let settingsHydrationTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingSettingsSave = false
+  const scheduleSettingsFlush = (): void => {
+    pendingSettingsSave = false
     if (saveSettingsTimer) clearTimeout(saveSettingsTimer)
     saveSettingsTimer = setTimeout(() => {
       saveSettingsTimer = null
       void host.setExtensionSettings?.(clone(extensionSettings) || {})
     }, 200)
+  }
+  const retrySettingsHydration = (): void => {
+    settingsHydrationTimer = null
+    if (tryHydrateSettings()) {
+      if (pendingSettingsSave) scheduleSettingsFlush()
+      return
+    }
+    if (pendingSettingsSave && settingsHydrationAttempts < MAX_SETTINGS_HYDRATION_ATTEMPTS) {
+      settingsHydrationTimer = setTimeout(retrySettingsHydration, 200)
+    }
+  }
+  const saveSettingsDebounced = (): void => {
+    pendingSettingsSave = true
+    if (settingsHydrated) {
+      scheduleSettingsFlush()
+      return
+    }
+    if (settingsHydrationTimer) return
+    if (tryHydrateSettings()) {
+      scheduleSettingsFlush()
+    } else if (settingsHydrationAttempts < MAX_SETTINGS_HYDRATION_ATTEMPTS) {
+      settingsHydrationTimer = setTimeout(retrySettingsHydration, 200)
+    }
   }
   const getContext = (): any => ({
     chat: stChat(),
@@ -847,6 +903,10 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     __rptDispose: () => {
       offVars()
       offHost()
+      if (settingsHydrationTimer) {
+        clearTimeout(settingsHydrationTimer)
+        settingsHydrationTimer = null
+      }
       // Flush any pending extensionSettings write synchronously so a card's last saveSettingsDebounced()
       // before teardown is not lost, then clear the timer.
       if (saveSettingsTimer) {

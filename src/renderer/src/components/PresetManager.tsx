@@ -38,6 +38,7 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
     activeId,
     preset,
     dirty,
+    invalidateRuntime,
     load,
     select,
     createNew,
@@ -88,12 +89,14 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
     if (!activeId || !highTrust) return
     if (!confirm(t('preset.highTrust.confirm'))) return
     const installed = await window.api.presetSetHighTrust(profileId, activeId, true)
+    invalidateRuntime()
     setHighTrust({ granted: true, remoteCode: highTrust.remoteCode })
     useToastStore.getState().push(t('preset.highTrust.enabled', { count: installed }))
   }
   const revokeHighTrust = async (): Promise<void> => {
     if (!activeId || !highTrust) return
     const removed = await window.api.presetSetHighTrust(profileId, activeId, false)
+    invalidateRuntime()
     setHighTrust({ granted: false, remoteCode: highTrust.remoteCode })
     useToastStore.getState().push(t('preset.highTrust.disabled', { count: removed }))
   }

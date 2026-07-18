@@ -141,7 +141,13 @@ export const PresetEnvelopeSchema = z.object({
   /** ISO timestamp of the import. */
   importedAt: z.string(),
   /** Identifies the importer that produced this envelope, for future format migrations. */
-  importerVersion: z.string()
+  importerVersion: z.string(),
+  /**
+   * Normalized view at import time. This lets semantic export distinguish an editor change from a
+   * parser default when the raw JSON omitted the edited key (for example a nameless preset).
+   * Optional for envelopes written before this snapshot was introduced.
+   */
+  importedView: PresetSchema.optional()
 })
 export type PresetEnvelope = z.infer<typeof PresetEnvelopeSchema>
 

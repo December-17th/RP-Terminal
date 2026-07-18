@@ -22,7 +22,10 @@ function hostWith(seed: Record<string, any>): { host: Host; saved: Record<string
 
 describe('extensionSettings + saveSettingsDebounced (issue 19)', () => {
   beforeEach(() => vi.useFakeTimers())
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
 
   it('seeds the bag from the saved store and force-defaults EjsTemplate.enabled', () => {
     const { host } = hostWith({ MyCard: { theme: 'dark' } })
@@ -74,5 +77,50 @@ describe('extensionSettings + saveSettingsDebounced (issue 19)', () => {
     expect(saved).toHaveLength(0) // gate held: stored settings not clobbered with the stub
     rt.__rptDispose() // dispose must not flush either (timer was never armed)
     expect(saved).toHaveLength(0)
+  })
+
+  it('retries a failed hydration, merges the saved bag, then persists the pending edit', async () => {
+    const saved: Record<string, any>[] = []
+    let reads = 0
+    const host: Host = {
+      ...createNullHost({ profileId: 'p', chatId: 'c', characterId: 'ch' }),
+      getExtensionSettingsSync: () => {
+        reads++
+        return reads === 1 ? undefined : { ExistingCard: { keep: 'safe' } }
+      },
+      setExtensionSettings: async (s) => {
+        saved.push(s)
+      }
+    }
+    const rt = createThRuntime(host) as any
+    const ctx = rt.SillyTavern.getContext()
+    ctx.extensionSettings.MyCard = { level: 4 }
+    ctx.saveSettingsDebounced()
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(reads).toBe(2)
+    expect(saved).toHaveLength(1)
+    expect(saved[0].ExistingCard).toEqual({ keep: 'safe' })
+    expect(saved[0].MyCard).toEqual({ level: 4 })
+  })
+
+  it('warns once and bounds hydration retries while the settings store stays unavailable', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let reads = 0
+    const host: Host = {
+      ...createNullHost({ profileId: 'p', chatId: 'c', characterId: 'ch' }),
+      getExtensionSettingsSync: () => {
+        reads++
+        return undefined
+      }
+    }
+    const rt = createThRuntime(host) as any
+    const ctx = rt.SillyTavern.getContext()
+    ctx.saveSettingsDebounced()
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(reads).toBe(3)
+    rt.__rptDispose()
   })
 })

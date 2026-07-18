@@ -1,11 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { providerShape } from '../../src/main/services/generation/providerShape'
 import { createRecordBuilder } from '../../src/main/services/generation/executionRecord'
-import {
-  ChatMessage,
-  squashSystemMessages,
-  SquashMessage
-} from '../../src/main/services/promptBuilder'
+import { squashSystemMessages } from '../../src/main/services/promptMessageShaping'
+import type { SquashMessage } from '../../src/main/services/promptMessageShaping'
+import type { ChatMessage } from '../../src/main/services/promptTypes'
 import { Settings } from '../../src/main/types/models'
 
 // providerShape logs each journaled stage via logService; silence it so the suite stays quiet and the
@@ -125,9 +123,7 @@ describe('providerShape — journaling (the relocated arrayStage entries)', () =
     const wire = providerShape(settings, msgs, b)
     return b
       .finish(wire, 0)
-      .entries.filter((e) =>
-        ['system-as-user', 'role-merge', 'provider-shape'].includes(e.stage)
-      )
+      .entries.filter((e) => ['system-as-user', 'role-merge', 'provider-shape'].includes(e.stage))
       .map((e) => e.stage)
   }
 
@@ -226,7 +222,9 @@ describe('squashSystemMessages — ST openai.js:3827 parity', () => {
       { role: 'assistant', content: 'a1' },
       { role: 'assistant', content: 'a2' }
     ]
-    expect(squashSystemMessages(msgs)).toEqual(msgs.map((m) => ({ role: m.role, content: m.content })))
+    expect(squashSystemMessages(msgs)).toEqual(
+      msgs.map((m) => ({ role: m.role, content: m.content }))
+    )
   })
 
   it('a non-system message between systems breaks the run', () => {
@@ -371,7 +369,9 @@ describe('providerShape — ST squash opt-in (stage A selector)', () => {
 
   it('is behavior-neutral: squashed wire is byte-identical with vs without a journal', () => {
     const settings = makeSettings({ provider: 'anthropic' })
-    const withoutJournal = providerShape(settings, sysUserPair, undefined, { squashSystemMessages: true })
+    const withoutJournal = providerShape(settings, sysUserPair, undefined, {
+      squashSystemMessages: true
+    })
     const withJournal = providerShape(settings, sysUserPair, createRecordBuilder(), {
       squashSystemMessages: true
     })

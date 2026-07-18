@@ -93,6 +93,14 @@ const REMOTE_CODE_PATTERNS: RegExp[] = [
   /https?:\/\/[^\s'"`)]+\.m?js\b/i // remote .js / .mjs URL literal (fetch/inject)
 ]
 
+// Runtime-computed and extensionless URLs cannot be classified from the URL alone. Conservatively
+// identify a fetch -> text -> executable-code sink pipeline instead. The bounded span keeps an
+// unrelated data fetch and a distant eval from being joined accidentally.
+const FETCHED_CODE_EXECUTION_PATTERNS: RegExp[] = [
+  /\bfetch\s*\([\s\S]{0,500}?\)[\s\S]{0,500}?\.text\s*\([\s\S]{0,100}?\)[\s\S]{0,500}?\.then\s*\(\s*(?:eval|Function)\b/i,
+  /\bfetch\s*\([\s\S]{0,500}?\)[\s\S]{0,500}?\.text\s*\([\s\S]{0,100}?\)[\s\S]{0,500}?\b(?:eval|Function)\s*\(/i
+]
+
 /**
  * True when a script pulls **executable code** from the network at runtime — a remote ES
  * module (static/dynamic import), a remote `<script src>`, `importScripts()`, or a fetch of a
@@ -100,15 +108,18 @@ const REMOTE_CODE_PATTERNS: RegExp[] = [
  * runs by default, but remote-code scripts are the one exception: they stay INERT until a
  * per-preset high-trust opt-in exists (issue 19). Pure; used to flag + gate at import time.
  *
- * NOTE (owner decision — do NOT harden the detector): this is a best-effort, statically-EVADABLE trust
- * LABEL, not a security boundary. Obfuscation, string indirection, or a runtime-assembled URL slips past
- * these patterns, and that is accepted. The real containment is the WCV isolated realm (contextIsolation
- * hardening is separately owner-pending — see ADR 0017); this flag only drives the import-time label/gate.
+ * This is a conservative static classifier used to enforce the opt-in. In particular, runtime-computed
+ * or extensionless fetch URLs are flagged when their text is passed to an executable-code sink, while
+ * ordinary JSON/text data fetches remain unflagged. The WCV realm remains defense in depth for arbitrary
+ * JavaScript shapes that static analysis cannot prove.
  */
 export const hasRemoteCodeLoad = (code: string): boolean => {
   const c = code || ''
   if (extractImportHosts(c).length > 0) return true // import/import()/from an absolute http(s) URL
-  return REMOTE_CODE_PATTERNS.some((re) => re.test(c))
+  return (
+    REMOTE_CODE_PATTERNS.some((re) => re.test(c)) ||
+    FETCHED_CODE_EXECUTION_PATTERNS.some((re) => re.test(c))
+  )
 }
 
 // --- Store CRUD -------------------------------------------------------------
@@ -252,9 +263,13 @@ export const deleteScriptsByOwner = (
  * `ctx.isolatedRealm` is forwarded to `isScopeActive`, so high-trust remote-code scripts (ADR 0017)
  * surface ONLY when the caller is the isolated WCV realm.
  */
-export const getActiveScripts = (profileId: string, ctx: ScopeContext): StoredScript[] => {
+export const getActiveScriptInfos = (profileId: string, ctx: ScopeContext): ScriptInfo[] => {
   return listScripts(profileId)
-    .filter((s) => !s.disabled && isScopeActive({ scope: s.scope, owner: s.owner, highTrust: s.highTrust }, ctx))
+    .filter(
+      (s) =>
+        !s.disabled &&
+        isScopeActive({ scope: s.scope, owner: s.owner, highTrust: s.highTrust }, ctx)
+    )
     .sort((a, b) => {
       // Scripts with an upstream id sort first, by id; id-less natives sort after, by name.
       if (a.id && b.id) return a.id.localeCompare(b.id)
@@ -262,7 +277,14 @@ export const getActiveScripts = (profileId: string, ctx: ScopeContext): StoredSc
       if (b.id) return 1
       return a.name.localeCompare(b.name)
     })
-    .map((s) => ({ name: s.name, code: s.code, ...(s.id ? { id: s.id } : {}) }))
+}
+
+export const getActiveScripts = (profileId: string, ctx: ScopeContext): StoredScript[] => {
+  return getActiveScriptInfos(profileId, ctx).map((s) => ({
+    name: s.name,
+    code: s.code,
+    ...(s.id ? { id: s.id } : {})
+  }))
 }
 
 /** The remote hosts the active runtime scripts import from — for the grant + CSP. */

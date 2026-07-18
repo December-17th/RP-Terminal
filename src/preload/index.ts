@@ -57,6 +57,7 @@ const api = {
     }
   },
   wcvDestroy: (id: string) => ipcRenderer.send('wcv-destroy', id),
+  wcvDestroyAwait: (id: string) => ipcRenderer.invoke('wcv-destroy-await', id),
   // Full-play-area overlay surfaces (PM-A7). `requestOverlay`/`closeOverlay` back the INLINE card
   // transport (it passes its ctx explicitly; the WCV transport uses the ctx-scoped wcv-host-* channels).
   // `onWcvOverlay` is how the renderer's OverlayHost learns which overlay surface to mount/unmount over

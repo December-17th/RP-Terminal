@@ -1,5 +1,5 @@
 import { RPTerminalCard } from '../types/character'
-import { Preset, PromptBlock } from '../types/preset'
+import { Preset } from '../types/preset'
 import { FloorFile } from '../types/chat'
 import { Lorebook, LorebookEntry } from '../types/character'
 import { matchAcross } from './lorebookService'
@@ -11,193 +11,29 @@ import { log } from './logService'
 import { expandMacros, MacroContext } from '../../shared/macros'
 import { buildStateBlock } from './cacheLayers'
 import { AssemblyJournal, RecordSource } from '../../shared/executionRecord'
+import type { BudgetClass, BuildPromptResult, ChatMessage } from './promptTypes'
+import { resolveEffectivePrompts } from './promptSelection'
+import { applyDepthInjections, type DepthItem } from './promptDepthInjections'
 
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-}
+export type { BudgetClass, BuildPromptResult, ChatMessage } from './promptTypes'
+export { estimateTokens, fitToBudget } from './promptBudget'
+export {
+  mergeConsecutiveRoles,
+  squashSystemMessages,
+  systemToUser,
+  type SquashMessage
+} from './promptMessageShaping'
+export {
+  resolveEffectivePrompts,
+  shouldTrigger,
+  type CardPromptOverrides,
+  type EffectivePromptBlock
+} from './promptSelection'
+export { groupDepthInjections } from './promptDepthInjections'
 
-// CJK ranges (Chinese/Japanese/Korean + fullwidth) tokenize denser than Latin,
-// so estimate them ~1 token/char and other text ~4 chars/token. Rough, but good
-// enough to keep us under a budget with margin without a real tokenizer.
-const CJK = /[　-鿿가-힯＀-￯]/
-
-export const estimateTokens = (text: string): number => {
-  if (!text) return 0
-  let cjk = 0
-  let other = 0
-  for (const ch of text) {
-    if (CJK.test(ch)) cjk++
-    else other++
-  }
-  return cjk + Math.ceil(other / 4)
-}
-
-const msgTokens = (m: ChatMessage): number => estimateTokens(m.content) + 4
-
-/**
- * The explicit per-message budget policy carried alongside an assembled prompt (issue 18c/18d).
- * REPLACES the retired non-enumerable `HISTORY_TAG` symbol: instead of a hidden marker on each
- * message object, `buildPromptDetailed` returns one class per emitted message (a parallel array,
- * 1:1 with `messages`), and `fitToBudget` reads THAT to decide what to drop.
- *  · `history` — a chat-history TURN (the analog of the old tag); the trim drops the OLDEST of these
- *    first, never the last one, so a large constant worldbook is never evicted just because a preset
- *    places a user/assistant block ahead of it.
- *  · `pinned`  — static content (system prompts, world info, card fields, preset blocks); never
- *    dropped by the budget policy.
- * These flow on into the assembled artifact's `PromptContribution.budgetClass` (promptArtifact.ts),
- * so a Prompt-native consumer (messages.trim) can honor the same policy without the hidden tag.
- */
-export type BudgetClass = 'pinned' | 'history'
-
-/** The rich result of assembly (issue 18c/18d): the wire `messages` plus the parallel budget policy
- *  (`budgetClasses[i]` classifies `messages[i]`). `buildPrompt` returns just `.messages` for the many
- *  callers that don't trim; `buildPromptDetailed` exposes both so `assemblePrompt` can trim history-
- *  aware AND carry the policy onto the artifact's contributions. */
-export interface BuildPromptResult {
-  messages: ChatMessage[]
-  budgetClasses: BudgetClass[]
-}
-
-/**
- * Trim the prompt to fit a token budget. Keeps the leading system/lore prefix (L1/L2) and the most
- * recent conversation turns, dropping the OLDEST history first; the final user turn is always
- * retained. Returns how many messages were dropped so the caller can log it.
- *
- * `budgetClasses` (issue 18c/18d, when the caller has an explicit policy — the `buildPromptDetailed`
- * path) drives the preferred history-only drop keyed off DATA, not the old hidden `HISTORY_TAG`
- * symbol; the returned `budgetClasses` is filtered in lockstep so it stays aligned with the trimmed
- * messages. Absent (a hand-built array — messages.trim's legacy path) → the same fallback as before:
- * keep the leading system prefix, drop oldest from the first non-system message. The dropped SET is
- * byte-identical to the pre-18d behavior on both paths.
- */
-export const fitToBudget = (
-  messages: ChatMessage[],
-  maxTokens: number,
-  budgetClasses?: BudgetClass[]
-): { messages: ChatMessage[]; dropped: number; budgetClasses?: BudgetClass[] } => {
-  const total = messages.reduce((s, m) => s + msgTokens(m), 0)
-  if (total <= maxTokens)
-    return { messages, dropped: 0, ...(budgetClasses ? { budgetClasses } : {}) }
-
-  const remove = new Set<number>()
-  // Preferred path: drop the OLDEST explicit `history` turns (issue 18d — was `filter(isHistoryTurn)`),
-  // never the last one, keeping every `pinned` message intact even if it alone exceeds the budget
-  // (truncating system/lore mid-way is worse than a slightly over-budget prompt — the model's real
-  // context window is the hard limit).
-  const historyIdx = budgetClasses
-    ? messages.map((_, i) => i).filter((i) => budgetClasses[i] === 'history')
-    : []
-  if (historyIdx.length > 0) {
-    const removable = historyIdx.slice(0, -1) // never drop the latest turn
-    let running = total
-    for (const i of removable) {
-      if (running <= maxTokens) break
-      remove.add(i)
-      running -= msgTokens(messages[i])
-    }
-  } else {
-    // Legacy fallback (no explicit history — a hand-built array, or a history-free prompt): keep the
-    // leading system prefix and the most recent messages, dropping oldest from the first non-system
-    // message; always keep the last turn.
-    const convoStart = messages.findIndex((m) => m.role !== 'system')
-    if (convoStart !== -1) {
-      let running = total
-      for (let i = convoStart; running > maxTokens && i < messages.length - 1; i++) {
-        remove.add(i)
-        running -= msgTokens(messages[i])
-      }
-    }
-  }
-
-  if (remove.size === 0)
-    return { messages, dropped: 0, ...(budgetClasses ? { budgetClasses } : {}) }
-  return {
-    messages: messages.filter((_, i) => !remove.has(i)),
-    dropped: remove.size,
-    ...(budgetClasses ? { budgetClasses: budgetClasses.filter((_, i) => !remove.has(i)) } : {})
-  }
-}
-
-/**
- * Re-label every `system` message as `user` (content unchanged). Some OpenAI-compatible endpoints —
- * notably Gemini behind an OpenAI-compat layer — handle a mid-conversation or repeated `system` role
- * poorly, so SillyTavern demotes system→user there. Gated by `settings.generation.system_as_user` and
- * applied ONLY on the OpenAI-compatible path (Anthropic/Gemini-native handle system via their own params).
- * Run BEFORE `mergeConsecutiveRoles` so the converted blocks coalesce with adjacent user turns.
- */
-export const systemToUser = (messages: ChatMessage[]): ChatMessage[] =>
-  messages.map((m) => (m.role === 'system' ? { role: 'user', content: m.content } : m))
-
-/**
- * Merge consecutive messages of the SAME role into one (joined by a newline), matching SillyTavern's
- * prompt assembly. A preset commonly splits one logical block across adjacent same-role entries — e.g.
- * `<{{user}}_setting>` (open) / the body / `</{{user}}_setting>` (close) as three toggleable `system`
- * entries — and relies on the host coalescing them; without this they reach the model as separate
- * messages (the lone `<梅芙_setting>` symptom). Pure; gated by `settings.generation.merge_consecutive_roles`.
- */
-export const mergeConsecutiveRoles = (messages: ChatMessage[]): ChatMessage[] => {
-  const out: ChatMessage[] = []
-  for (const m of messages) {
-    const last = out[out.length - 1]
-    if (last && last.role === m.role) last.content += '\n' + m.content
-    else out.push({ role: m.role, content: m.content })
-  }
-  return out
-}
-
-/**
- * A `ChatMessage` that MAY carry SillyTavern's per-message `name` / `identifier` (ST's `Message`
- * object — openai.js). RPT's own assembly never sets these — every message it emits is an unnamed,
- * identifier-less `{role, content}` — so on the real wire `squashSystemMessages` merges EVERY
- * consecutive system message. The fields exist only so synthesized fixtures / unit tests can exercise
- * ST's named-message and protected-control-identifier carve-outs. `ChatMessage[]` is assignable here
- * (the extra fields are optional), so the provider seam passes its plain array unchanged.
- */
-export interface SquashMessage extends ChatMessage {
-  /** ST `message.name` — a named system message (e.g. an example-dialogue turn) is NEVER squashed. */
-  name?: string
-  /** ST `message.identifier` — the control identifiers in ST's exclude list are never squashed. */
-  identifier?: string
-}
-
-/**
- * SillyTavern's `squashSystemMessages` (openai.js:3827-3866), applied for an IMPORTED ST preset that
- * sets `squash_system_messages: true` (ST gates the call on `oai_settings.squash_system_messages`,
- * openai.js:1599-1601). It is DELIBERATELY NARROWER than RPT's `mergeConsecutiveRoles`:
- *
- *  - it merges ONLY consecutive `system` messages that are UNNAMED and whose `identifier` is not one of
- *    ST's protected controls (`newMainChat` / `newChat` / `groupNudge`, openai.js:3828) — user and
- *    assistant turns pass through untouched, unlike merge-all;
- *  - it DROPS empty `system` messages entirely (openai.js:3835-3837), and a dropped empty never breaks
- *    a squash run (the surrounding squashable systems still merge across it);
- *  - merged content is joined with a single `'\n'` (openai.js:3846).
- *
- * Native RPT presets keep `mergeConsecutiveRoles` (see providerShape); the two are mutually exclusive —
- * ST has no merge-all, so a squashing import must not also merge-all. Pure; returns fresh `{role, content}`
- * objects (RPT's wire carries no name/identifier), never mutating the input.
- */
-export const squashSystemMessages = (messages: SquashMessage[]): ChatMessage[] => {
-  const EXCLUDE = new Set(['newMainChat', 'newChat', 'groupNudge']) // openai.js:3828
-  // openai.js:3839-3841: squashable = not a protected control, role system, and no name.
-  const shouldSquash = (m: SquashMessage): boolean =>
-    !EXCLUDE.has(m.identifier ?? '') && m.role === 'system' && !m.name
-  const out: ChatMessage[] = []
-  let last: { msg: ChatMessage; src: SquashMessage } | null = null
-  for (const m of messages) {
-    // openai.js:3835-3837: force-exclude empty system messages before any squash decision.
-    if (m.role === 'system' && !m.content) continue
-    if (shouldSquash(m) && last && shouldSquash(last.src)) {
-      last.msg.content += '\n' + m.content // openai.js:3846
-    } else {
-      const msg: ChatMessage = { role: m.role, content: m.content }
-      out.push(msg)
-      last = { msg, src: m }
-    }
-  }
-  return out
-}
-
+// Compatibility facade: existing callers keep importing the public prompt surface here while
+// phase implementations live behind focused modules above. New phase-specific callers should
+// import those modules directly.
 export interface PersonaArgs {
   description: string
   /** Whether to inject the description (IN_PROMPT). false = ST's "None" position. */
@@ -305,105 +141,9 @@ const buildCharDescription = (
  * (openai.js:780-792) builds the World Info marker with `stringFormat(wi_format, value)`.
  */
 const stringFormat = (format: string, ...args: string[]): string =>
-  format.replace(/\{(\d+)\}/g, (m, n: string) => (args[Number(n)] !== undefined ? args[Number(n)] : m))
-
-/**
- * ST `shouldTrigger` (PromptManager.js:1549-1553): a block with no `injection_trigger` array,
- * or an empty one, fires for ALL generation types; otherwise the lowercased current generation
- * type must be listed.
- */
-export const shouldTrigger = (block: { injection_trigger?: string[] }, genType: string): boolean => {
-  const trig = block.injection_trigger
-  if (!Array.isArray(trig) || trig.length === 0) return true
-  return trig.includes(genType)
-}
-
-/** Character-card override sources (ST systemPromptOverride / jailbreakPromptOverride). */
-export interface CardPromptOverrides {
-  /** Card `data.system_prompt` — replaces the `main` block's content. */
-  system?: string
-  /** Card `data.post_history_instructions` — replaces the `jailbreak` block's content. */
-  postHistory?: string
-}
-
-/**
- * A resolved prompt block. When a character-card override replaced a `main`/`jailbreak` literal, the
- * block carries `originalContent` — the PRE-override preset text — so the override can resolve
- * `{{original}}` to it during macro substitution (ST openai.js:1489-1492 → preparePrompt(…, original)).
- */
-export type EffectivePromptBlock = PromptBlock & { originalContent?: string }
-
-/**
- * Resolve a preset's ordered prompts into the effective list the builder assembles from,
- * reproducing ST's Prompt Manager collection + character-card overrides:
- *
- *  - drop a block that is disabled OR filtered out by `injection_trigger` for this generation
- *    type (getPromptCollection, PromptManager.js:1516-1541);
- *  - EXCEPT a disabled/filtered `main` literal is retained as a STRUCTURAL EMPTY prompt — ST's
- *    "GMO-free vegan replacement" (PromptManager.js:1531-1537) so relative inserts still resolve.
- *    Its empty content emits no wire message and ST squashes empty system messages out of the
- *    final prompt anyway (openai.js:3836), so the observable output matches;
- *  - a character-card system-prompt / post-history override replaces the `main` / `jailbreak`
- *    literal's content, but ONLY when that block exists, is enabled + triggered, and does not set
- *    `forbid_overrides` (openai.js:1487-1504).
- *
- * `journal` (issue 07 invariant 2) is a PURE observer: every block dropped here (disabled /
- * trigger-filtered) AND every override the card offered but the block forbade is recorded as an
- * `exclude` decision, so no source leaves the request without a journal entry explaining the
- * absence. It never affects the returned list — the wire is byte-identical with or without it.
- *
- * Pure; exported for characterization tests.
- */
-export const resolveEffectivePrompts = (
-  prompts: PromptBlock[],
-  generationType: string,
-  overrides: CardPromptOverrides,
-  journal?: AssemblyJournal
-): EffectivePromptBlock[] => {
-  const gt = String(generationType || 'normal')
-    .toLowerCase()
-    .trim()
-  const blockSource = (b: PromptBlock): RecordSource => ({
-    kind: 'preset-block',
-    id: b.identifier,
-    ...(b.name ? { label: b.name } : {})
-  })
-  const out: EffectivePromptBlock[] = []
-  for (const p of prompts) {
-    const triggered = p.enabled !== false && shouldTrigger(p, gt)
-    if (triggered) {
-      if (p.marker === 'none' && p.forbid_overrides !== true) {
-        // The override replaces the literal's content; `originalContent` retains the preset text so
-        // the override's `{{original}}` resolves to it (ST openai.js:1489-1492).
-        if (p.identifier === 'main' && overrides.system) {
-          out.push({ ...p, content: overrides.system, originalContent: p.content })
-          continue
-        }
-        if (p.identifier === 'jailbreak' && overrides.postHistory) {
-          out.push({ ...p, content: overrides.postHistory, originalContent: p.content })
-          continue
-        }
-      } else if (
-        p.marker === 'none' &&
-        p.forbid_overrides === true &&
-        ((p.identifier === 'main' && !!overrides.system) ||
-          (p.identifier === 'jailbreak' && !!overrides.postHistory))
-      ) {
-        // The card offered an override but the block forbids it: the OVERRIDE text is excluded (the
-        // original literal is kept). Record the decision (invariant 2) — the block still ships.
-        journal?.exclude(blockSource(p), 'override-denied')
-      }
-      out.push(p)
-    } else if (p.identifier === 'main' && p.marker === 'none') {
-      // Structural empty main (never overridden — the block is disabled/filtered).
-      out.push({ ...p, content: '', enabled: true })
-    } else {
-      // Dropped (disabled / trigger-filtered) — record WHY so no source leaves silently (invariant 2).
-      journal?.exclude(blockSource(p), p.enabled === false ? 'disabled' : `trigger-filtered:${gt}`)
-    }
-  }
-  return out
-}
+  format.replace(/\{(\d+)\}/g, (m, n: string) =>
+    args[Number(n)] !== undefined ? args[Number(n)] : m
+  )
 
 /** Expand the running history into alternating messages, ending with the new action.
  * `applyUser`/`applyAssistant` run prompt-time regex on the raw text before macros. `mark` records
@@ -437,137 +177,6 @@ const buildHistory = (
     const transformed = r.role === 'user' ? applyUser(r.text, depth) : applyAssistant(r.text, depth)
     return mark({ role: r.role, content: macroOnly(transformed, macroCtx) })
   })
-}
-
-/**
- * One depth-positioned injection candidate. `depth` counts messages up from the bottom of the
- * chat region (0 = bottom). ST groups same-depth candidates by `injection_order` and role before
- * splicing (see `groupDepthInjections`).
- */
-interface DepthItem {
-  depth: number
-  content: string
-  role?: ChatMessage['role']
-  /** ST `injection_order` (default 100). Same-depth items are grouped by this; extension items are
-   *  forced to 100 (ST treats getExtensionPrompt IN_CHAT content as the order-100 group). */
-  order?: number
-  /** RPT's IN_CHAT "extension" content (lorebook depth entries / pipeline injects) — the analog of
-   *  ST's `getExtensionPrompt(IN_CHAT, …)`. Always order 100 and merged AFTER preset prompts of the
-   *  same role within the order-100 group (ST joins `[rolePrompts, extensionPrompt]`, openai.js:846-849). */
-  extension?: boolean
-  /** Forensic lineage (issue 07) — the entry/block this depth item came from. */
-  source?: RecordSource
-}
-
-/** One grouped role-message ready to splice at a depth, with the lineage of every item merged into it. */
-interface GroupedInjection {
-  depth: number
-  role: ChatMessage['role']
-  content: string
-  sources: RecordSource[]
-}
-
-/** ST role sequence for a same-depth/same-order group (openai.js:838, "most important go lower"). */
-const ROLE_SEQUENCE: ChatMessage['role'][] = ['system', 'user', 'assistant']
-
-/**
- * Reproduce SillyTavern's `populationInjectionPrompts` grouping (openai.js:801-866): for each depth,
- * group same-depth prompts by `injection_order`, process orders HIGH→LOW, roles in the sequence
- * [system, user, assistant], joining same-role contents with '\n'; the order-100 group additionally
- * merges the IN_CHAT extension content (RPT's lorebook depth entries / pipeline injects) AFTER the
- * preset prompts of that role.
- *
- * ST builds that sequence into a temp array and then reverses the WHOLE message array
- * (`messages = messages.reverse()`, openai.js:864). Reversing a contiguous block flips its element
- * order, so we emit the NET post-reverse order directly: orders ASCENDING, roles
- * [assistant, user, system]. The reversal reorders MESSAGES, never characters within a joined
- * message — so each message's joined content is byte-identical to ST's.
- *
- * Pure; exported for characterization. Returns grouped role-messages in net final order per depth.
- */
-export const groupDepthInjections = (items: DepthItem[]): GroupedInjection[] => {
-  const byDepth = new Map<number, DepthItem[]>()
-  for (const it of items) {
-    if (!it.content) continue // ST: `&& prompt.content` (openai.js:813)
-    if (!byDepth.has(it.depth)) byDepth.set(it.depth, [])
-    byDepth.get(it.depth)!.push(it)
-  }
-  const orderOf = (it: DepthItem): number => (it.extension ? 100 : (it.order ?? 100))
-  const out: GroupedInjection[] = []
-  for (const [depth, group] of byDepth) {
-    // Orders ASCENDING = ST's build-DESCENDING reversed (openai.js:833 sorts `+b - +a`).
-    const orders = [...new Set(group.map(orderOf))].sort((a, b) => a - b)
-    for (const order of orders) {
-      // Roles [assistant, user, system] = ST's [system, user, assistant] (openai.js:838) reversed.
-      for (const role of [...ROLE_SEQUENCE].reverse()) {
-        const inRole = group.filter((it) => orderOf(it) === order && (it.role ?? 'system') === role)
-        if (!inRole.length) continue
-        // ST: `rolePrompts` (preset prompts of this order+role, joined by '\n') then `extensionPrompt`
-        // (order-100 IN_CHAT extension content), the two joined with '\n' after each is trimmed
-        // (openai.js:840-849). A stable preset-before-extension partition preserves that.
-        const presetJoined = inRole.filter((it) => !it.extension).map((it) => it.content).join('\n')
-        const extJoined = inRole.filter((it) => it.extension).map((it) => it.content).join('\n')
-        const content = [presetJoined, extJoined]
-          .filter((x) => x)
-          .map((x) => x.trim())
-          .join('\n')
-        if (!content) continue // ST: `if (jointPrompt && jointPrompt.length)` (openai.js:851)
-        const sources = [
-          ...inRole.filter((it) => !it.extension),
-          ...inRole.filter((it) => it.extension)
-        ]
-          .map((it) => it.source)
-          .filter((s): s is RecordSource => !!s)
-        out.push({ depth, role, content, sources })
-      }
-    }
-  }
-  return out
-}
-
-/**
- * Splice grouped depth injections into the assembled message array. Depth counts messages up from
- * the bottom of the chat region; ST places depth `d` immediately above the d-th message from the
- * bottom (final index `base - d`). Insertions are clamped into the conversation region (never the
- * cached system prefix) and spliced highest-index-first so earlier inserts don't shift later targets.
- *
- * RPT DIVERGENCE (deliberate, tracked — ADR 0016): the trailing user action always stays last
- * (`maxIdx = base - 1` when present) so nothing volatile lands past the provider cache breakpoint
- * (the L4-last invariant). ST places a depth-0 injection AFTER the newest message; RPT keeps it just
- * before the pending action. For every depth ≥ 1, and for depth 0 with no trailing user (e.g. a
- * continue), the net placement matches ST.
- */
-const applyGroupedDepthInjections = (
-  messages: ChatMessage[],
-  items: DepthItem[],
-  convoStart: number,
-  hasTrailingUser: boolean,
-  journal?: AssemblyJournal
-): void => {
-  const grouped = groupDepthInjections(items)
-  if (!grouped.length) return
-  const base = messages.length
-  const maxIdx = hasTrailingUser ? base - 1 : base
-  const start = convoStart === -1 ? base : convoStart
-  const depths = [...new Set(grouped.map((g) => g.depth))]
-  const plan = depths.map((depth) => ({
-    depth,
-    idx: Math.max(start, Math.min(base - depth, maxIdx)),
-    msgs: grouped.filter((g) => g.depth === depth)
-  }))
-  // Splice larger indices first (no shift of smaller targets); on a tie (two depths clamped to the
-  // same index) inject the LOWER depth first so the higher depth stacks above it, matching ST.
-  plan.sort((a, b) => b.idx - a.idx || a.depth - b.depth)
-  for (const p of plan) {
-    messages.splice(p.idx, 0, ...p.msgs.map((g) => ({ role: g.role, content: g.content })))
-    // Forensic lineage (issue 07): one depth-inject entry per contributing source, sharing the
-    // insertion index + role, so a MERGED message retains EVERY source id it was joined from.
-    p.msgs.forEach((g, offset) => {
-      const at = p.idx + offset
-      const srcs = g.sources.length ? g.sources : [{ kind: 'pipeline', id: 'depth-inject' } as RecordSource]
-      for (const s of srcs) journal?.depthInject(s, g.depth, at, g.role, g.content)
-    })
-  }
 }
 
 /** Insert a system block just before the first conversation (non-system) message — or append it when
@@ -777,7 +386,11 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
   // Build the World Info marker/safety-net content. Import: ST `formatWorldInfo` — a blank/whitespace
   // wi_format yields the bare value (openai.js:787-788), otherwise `stringFormat`. Native: `World Info:\n`.
   const renderWorldInfo = (blob: string): string =>
-    wiFormat != null ? (wiFormat.trim() ? stringFormat(wiFormat, blob) : blob) : `World Info:\n${blob}`
+    wiFormat != null
+      ? wiFormat.trim()
+        ? stringFormat(wiFormat, blob)
+        : blob
+      : `World Info:\n${blob}`
 
   // Expand {{macros}} for one entry — applying {{setvar}}/{{addvar}}/… side effects to the shared var
   // store. `original` (the pre-override preset text) is threaded for card-overridden main/jailbreak so
@@ -814,9 +427,7 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
     if (b.enabled !== false && b.marker === 'none' && b.content)
       macroExpanded.set(b, macroPass(b.content, b.originalContent))
   }
-  const personaContent = personaInject
-    ? makeRender('', frontierTemplate)(personaDescription)
-    : ''
+  const personaContent = personaInject ? makeRender('', frontierTemplate)(personaDescription) : ''
 
   // Prompt-time regex: transform history/user text on its way into the prompt
   // (placement 1 = user, 2 = AI). Display-only (markdownOnly) rules are excluded upstream.
@@ -840,19 +451,26 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
     journal && promptRegex.length
       ? (placement: number) =>
           (t: string, depth: number): string =>
-            applyRegex(t, promptRegex, placement, regexCtx, depth, undefined, (rule, before, after) =>
-              journal.regex(
-                // SPreset RegexBinding rules (issue 16) journal under a DISTINCT source kind so the
-                // SPreset namespace stays separate from core regex in execution-record attribution.
-                {
-                  kind: rule.origin === 'spreset' ? 'spreset-regex' : 'regex-rule',
-                  id: rule.id,
-                  label: rule.scriptName
-                },
-                depth,
-                before,
-                after
-              )
+            applyRegex(
+              t,
+              promptRegex,
+              placement,
+              regexCtx,
+              depth,
+              undefined,
+              (rule, before, after) =>
+                journal.regex(
+                  // SPreset RegexBinding rules (issue 16) journal under a DISTINCT source kind so the
+                  // SPreset namespace stays separate from core regex in execution-record attribution.
+                  {
+                    kind: rule.origin === 'spreset' ? 'spreset-regex' : 'regex-rule',
+                    id: rule.id,
+                    label: rule.scriptName
+                  },
+                  depth,
+                  before,
+                  after
+                )
             )
       : null
   const jUser = jRegex ? jRegex(1) : applyUser
@@ -917,7 +535,8 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
   // The top-level World Info block. With a `worldInfoOverride` (prompt.preset composer, plan §3) the
   // internal scan is skipped upstream (matchedEntries: []) so the computed value is '' — use the
   // override verbatim. Without one this is exactly the computed string (parity).
-  const worldInfo = args.worldInfoOverride ?? topEntries.map(renderLoreEntry).filter(Boolean).join('\n\n')
+  const worldInfo =
+    args.worldInfoOverride ?? topEntries.map(renderLoreEntry).filter(Boolean).join('\n\n')
 
   // The conversation history messages. Default: built from floors (regex + macro passes, action
   // appended, each classed 'history'). Override (prompt.preset composer): the caller's verbatim,
@@ -933,7 +552,10 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
       out = args.historyOverride.map((m) => markHist({ role: m.role, content: m.content }))
       if (userAction) {
         out.push(
-          markHist({ role: 'user', content: macroOnly(jUser(userAction, 0), macroBase(personaMacro)) })
+          markHist({
+            role: 'user',
+            content: macroOnly(jUser(userAction, 0), macroBase(personaMacro))
+          })
         )
       }
     }
@@ -1050,7 +672,11 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
         // emits the bare description. The header is added only by the headerless safety-net below.
         if (personaContent) {
           messages.push({ role: block.role, content: personaContent })
-          journal?.marker({ kind: 'persona', id: 'persona_description' }, block.role, personaContent)
+          journal?.marker(
+            { kind: 'persona', id: 'persona_description' },
+            block.role,
+            personaContent
+          )
         }
         break
       }
@@ -1174,7 +800,7 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
   depthItems.push(...presetDepthItems)
   if (depthItems.length) {
     const convoStart = messages.findIndex((m) => m.role !== 'system')
-    applyGroupedDepthInjections(messages, depthItems, convoStart, userAction !== '', journal)
+    applyDepthInjections(messages, depthItems, convoStart, userAction !== '', journal)
   }
 
   // Phase D: drain [GENERATE:*] + @INJECT marker entries into message positions.
@@ -1229,7 +855,12 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
       }
       if (at < 0) at = messages.length
       messages.splice(at, 0, { role: 'system', content })
-      journal?.safetyNet({ kind: 'card-field', id: 'char_description-injected' }, at, 'system', content)
+      journal?.safetyNet(
+        { kind: 'card-field', id: 'char_description-injected' },
+        at,
+        'system',
+        content
+      )
     }
   }
 
@@ -1237,14 +868,17 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
   // message that was emitted as a chat-history turn is `history` (droppable oldest-first); everything
   // else is `pinned` (never dropped). This 1:1-with-`messages` array is what fitToBudget reads instead
   // of the retired HISTORY_TAG, and what the assembled artifact carries as `budgetClass`.
-  const budgetClasses: BudgetClass[] = messages.map((m) => (historyRefs.has(m) ? 'history' : 'pinned'))
+  const budgetClasses: BudgetClass[] = messages.map((m) =>
+    historyRefs.has(m) ? 'history' : 'pinned'
+  )
   return { messages, budgetClasses }
 }
 
 /** The `.messages`-only view of `buildPromptDetailed` (issue 18d). The overwhelming majority of
  *  callers only need the assembled array; the budget policy is consulted solely by the trim inside
  *  `assemblePrompt`. Kept as a thin wrapper so every existing caller/test is unchanged. */
-export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] => buildPromptDetailed(args).messages
+export const buildPrompt = (args: BuildPromptArgs): ChatMessage[] =>
+  buildPromptDetailed(args).messages
 
 /**
  * Phase D — drain `[GENERATE:*]` + `@INJECT` marker entries into message positions. The array is final

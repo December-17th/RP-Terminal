@@ -35,7 +35,9 @@ const h = vi.hoisted(() => ({
     profileId === 'pA' && characterId === 'charA'
       ? {
           data: {
-            extensions: { rp_terminal: { panel_ui: { overlays: [{ id: 'ov1', entry: 'ov.html' }] } } }
+            extensions: {
+              rp_terminal: { panel_ui: { overlays: [{ id: 'ov1', entry: 'ov.html' }] } }
+            }
           }
         }
       : undefined
@@ -143,6 +145,21 @@ describe('wcv-destroy — native teardown leaves the IPC callback', () => {
     await new Promise<void>((resolve) => setImmediate(resolve))
     expect(h.destroy).not.toHaveBeenCalled()
     expect(h.ensure).toHaveBeenCalledWith('s1', { x: 0 }, 'url', { profileId: 'pA', chatId: 'cA' })
+  })
+
+  it('acknowledges an authorization refresh only after the old view is destroyed', async () => {
+    const result = call('wcv-destroy-await', RENDERER_ID, 's1') as Promise<boolean>
+    expect(h.destroy).not.toHaveBeenCalled()
+
+    await expect(result).resolves.toBe(true)
+    expect(h.destroy).toHaveBeenCalledWith('s1')
+  })
+
+  it('does not let a WCV page destroy another runtime slot through the acknowledged channel', async () => {
+    await expect(
+      call('wcv-destroy-await', WCV_ID, 'foreign-slot') as Promise<boolean>
+    ).resolves.toBe(false)
+    expect(h.destroy).not.toHaveBeenCalled()
   })
 })
 

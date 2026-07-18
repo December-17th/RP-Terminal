@@ -214,6 +214,19 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       wcvManager.destroy(id)
     })
   })
+  // Runtime authorization changes must stop the old document before resolving its replacement.
+  // Keep the close outside the renderer IPC callback, but acknowledge only after that deferred
+  // teardown has run. Host-renderer only: a card page cannot destroy arbitrary slots.
+  ipcMain.handle('wcv-destroy-await', async (e, id) => {
+    if (slotCtxIf(e.sender.id)) return false
+    pendingDestroy.add(id)
+    return new Promise<boolean>((resolve) => {
+      setImmediate(() => {
+        if (pendingDestroy.delete(id)) wcvManager.destroy(id)
+        resolve(true)
+      })
+    })
+  })
   // A card page's initial panel geometry (its window-x + viewport width, for seam-sliced backgrounds).
   // SYNC so the page has it BEFORE first paint; subsequent updates arrive via the `wcv-panel-geometry`
   // push on every bounds change (wcvManager.pushGeometry).
@@ -417,12 +430,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
       const latest = floors[floors.length - 1]
       if (!latest) return null
-      const floor = generationService.applyVariableOps(
-        ctx.profileId,
-        ctx.chatId,
-        latest.floor,
-        ops
-      )
+      const floor = generationService.applyVariableOps(ctx.profileId, ctx.chatId, latest.floor, ops)
       // null = the write changed nothing (no-op). Don't push/broadcast — that re-fires the card's own MVU
       // events and loops. Just hand back the current stat_data.
       if (!floor) return latest.variables?.stat_data ?? {}
@@ -810,7 +818,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       const ids =
         chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
         (ctx.characterId ? [ctx.characterId] : [])
-      return worldAssetService.sceneAssetUrlForWorld(ctx.profileId, ids, String(location ?? ''), type)
+      return worldAssetService.sceneAssetUrlForWorld(
+        ctx.profileId,
+        ids,
+        String(location ?? ''),
+        type
+      )
     },
     // Card-facing asset enumeration (WA-3): the calling WCV panel's ctx resolves from e.sender (like
     // wcv-host-asset-url). Same id precedence + category inference as assetUrl; returns [] on any miss.

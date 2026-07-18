@@ -1,9 +1,5 @@
-import {
-  systemToUser,
-  mergeConsecutiveRoles,
-  squashSystemMessages,
-  ChatMessage
-} from '../promptBuilder'
+import { systemToUser, mergeConsecutiveRoles, squashSystemMessages } from '../promptMessageShaping'
+import type { ChatMessage } from '../promptTypes'
 import { orderForProvider, isOpenAiCompatibleProvider } from '../apiService'
 import { Settings } from '../../types/models'
 import { log } from '../logService'

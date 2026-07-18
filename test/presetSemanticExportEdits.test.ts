@@ -36,9 +36,27 @@ const synthPreset = (name: string): any => ({
   openai_max_tokens: 2048,
   quirk_top_level: 'the wibbling frobnitz remains',
   prompts: [
-    { identifier: 'main', name: 'Main', role: 'system', content: 'Alpha wobble as {{char}}.', marker: false },
-    { identifier: 'lore', name: 'Lore', role: 'system', content: 'Beta spindle the gizmos.', marker: false },
-    { identifier: 'jailbreak', name: 'Jailbreak', role: 'system', content: 'Gamma flumph nine hoops.', marker: false }
+    {
+      identifier: 'main',
+      name: 'Main',
+      role: 'system',
+      content: 'Alpha wobble as {{char}}.',
+      marker: false
+    },
+    {
+      identifier: 'lore',
+      name: 'Lore',
+      role: 'system',
+      content: 'Beta spindle the gizmos.',
+      marker: false
+    },
+    {
+      identifier: 'jailbreak',
+      name: 'Jailbreak',
+      role: 'system',
+      content: 'Gamma flumph nine hoops.',
+      marker: false
+    }
   ],
   prompt_order: [
     {
@@ -63,8 +81,7 @@ const writeTmp = (raw: any): string => {
 const orderOf = (out: any): Array<{ identifier: string; enabled?: boolean }> =>
   out.prompt_order.find((o: any) => o.character_id === 100001).order
 
-const promptById = (out: any, id: string): any =>
-  out.prompts.find((p: any) => p.identifier === id)
+const promptById = (out: any, id: string): any => out.prompts.find((p: any) => p.identifier === id)
 
 describe('exportPresetSemantic reflects the edited state (ADR 0018 lossless export)', () => {
   it('carries content edit + reorder + disable + add + delete, not the imported bytes', () => {
@@ -134,7 +151,13 @@ describe('exportPresetSemantic reflects the edited state (ADR 0018 lossless expo
     const raw = {
       name: 'Depth Export',
       prompts: [
-        { identifier: 'main', name: 'Main', role: 'system', content: 'Alpha as {{char}}.', marker: false },
+        {
+          identifier: 'main',
+          name: 'Main',
+          role: 'system',
+          content: 'Alpha as {{char}}.',
+          marker: false
+        },
         {
           identifier: 'deepnote',
           name: 'Deep Note',
@@ -169,6 +192,44 @@ describe('exportPresetSemantic reflects the edited state (ADR 0018 lossless expo
     expect(promptById(out, 'deepnote').injection_position).toBe(1) // position untouched
   })
 
+  it('exports editor changes that add keys absent from the imported JSON', () => {
+    const raw = {
+      prompts: [
+        {
+          identifier: 'main',
+          role: 'system',
+          content: 'An unnamed inline prompt.',
+          marker: false
+        }
+      ],
+      prompt_order: [
+        {
+          character_id: 100001,
+          order: [{ identifier: 'main', enabled: true }]
+        }
+      ],
+      unknown_top_level: { keep: true }
+    }
+    importPresetFromFile(profileId, writeTmp(raw))
+    const id = getActivePresetId(profileId)!
+    const view = getPresetById(profileId, id)!
+
+    view.name = 'Renamed Nameless Preset'
+    view.parameters.top_p = 0.73
+    const main = view.prompts[0]
+    main.name = 'Renamed Nameless Prompt'
+    main.injection_depth = 6
+    savePreset(profileId, id, view)
+
+    const out = JSON.parse(exportPresetSemantic(profileId, id)!)
+    expect(out.name).toBe('Renamed Nameless Preset')
+    expect(out.top_p).toBe(0.73)
+    expect(promptById(out, 'main').name).toBe('Renamed Nameless Prompt')
+    expect(promptById(out, 'main').injection_position).toBe(1)
+    expect(promptById(out, 'main').injection_depth).toBe(6)
+    expect(out.unknown_top_level).toEqual({ keep: true })
+  })
+
   it('leaves an UNEDITED preset export JSON.parse-equal to the import (round-trip invariant intact)', () => {
     const raw = synthPreset('Unedited Export')
     importPresetFromFile(profileId, writeTmp(raw))
@@ -176,5 +237,45 @@ describe('exportPresetSemantic reflects the edited state (ADR 0018 lossless expo
     // Re-save the view verbatim (a Preset Manager open/close with no change) — export must still equal raw.
     savePreset(profileId, id, getPresetById(profileId, id)!)
     expect(JSON.parse(exportPresetSemantic(profileId, id)!)).toEqual(raw)
+  })
+
+  it('keeps absent optional keys absent on an unedited nameless preset', () => {
+    const raw = {
+      prompts: [{ identifier: 'main', content: 'Still byte-shape stable.' }],
+      prompt_order: [
+        {
+          character_id: 100001,
+          order: [{ identifier: 'main', enabled: true }]
+        }
+      ]
+    }
+    importPresetFromFile(profileId, writeTmp(raw))
+    const id = getActivePresetId(profileId)!
+    savePreset(profileId, id, getPresetById(profileId, id)!)
+    expect(JSON.parse(exportPresetSemantic(profileId, id)!)).toEqual(raw)
+  })
+
+  it('detects edits to absent keys in envelopes written before importedView existed', () => {
+    const raw = {
+      prompts: [{ identifier: 'main', role: 'system', content: 'Legacy envelope prompt.' }],
+      prompt_order: [
+        {
+          character_id: 100001,
+          order: [{ identifier: 'main', enabled: true }]
+        }
+      ]
+    }
+    importPresetFromFile(profileId, writeTmp(raw))
+    const id = getActivePresetId(profileId)!
+    const envelopeFile = path.join(profileDir, 'presets', 'envelopes', `${id}.json`)
+    const envelope = JSON.parse(fs.readFileSync(envelopeFile, 'utf8'))
+    delete envelope.importedView
+    fs.writeFileSync(envelopeFile, JSON.stringify(envelope, null, 2))
+
+    const view = getPresetById(profileId, id)!
+    view.parameters.top_p = 0.42
+    savePreset(profileId, id, view)
+
+    expect(JSON.parse(exportPresetSemantic(profileId, id)!).top_p).toBe(0.42)
   })
 })

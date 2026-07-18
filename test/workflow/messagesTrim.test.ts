@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest'
 
 import { messagesTrim } from '../../src/main/services/nodes/builtin/messageNodes'
 import { RunContext, NodeImpl } from '../../src/main/services/nodes/types'
-import { ChatMessage, BudgetClass } from '../../src/main/services/promptBuilder'
+import type { BudgetClass, ChatMessage } from '../../src/main/services/promptTypes'
 import {
   assembledArtifact,
   artifactBudgetClasses
@@ -39,9 +39,13 @@ describe('messages.trim', () => {
   ]
 
   it('over-budget: drops oldest non-system first, keeps system prefix + last turn', () => {
-    const r = messagesTrim.run(ctx, { gen: gen(), messages: msgs }, meta(messagesTrim, 'n1', {
-      budget_tokens: 20
-    }))
+    const r = messagesTrim.run(
+      ctx,
+      { gen: gen(), messages: msgs },
+      meta(messagesTrim, 'n1', {
+        budget_tokens: 20
+      })
+    )
     const out = (r.outputs as { messages: ChatMessage[] }).messages
     expect(out[0].role).toBe('system')
     expect(out[out.length - 1].content).toBe('u2')
@@ -50,9 +54,13 @@ describe('messages.trim', () => {
   })
 
   it('under-budget: passes through unchanged (same reference)', () => {
-    const r = messagesTrim.run(ctx, { gen: gen(), messages: msgs }, meta(messagesTrim, 'n1', {
-      budget_tokens: 100000
-    }))
+    const r = messagesTrim.run(
+      ctx,
+      { gen: gen(), messages: msgs },
+      meta(messagesTrim, 'n1', {
+        budget_tokens: 100000
+      })
+    )
     expect((r.outputs as { messages: ChatMessage[] }).messages).toBe(msgs)
   })
 
@@ -89,10 +97,17 @@ describe('messages.trim — Prompt-aware (18c)', () => {
     })
 
   it('drops the oldest history under budget, keeps every pinned message + the last turn', () => {
-    const r = messagesTrim.run(ctx, { gen: gen(), prompt: artifact() }, meta(messagesTrim, 'n1', {
-      budget_tokens: 20
-    }))
-    const out = r.outputs as { messages: ChatMessage[]; prompt: { messages: ChatMessage[]; record: { entries: { stage: string }[] } } }
+    const r = messagesTrim.run(
+      ctx,
+      { gen: gen(), prompt: artifact() },
+      meta(messagesTrim, 'n1', {
+        budget_tokens: 20
+      })
+    )
+    const out = r.outputs as {
+      messages: ChatMessage[]
+      prompt: { messages: ChatMessage[]; record: { entries: { stage: string }[] } }
+    }
     expect(out.messages[0].role).toBe('system') // pinned survived
     expect(out.messages.some((m) => m.content === 'u1')).toBe(false) // oldest history evicted
     expect(out.messages[out.messages.length - 1].content).toBe('u2') // latest kept
@@ -103,9 +118,13 @@ describe('messages.trim — Prompt-aware (18c)', () => {
 
   it('under budget: passes the artifact through unchanged, no trim omission recorded', () => {
     const a = artifact()
-    const r = messagesTrim.run(ctx, { gen: gen(), prompt: a }, meta(messagesTrim, 'n1', {
-      budget_tokens: 100000
-    }))
+    const r = messagesTrim.run(
+      ctx,
+      { gen: gen(), prompt: a },
+      meta(messagesTrim, 'n1', {
+        budget_tokens: 100000
+      })
+    )
     const out = r.outputs as { messages: ChatMessage[]; prompt: unknown }
     expect(out.messages).toBe(wire) // fitToBudget returns the same ref under budget
     expect(out.prompt).toBe(a) // same artifact object, no record mutation
@@ -143,7 +162,10 @@ describe('artifactBudgetClasses — identity alignment (M3-review findings 1 & 3
       { role: 'system', content: 'MAIN' },
       { role: 'user', content: 'h1' }
     ]
-    const a = assembledArtifact(wire, {} as never, undefined, { messages: authored, budgetClasses: classes })
+    const a = assembledArtifact(wire, {} as never, undefined, {
+      messages: authored,
+      budgetClasses: classes
+    })
     // Positional (pre-M5) would have returned ['pinned','history','history']; identity is correct:
     expect(artifactBudgetClasses(a)).toEqual(['history', 'pinned', 'history'])
   })
@@ -163,7 +185,10 @@ describe('artifactBudgetClasses — identity alignment (M3-review findings 1 & 3
   })
 
   it('a synthetic/undeclared-class contribution set yields no policy (unchanged)', () => {
-    const wire: ChatMessage[] = [{ role: 'system', content: 'MAIN' }, { role: 'user', content: 'h1' }]
+    const wire: ChatMessage[] = [
+      { role: 'system', content: 'MAIN' },
+      { role: 'user', content: 'h1' }
+    ]
     // authored carries only ONE class (misaligned/partial) → not every contribution declares one → undefined.
     const a = assembledArtifact(wire, {} as never, undefined, {
       messages: wire,
@@ -175,7 +200,10 @@ describe('artifactBudgetClasses — identity alignment (M3-review findings 1 & 3
   it('a coalesced wire message matching no single contribution yields no policy (positional fallback)', () => {
     // Simulates a shaped wire whose merged content matches no pre-shape contribution → undefined.
     const wire: ChatMessage[] = [{ role: 'system', content: 'MAIN\nEXTRA' }]
-    const a = assembledArtifact(wire, {} as never, undefined, { messages: authored, budgetClasses: classes })
+    const a = assembledArtifact(wire, {} as never, undefined, {
+      messages: authored,
+      budgetClasses: classes
+    })
     expect(artifactBudgetClasses(a)).toBeUndefined()
   })
 })
@@ -206,9 +234,13 @@ describe('messages.trim — preset lane under merge_consecutive_roles:false (M3-
       messages: authored,
       budgetClasses: classes
     })
-    const r = messagesTrim.run(ctx, { gen: gen(), prompt: a }, meta(messagesTrim, 'n1', {
-      budget_tokens: 25
-    }))
+    const r = messagesTrim.run(
+      ctx,
+      { gen: gen(), prompt: a },
+      meta(messagesTrim, 'n1', {
+        budget_tokens: 25
+      })
+    )
     const out = r.outputs as { messages: ChatMessage[] }
     // The pinned system survived (identity-classed pinned) — positional alignment would have dropped it.
     expect(out.messages.some((m) => m.role === 'system')).toBe(true)

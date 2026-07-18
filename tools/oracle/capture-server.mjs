@@ -18,7 +18,10 @@
 // Nothing here is copied from SillyTavern. It is a generic HTTP logger.
 //
 // Usage:
-//   node tools/oracle/capture-server.mjs [--port 8899] [--out tools/oracle/captures]
+//   node tools/oracle/capture-server.mjs [--port 8899] [--out tools/oracle/captures] [--apply]
+//
+// The default is a non-mutating dry-run. Pass --apply to create the output
+// directory and persist captures.
 //
 // Then in ST: Chat Completion source = Custom (OpenAI-compatible),
 //   Custom Endpoint = http://127.0.0.1:8899/v1 , any non-empty key.
@@ -31,20 +34,43 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 function parseArgs(argv) {
-  const args = { port: 8899, out: path.join(__dirname, 'captures') }
+  const args = { port: 8899, out: path.join(__dirname, 'captures'), apply: false }
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--port') args.port = Number(argv[++i])
-    else if (argv[i] === '--out') args.out = path.resolve(argv[++i])
+    if (argv[i] === '--port') {
+      const value = argv[++i]
+      if (!value || value.startsWith('--')) throw new Error('--port requires a value')
+      args.port = Number(value)
+    } else if (argv[i] === '--out') {
+      const value = argv[++i]
+      if (!value || value.startsWith('--')) throw new Error('--out requires a path')
+      args.out = path.resolve(value)
+    } else if (argv[i] === '--apply') {
+      args.apply = true
+    } else {
+      throw new Error(`unknown argument: ${argv[i]}`)
+    }
+  }
+  if (!Number.isInteger(args.port) || args.port < 0 || args.port > 65535) {
+    throw new Error('--port must be an integer from 0 to 65535')
   }
   return args
 }
 
-const { port, out } = parseArgs(process.argv.slice(2))
-fs.mkdirSync(out, { recursive: true })
+let options
+try {
+  options = parseArgs(process.argv.slice(2))
+} catch (err) {
+  console.error(`capture-server: ${err.message}`)
+  console.error('usage: capture-server.mjs [--port <port>] [--out <directory>] [--apply]')
+  process.exit(2)
+}
+const { port, out, apply } = options
+if (apply) fs.mkdirSync(out, { recursive: true })
 
 // Header allow-list: never persist anything credential-like. We keep only inert
 // routing metadata so a committed fixture can never leak a key.
-const SECRET_HEADER = /^(authorization|proxy-authorization|api-key|x-api-key|cookie|set-cookie|openai-organization|x-goog-api-key)$/i
+const SECRET_HEADER =
+  /^(authorization|proxy-authorization|api-key|x-api-key|cookie|set-cookie|openai-organization|x-goog-api-key)$/i
 function scrubHeaders(headers) {
   const kept = {}
   for (const [k, v] of Object.entries(headers)) {
@@ -59,10 +85,26 @@ function tsName(route) {
   return `${ts}__${slug}.json`
 }
 
+function availableCapturePath(route) {
+  const first = path.join(out, tsName(route))
+  if (!fs.existsSync(first)) return first
+  const extension = path.extname(first)
+  const stem = first.slice(0, -extension.length)
+  for (let suffix = 2; ; suffix++) {
+    const candidate = `${stem}__${suffix}${extension}`
+    if (!fs.existsSync(candidate)) return candidate
+  }
+}
+
 function writeCapture(route, payload) {
-  const file = path.join(out, tsName(route))
+  const file = availableCapturePath(route)
+  const displayPath = path.relative(process.cwd(), file) || file
+  if (!apply) {
+    process.stdout.write(`[dry-run] would write ${route} capture to ${displayPath}\n`)
+    return null
+  }
   fs.writeFileSync(file, JSON.stringify(payload, null, 2))
-  process.stdout.write(`[capture] ${route} -> ${path.relative(process.cwd(), file)}\n`)
+  process.stdout.write(`[capture] ${route} -> ${displayPath}\n`)
   return file
 }
 
@@ -87,7 +129,7 @@ const STUB_MODEL = 'oracle-stub'
 const STUB_TEXT =
   'ORACLE_STUB_COMPLETION — capture server acknowledged the request. This text is never used in a fixture.'
 
-function stubCompletion({ stream }) {
+function stubCompletion() {
   const base = {
     id: 'chatcmpl-oracle-stub',
     object: 'chat.completion',
@@ -121,7 +163,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && route === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ ok: true, out }))
+    res.end(JSON.stringify({ ok: true, out, apply }))
     return
   }
 
@@ -150,7 +192,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   // (1) Fake OpenAI Chat Completion endpoint: log the exact wire body.
-  if (req.method === 'POST' && (route === '/v1/chat/completions' || route === '/chat/completions')) {
+  if (
+    req.method === 'POST' &&
+    (route === '/v1/chat/completions' || route === '/chat/completions')
+  ) {
     const parsed = tryJson(raw)
     const body = parsed.ok ? parsed.value : null
     writeCapture('wire-request', {
@@ -193,7 +238,7 @@ const server = http.createServer(async (req, res) => {
       res.end()
     } else {
       res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify(stubCompletion({ stream: false })))
+      res.end(JSON.stringify(stubCompletion()))
     }
     return
   }
@@ -212,10 +257,14 @@ const server = http.createServer(async (req, res) => {
 })
 
 server.listen(port, '127.0.0.1', () => {
+  const outputLine = apply
+    ? `  writing fixtures to: ${out}\n`
+    : `  DRY-RUN: would write fixtures to: ${out}\n` +
+      '  no directories or files will be created; restart with --apply to persist\n'
   process.stdout.write(
     `Oracle capture server on http://127.0.0.1:${port}\n` +
       `  OpenAI endpoint: http://127.0.0.1:${port}/v1\n` +
       `  extension route: POST http://127.0.0.1:${port}/capture\n` +
-      `  writing fixtures to: ${out}\n`
+      outputLine
   )
 })
