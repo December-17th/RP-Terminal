@@ -1,0 +1,1000 @@
+# Agent Runtime implementation plan
+
+Status: Ready for implementation on `agent-system`
+
+This plan turns the approved [Agent Runtime design](agent-runtime-design.md) and
+[ADR 0019](../adr/0019-agent-runtime-replaces-workflow-system.md) into a sequence of independently
+verifiable implementation sessions. It is based on the repository state at commit `ea42ec2`.
+
+The work happens only on the `agent-system` branch and its sub-branches until the complete runtime is
+ready to replace the workflow system. Development may temporarily contain both implementations, but
+there is no user-facing runtime selector, compatibility API, migration release, or merged state with
+two systems.
+
+## 1. Delivery rules
+
+Every session follows these rules:
+
+1. Re-read the files named by that session before changing them.
+2. Begin with the narrow contract or regression test that proves the session's load-bearing behavior.
+3. Keep the app runnable and the required project gates green after the session.
+4. Do not expose unfinished Agent Runtime entry points to cards or players.
+5. Do not change or delete Legacy Workflow Data. Old rows and files become inert after cutover.
+6. Do not add a workflow-to-Agent converter.
+7. Do not add Agent aliases, implicit variable paths, hidden model escalation, or a scheduler.
+8. Use the selected API preset's existing endpoint-wide RPM and concurrency controls.
+9. Treat an Invocation Floor as the owner of its Agent result, operations, and Run Record.
+10. Update the relevant living documentation in the same session as a public contract changes.
+
+The normal end-of-session gate is:
+
+```text
+npm.cmd run typecheck
+npm.cmd run check:deps
+npm.cmd run test
+npm.cmd run check:docs
+```
+
+Targeted tests should run during development. The full gate runs before each session commit. Existing
+documentation-link failures must be distinguished from new failures; the Agent Runtime work may not
+increase their count.
+
+## 2. Evidence from the current code
+
+The replacement cannot begin by deleting the graph. The current Classic generation path in
+`src/main/services/generationService.ts` resolves an effective workflow, calls `runWorkflow`, waits
+for its response-ready checkpoint, persists workflow history, and evaluates headless triggers. Both
+regeneration and swipes return through that entry point.
+
+The reusable seams are:
+
+| Existing seam                       | Current location                                                                          | Agent Runtime use                                                                                               |
+| ----------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Prompt construction                 | `src/main/services/generation/assemble.ts`                                                | Internal implementation of the Classic Narrator prompt builder; no workflow types in its new interface.         |
+| Provider transport and limits       | `src/main/services/apiService.ts`, `rpmLimiter.ts`                                        | Extract behind a provider-neutral Adapter while retaining a temporary compatibility wrapper for old generation. |
+| Provider message shaping            | `src/main/services/generation/providerShape.ts`                                           | Seed for provider normalization; extend it for tool messages and normalized reasoning events.                   |
+| Floor snapshots and cut/edit events | `src/main/services/floorService.ts`                                                       | Invocation ownership, cancellation, input invalidation, and replay notifications.                               |
+| Floor operation journal             | `src/main/services/varsOpsService.ts`, `generation/varsWrite.ts`                          | Replace with a general, source-aware floor-operation interface and migrate existing producers.                  |
+| Suffix re-evaluation                | `generationService.reevaluateVariables`                                                   | Seed for a pure compute-then-commit Forward Replay module.                                                      |
+| Per-chat SQLite                     | `src/main/services/sessionDbService.ts`                                                   | Agent Run Records and floor-operation persistence.                                                              |
+| Profile SQLite                      | `src/main/services/db.ts`                                                                 | Agent library, source baselines, customizations, and role bindings.                                             |
+| Shared card Host                    | `src/shared/thRuntime/types.ts`, `hostFacets.ts`                                          | One Agent facet used by both inline and WCV transports.                                                         |
+| WCV Channel Spec                    | `src/shared/thRuntime/wcvChannelSpec.ts`                                                  | Typed transport rows for run, runPlan, tool registration/callbacks, and floor events.                           |
+| Card transport parity               | `src/renderer/src/cardBridge/host.ts`, `src/preload/wcvHost.ts`, `src/main/ipc/wcvIpc.ts` | Carry the same Agent API and events without duplicating semantics.                                              |
+| Yuzu grammar and validation         | `src/shared/yuzu/*`, `src/main/services/yuzu/vnPrompt.ts`                                 | Text Result Contract validator and degraded narration-only fallback.                                            |
+| Existing activity UI                | `agentActivityStore.ts`, `agentFailureStore.ts`                                           | Replace workflow-node events with invocation/run-record events.                                                 |
+
+Current constraints that require explicit repair are:
+
+- `rawGenerate.ts` tracks one abort controller per chat, which cannot represent concurrent Agent
+  Invocations. Agent cancellation must be keyed by Invocation ID and plan membership.
+- `resilientCall.ts` is workflow-node-specific and permits fallback preset escalation. It must not
+  become the Agent retry layer.
+- provider adapters currently merge reasoning into `<think>` text and do not normalize streaming
+  tool calls. Agent reasoning must remain volatile and absent from Run Records.
+- `saveFloor` has a per-chat lock but does not provide an awaited, atomic suffix transaction.
+- `setFloorStatData` is intentionally unjournaled, while the approved design requires user edits to
+  survive Forward Replay as floor-scoped operations.
+- `vars_ops` paths are relative to `stat_data`; Agent Input Bindings and Result Slots require explicit
+  full paths rooted at `variables`.
+- the workflow editor, workflow/agent-pack IPC, card `workflows[]` import, run history, node registry,
+  and `@xyflow/react` are all still live and must be removed together after cutover.
+
+## 3. Target module boundaries
+
+The implementation should expose a small set of deep Modules. Their Interfaces are the test surface;
+provider quirks, SQLite schemas, repair heuristics, queue data structures, and replay mechanics stay
+inside their Implementations.
+
+### 3.1 `AgentContracts`
+
+Proposed location: `src/shared/agentRuntime/`
+
+Interface responsibilities:
+
+- parse and validate Agent Definitions, effective invocation options, Result Contracts, Tool
+  Bindings, Input Bindings, history selection, and Invocation Plans;
+- normalize static prompt strings and typed prompt segments into one representation;
+- require full paths rooted at `variables`;
+- reject pre-authored tool messages, duplicate Agent calls on one floor, nested parallel groups,
+  unknown fields where ambiguity would be dangerous, and writes to reserved paths;
+- produce structured validation errors with an Agent, field, binding, tool, or plan location.
+
+This Module is pure. It imports no Electron, main-process, renderer, filesystem, database, or
+provider code. Add a dependency-cruiser rule equivalent to the current pure workflow-engine rule.
+
+### 3.2 `ProviderDispatch`
+
+Proposed location: `src/main/services/agentRuntime/provider/`
+
+Interface responsibilities:
+
+- resolve and freeze an API preset and generation parameters;
+- report a Provider Capability Profile;
+- accept normalized messages and tool schemas;
+- emit normalized text, tool-call, reasoning, usage, cache, rate-limit, and completion events;
+- share the existing endpoint-keyed RPM/concurrency limiters with ordinary generation;
+- expose provider errors with retry class and `Retry-After`.
+
+Implementations cover the existing OpenAI-compatible, native Anthropic, and native Gemini transport
+families. A scripted in-memory Adapter is the test implementation. `apiService.streamProvider`
+temporarily becomes a compatibility wrapper over this Module so existing Classic generation keeps
+working while the Harness is built.
+
+### 3.3 `AgentHarness`
+
+Proposed location: `src/main/services/agentRuntime/harness/`
+
+One Interface method executes one resolved Agent Invocation against one immutable input snapshot. It
+owns:
+
+- immutable-prefix and append-only attempt-log assembly;
+- context-budget attribution;
+- one-call and bounded tool-loop execution;
+- Tool Binding resolution and availability checks;
+- Protocol Repair;
+- ordered tool-result projection, defaulting to 10,000 tokens;
+- Attempt Transactions;
+- retry classification, five-attempt default, five-second delay, and `Retry-After`;
+- cancellation;
+- text, JSON Schema, tools-only, and YSS Result Contract validation;
+- exact attempt/run evidence without raw reasoning.
+
+The Harness does not know about lanes, plans, floors after its input snapshot is created, UI, or card
+scheduling. It returns a validated result plus staged operations, or a structured final failure.
+
+### 3.4 `AgentCatalog`
+
+Proposed location: `src/main/services/agentRuntime/catalog/`
+
+One profile-scoped Interface owns built-in, user-imported, user-created, and card-bundled Agents. It
+enforces profile-wide unique names, effective-definition calculation, source baselines,
+customizations, restore, upgrade conflict reporting, enabled state, deletion constraints, and
+Classic/Yuzu role bindings.
+
+Suggested profile-database records:
+
+- `agent_definitions`: unique name, source kind/key/version, baseline JSON, customization JSON,
+  enabled state, effective hash, and timestamps;
+- `agent_role_bindings`: role key, Agent Name, and role-local invocation configuration.
+
+The store must retain enough source identity to restore built-ins and installed card Agents. Import
+is two-phase only when a name collision requires a rename; otherwise card-bundled Agents install
+enabled without a walkthrough. Renaming updates references inside the same declarative import
+transaction only.
+
+### 3.5 `FloorState`
+
+Proposed location: `src/main/services/agentRuntime/floorState/`
+
+This is the sole Interface for floor-scoped state operations and deterministic replay. It owns:
+
+- full-path read/write validation;
+- an ordered journal with source `model`, `card`, `user`, or `agent`;
+- reserved `variables.__rpt` enforcement;
+- pure suffix reconstruction from a stable seed;
+- atomic compute-then-commit of every affected floor;
+- Result Slot writes and Attempt Transaction operations;
+- historical user edits;
+- transcript epoch/snapshot validation;
+- state-refresh notifications that never emit `floor:committed`.
+
+Introduce a general `floor_operations` session table rather than exposing `vars_ops` to new code.
+Migrate existing `vars_ops` rows non-destructively on session open, then move current card and model
+writers to the new Interface. Keep old tables inert after cutover so existing user data is not
+destructively removed.
+
+The replay transaction must calculate and validate the complete suffix before writing any floor.
+SQLite commit failure or validation failure leaves every original floor unchanged.
+
+### 3.6 `InvocationRuntime`
+
+Proposed location: `src/main/services/agentRuntime/invocation/`
+
+One Interface accepts `run`, `runPlan`, manual, or Player-facing role requests. It owns:
+
+- Invocation identity `(chat, floor, Agent Name)` and duplicate coalescing;
+- per-chat, per-Agent ordered lanes;
+- sequence and author-declared flat parallel groups;
+- input resolution only when a lane member is ready to start;
+- invocation-ID and plan-ID cancellation;
+- floor deletion listeners;
+- input-snapshot invalidation and restart without consuming retry budget;
+- Result Incorporation through `FloorState`;
+- required/optional plan failure behavior;
+- Next-turn Barriers;
+- lifecycle events and immutable Run Records.
+
+Suggested session records:
+
+- `agent_runs`: Invocation ID, identity fields, immutable definition/config snapshots, status,
+  timestamps, and final record JSON;
+- an append-only `agent_run_events` table only if crash-safe live activity requires it during
+  implementation. Do not split the record into many public persistence concepts without evidence.
+
+Run Records are deleted with their Invocation Floor. A deleted in-flight floor leaves no diagnostic
+tombstone. App-restart resumption remains deferred; the initial implementation may mark live work
+cancelled on shutdown without committing partial state.
+
+### 3.7 `PlayerGeneration`
+
+Proposed location: `src/main/services/agentRuntime/playerGeneration/`
+
+This Module adapts the Harness to Pending Floors and role bindings:
+
+- `classic.narrator` builds the existing Classic prompt through the extracted prompt builder and
+  stores text as canonical `response_content`;
+- `yuzu.sceneDirector` appends the Yuzu instruction, validates mixed text/YSS, stores the raw output,
+  and exposes parsed stage data;
+- required background barriers settle before Player-facing input bindings resolve;
+- success commits the Pending Floor exactly once;
+- cancellation/final failure discards it and restores the player's captured input;
+- regeneration and swipes use the same role path.
+
+There is no workflow fallback after the Classic cutover.
+
+### 3.8 `CardAgentHost`
+
+This is a new `AgentHost` facet in `src/shared/thRuntime/hostFacets.ts`, kept flat in the existing
+`Host` intersection. It exposes:
+
+```ts
+rpt.agents.run(name, options)
+rpt.agents.runPlan(plan)
+rpt.agents.registerTool(binding, handler)
+rpt.agents.onFloorCommitted(handler)
+```
+
+`registerTool` is a live, scoped implementation binding, not an Agent-definition mutation. Inline
+and WCV transports carry correlated tool requests, results, errors, and aborts. Unmount unregisters
+the implementation. The Invocation Runtime rejects a missing implementation before the first
+provider call. Card/plugin trust and existing host privilege boundaries still apply.
+
+`floor:committed` is emitted exactly once after a new floor commits. Replay emits a distinct
+state-refresh event and cannot retrigger scheduling.
+
+## 4. Dependency direction
+
+```text
+AgentContracts
+    ↑
+ProviderDispatch ← AgentHarness ← InvocationRuntime ← CardAgentHost
+                         ↑              ↓
+                    Tool Registry    FloorState
+                                         ↑
+                                 PlayerGeneration
+                                         ↑
+                              generationService facade
+```
+
+`AgentHarness` depends on Interfaces for provider dispatch and tools. `InvocationRuntime` depends on
+the Harness, Catalog, Run Store, and FloorState Interfaces. `FloorState` does not import
+InvocationRuntime; existing floor cut/edit events notify it through registration at the composition
+root. Renderer and WCV code reach main only through typed IPC.
+
+## 5. Session plan
+
+### Session 0 — Freeze parity and deletion inventories
+
+Objective: establish a trustworthy baseline before extracting code.
+
+Work:
+
+- Add focused characterization tests for current Classic prompt bytes, provider shaping, floor
+  variable re-evaluation, regeneration, swipe, and Yuzu parsing.
+- Add `test/agentRuntime/fixtures/` with scripted provider event streams for text, reasoning,
+  fragmented tool calls, usage, rate limits, malformed arguments, and truncation.
+- Inventory every registered node from `src/main/services/nodes/builtin/index.ts` into three
+  explicit classes:
+  - implementation to extract behind an Agent/tool Interface;
+  - capability already available as a direct service;
+  - workflow-only authoring/control glue to delete.
+- Record the full workflow removal file/dependency search in this plan's implementation log when
+  work starts; do not delete anything yet.
+
+Required tests:
+
+- existing generation parity tests;
+- current Yuzu/YSS tests;
+- floor replay and vars operation tests;
+- one fixture proving raw reasoning can be separated from visible text.
+
+Exit:
+
+- baseline gates are recorded;
+- every workflow node has an owner or deletion disposition;
+- no runtime behavior changed.
+
+Suggested commit: `test: freeze agent runtime cutover baselines`
+
+### Session 1 — Contracts and Provider Adapter
+
+Objective: create the pure contract Module and a real provider seam without changing user behavior.
+
+Add:
+
+- `src/shared/agentRuntime/types.ts`
+- `src/shared/agentRuntime/schema.ts`
+- `src/shared/agentRuntime/paths.ts`
+- `src/shared/agentRuntime/plan.ts`
+- `src/shared/agentRuntime/errors.ts`
+- `src/main/services/agentRuntime/provider/*`
+- `test/agentRuntime/contracts.test.ts`
+- `test/agentRuntime/providerAdapter.test.ts`
+
+Change:
+
+- `src/main/services/apiService.ts`
+- `src/main/services/generation/providerShape.ts`
+- `src/main/services/rpmLimiter.ts` only if needed to expose the existing shared limiter cleanly;
+- `.dependency-cruiser.cjs`
+
+Work:
+
+- Implement Agent Definition version 1 and Invocation Plan validation.
+- Enforce full paths and the reserved Result Slot root.
+- Define normalized provider messages/events, including tool calls and volatile reasoning.
+- Extract provider-specific request/stream parsing into Adapters.
+- Preserve endpoint-keyed RPM and concurrency behavior.
+- Make existing `streamProvider` use the Adapter through a compatibility wrapper.
+- Do not persist or emit raw reasoning through Agent-facing result events.
+
+Required tests:
+
+- every configured provider identifier normalizes through its applicable transport family;
+- fragmented tool-call arguments assemble deterministically;
+- reasoning never becomes final text unless the existing non-Agent compatibility caller explicitly
+  requests its old `<think>` presentation;
+- schema normalization follows the selected capability profile;
+- ordinary generation limiter sharing remains unchanged;
+- contract errors point to exact fields.
+
+Exit:
+
+- existing generation is byte-compatible;
+- Agent contracts and provider tests are green;
+- no card or renderer Agent API exists yet.
+
+Suggested commit: `feat: add agent contracts and provider adapter`
+
+### Session 2 — One-call and tool-loop Harness
+
+Objective: implement one provider-neutral Harness for both simple and tool-using Agents.
+
+Add:
+
+- `src/main/services/agentRuntime/harness/AgentHarness.ts`
+- internal Harness files for attempt log, budget, repair, retry, result validation, and projection;
+- `src/main/services/agentRuntime/tools/ToolRegistry.ts`
+- `src/main/services/agentRuntime/tools/AttemptTransaction.ts`
+- built-in read-only test tools;
+- Harness tests driven only through `AgentHarness.execute`.
+
+Do not expose internal repair/retry helpers as public Interfaces merely to make them easy to test.
+
+Work:
+
+- Build immutable prefix plus append-only attempt log.
+- Implement one-call Agents as the same loop with `maxSteps: 1` and no tools.
+- Validate tool availability and schemas before dispatch.
+- Stage transactional tool operations and discard them on every unsuccessful attempt.
+- Execute model-requested tools in order unless every binding is `parallelSafe`; append results in
+  model-declared order regardless of completion.
+- Apply 10,000-token default Tool Result Projection while retaining the full result in evidence.
+- Implement bounded Protocol Repair without inventing semantic arguments.
+- Suppress identical repeated-call storms.
+- Implement five retries by default, five seconds between attempts, frozen preset/model, and
+  `Retry-After` as a lower bound.
+- Stop automatic retries once a non-transactional external effect begins.
+- Start Corrective Retry with a fresh Harness Context and Attempt Transaction.
+- Add context-budget attribution and non-retryable failure.
+
+Required tests:
+
+- text, JSON, tools-only, and YSS validators;
+- one-call and multi-step tool Agents use the same Interface;
+- wrong-channel/truncated tool-call repairs;
+- unrecoverable arguments trigger Corrective Retry;
+- transaction rollback on failure, abort, and retry;
+- non-transactional retry cutoff;
+- parallel-safe completion order differs while appended order stays stable;
+- retry delay and `Retry-After` with fake timers;
+- fixed provider/preset/model across attempts;
+- complete tool result retained, projected result capped;
+- max-step and repeated-call termination.
+
+Exit:
+
+- a scripted provider can execute the entire Harness contract in process;
+- the Harness has no floor, UI, workflow, or card imports.
+
+Suggested commit: `feat: implement provider-neutral agent harness`
+
+### Session 3 — Agent Catalog, imports, and role bindings
+
+Objective: persist the profile-wide Agent library and make effective definitions deterministic.
+
+Add:
+
+- `src/main/services/agentRuntime/catalog/AgentCatalog.ts`
+- catalog store and import/export implementation;
+- built-in Classic Narrator and Yuzu Scene Director definition resources;
+- profile database migration;
+- catalog tests.
+
+Change:
+
+- `src/main/types/character.ts`: add strict `agents[]` and optional role recommendations; leave
+  `workflows[]` readable until final removal;
+- character import/install service;
+- profile deletion/export logic as required;
+- settings types only for role-facing defaults that do not belong in an Agent Definition.
+
+Work:
+
+- Store baseline, customization, effective hash, source identity, enabled state, and version.
+- Enforce one Agent Name across built-in, user, and card sources.
+- Require incoming rename on collision; atomically rewrite references in that imported declarative
+  package.
+- Implement edit, restore, explicit upgrade/diff, disable, and permitted delete.
+- Prevent disabling/deleting an Agent bound to Classic or Yuzu until replacement.
+- Avoid the existing `settings.agent` manual-FSM naming collision; new code uses `AgentCatalog` and
+  role bindings, not that settings field.
+- Keep `.rptagent` Agent Definition import distinct from legacy `.rptagent` workflow pack files by
+  validating `format: "rpt-agent"` before install. Legacy pack files remain unsupported and inert
+  after cutover.
+
+Required tests:
+
+- profile-wide collisions across all sources;
+- rename transaction and deliberate breakage of external literal card-script references;
+- customization/restore;
+- source upgrade with valid and conflicting customized fields;
+- source-backed removal constraints;
+- role-binding constraints;
+- card Agent installs enabled without an approval wizard;
+- malformed or legacy pack import cannot enter the new Catalog.
+
+Exit:
+
+- Catalog is usable from main-process tests;
+- built-ins exist but generation still uses the old workflow path.
+
+Suggested commit: `feat: add profile agent catalog`
+
+### Session 4 — Run Records and activity read model
+
+Objective: make every invocation observable and independently interpretable before exposing it.
+
+Add:
+
+- `src/main/services/agentRuntime/runs/AgentRunStore.ts`
+- session database migration for floor-owned run records;
+- main event broadcaster and typed IPC read/cancel surface;
+- renderer `agentRunStore.ts` and a minimal activity list that is not yet a full editor.
+
+Change:
+
+- `src/main/services/sessionDbService.ts`
+- `src/preload/index.ts` and `index.d.ts`
+- `src/renderer/src/App.tsx`
+- existing activity/failure stores, replacing their data source without deleting workflow events yet.
+
+Work:
+
+- Persist immutable definition/config/input/prompt snapshots, attempts, repairs, tool evidence,
+  result/failure, replay outcome, and metrics.
+- Exclude raw reasoning.
+- Key live cancellation by Invocation ID.
+- Always show live activity; apply notification `none`, `failure`, or `completion` only to additional
+  notifications.
+- Delete records when their owning floor is deleted.
+- On app shutdown, cancel unfinished invocations cleanly; do not implement restart resumption.
+
+Required tests:
+
+- record remains readable after Agent edit/delete;
+- no reasoning field or reasoning text is stored;
+- floor deletion removes completed and in-flight records;
+- Stop targets one invocation without stopping independent calls in the same chat;
+- activity is visible even with notification `none`.
+
+Exit:
+
+- scripted Harness invocations can be observed through the typed main/preload/renderer surface;
+- no card-facing run method is enabled.
+
+Suggested commit: `feat: persist agent runs and activity`
+
+### Session 5 — Floor operation journal and atomic Forward Replay
+
+Objective: establish the state foundation before any background Agent can write.
+
+Add:
+
+- `src/main/services/agentRuntime/floorState/FloorState.ts`
+- pure replay calculator;
+- `floor_operations` session migration and compatibility importer;
+- transaction helpers that operate on one chat session database;
+- floor-state tests using real SQLite.
+
+Change:
+
+- `src/main/services/generation/varsWrite.ts`
+- `src/main/services/varsOpsService.ts`
+- `src/main/services/floorService.ts`
+- `src/main/services/generationService.ts`
+- `src/main/services/chatWriteService.ts`
+- variable editor write path;
+- table operation integration only where variable replay and table replay must share one commit
+  boundary.
+
+Work:
+
+- Journal model, card, user, and Agent operations in deterministic `(floor, seq)` order.
+- Validate full rooted paths at the Interface; translate internally to JSON Patch as needed.
+- Make ordinary variable editor writes floor-scoped and journaled.
+- Keep `variables.__rpt` read-only outside Result Incorporation.
+- Compute an entire suffix against copies, including response MVU folds and existing card/user ops,
+  before any save.
+- Commit the affected floor snapshots and operation rows in one transaction.
+- Reject or roll back the whole suffix on any operation/schema/persistence failure.
+- Emit state-refresh once after success and never `floor:committed`.
+- Preserve current truncation, swipe, edit, and table replay semantics.
+
+Required tests:
+
+- floor 12 operation followed by exact floor 13+ reconstruction;
+- user edit survives later replay and disappears when its floor is deleted;
+- card writes retain current behavior;
+- reserved path rejection;
+- failure on the last replayed floor leaves every original floor unchanged;
+- transcript changes during compute cancel before commit;
+- old `vars_ops` rows replay identically after non-destructive migration;
+- state-refresh emits once; floor commit emits zero times.
+
+Exit:
+
+- existing generation and variable editing use `FloorState`;
+- `generationService.reevaluateVariables` delegates instead of owning replay mechanics;
+- all pre-Agent floor behavior remains green.
+
+Suggested commit: `feat: add atomic floor replay and operation journal`
+
+### Session 6 — Invocation Runtime, lanes, plans, and deletion
+
+Objective: connect Harness results to their Invocation Floors with correct concurrency semantics.
+
+Add:
+
+- `src/main/services/agentRuntime/invocation/InvocationRuntime.ts`
+- lane, plan, input-resolution, cancellation, barrier, and incorporation internals;
+- invocation integration tests with scripted providers and real session SQLite.
+
+Change:
+
+- floor cut/edit listener registration at the main composition root;
+- Run Store lifecycle events;
+- FloorState incorporation Interface.
+
+Work:
+
+- Coalesce duplicate `(chat, floor, Agent Name)` calls.
+- Serialize the same Agent by floor within a chat.
+- Resolve bindings only after earlier lane work incorporates.
+- Run different Agents in explicit flat parallel groups without conflict inference.
+- Stop the rest of a required sequence on final failure; continue after optional failure.
+- On floor deletion, abort, discard staged state and late responses, erase the Run Record, and cancel
+  active/queued plan members.
+- On a stale transactional input snapshot, cancel and restart without consuming retry count.
+- Reject restart after a non-transactional external boundary.
+- Incorporate result, result slot, transaction operations, record outcome, and suffix replay as one
+  logical operation.
+- Implement Next-turn Barrier state, but do not yet bind it to Player Generation.
+
+Required tests reproduce the approved cases exactly:
+
+- floor 12 call, delete floor 12, immediate abort and no response/record;
+- floor 12 call, create floor 13, late incorporation into 12 and deterministic replay of 13;
+- same Agent on floors 12 and 13 waits, incorporates 12, then resolves 13 input and starts;
+- author-declared parallel Agents start together and incorporate independently;
+- duplicate same-Agent/same-floor call returns the existing promise/result;
+- nested parallel and duplicate plan membership fail validation;
+- cancellation propagates through a plan;
+- required and optional failure policies;
+- stale snapshot restart and non-transactional rejection.
+
+Exit:
+
+- main-process invocation semantics are complete through one deep Interface;
+- no public card scheduling API yet.
+
+Suggested commit: `feat: add floor-owned agent invocation runtime`
+
+### Session 7 — Card Agent API and card-owned scheduling
+
+Objective: expose asynchronous execution and floor commit events at inline/WCV parity.
+
+Add:
+
+- `AgentHost` facet and public `rpt.agents` runtime assembly;
+- main/preload/renderer IPC for Agent calls, plans, tool callbacks, aborts, and floor events;
+- card runtime parity fixtures.
+
+Change:
+
+- `src/shared/thRuntime/hostFacets.ts`
+- `src/shared/thRuntime/types.ts`
+- `src/shared/thRuntime/index.ts`
+- `src/shared/thRuntime/nullHost.ts`
+- `src/shared/thRuntime/wcvChannelSpec.ts`
+- `src/renderer/src/cardBridge/host.ts`
+- `src/renderer/src/cardBridge/createCardBridge.ts`
+- `src/preload/wcvHost.ts`
+- `src/preload/wcvPreload.ts`
+- `src/main/ipc/wcvIpc.ts`
+- main renderer IPC and preload surface;
+- `docs/rpt-api.md` and `docs/sdk/component-inventory.md`.
+
+Work:
+
+- Implement `run`, `runPlan`, `registerTool`, and `onFloorCommitted`.
+- Allow direct JSON input.
+- Scope calls and tool implementations to the bound profile/chat/card; ignore caller-supplied scope
+  IDs at privileged boundaries.
+- Make tool request/result transport correlated, abortable, ordered, and size-limited.
+- Reject unavailable/unmounted card tools before provider dispatch.
+- Emit current and previous variables with one causative floor commit.
+- Ensure replay and card variable refresh cannot trigger the commit handler.
+- Document monthly property/world progression as card-side example code.
+
+Required tests:
+
+- null Host, inline Host, and WCV Host expose the same shape;
+- both transports execute identical run/plan fixtures;
+- direct JSON input round-trips without stringification ambiguity;
+- tool registration/unregistration and abort;
+- context spoofing is rejected;
+- floor event fires once after commit and never after replay;
+- monthly example does not double-run after a late result;
+- same-Agent duplicate from a repeated handler coalesces.
+
+Exit:
+
+- card authors can schedule background Agents;
+- Classic player turns still use the workflow path;
+- no scheduler exists in RPT.
+
+Suggested commit: `feat: expose card agent runtime`
+
+### Session 8 — Classic Narrator and Pending Floor cutover
+
+Objective: remove the workflow engine from every Classic player-facing generation path.
+
+Add:
+
+- `PlayerGeneration` Module;
+- Classic prompt-builder Adapter around existing prompt assembly;
+- Pending Floor lifecycle and tests.
+
+Change:
+
+- `src/main/services/generationService.ts`
+- `src/main/services/generation/assemble.ts`
+- `callModel.ts`, `parseResponse.ts`, and `persistFloor.ts` as required;
+- `rawGenerate.ts` controller ownership;
+- regeneration/swipe handlers;
+- prompt preview service;
+- streaming/activity bridge.
+
+Work:
+
+- Bind the built-in Classic Narrator by default.
+- Capture the user message in a Pending Floor.
+- Run the Narrator through `AgentHarness`.
+- Preserve current prompt ordering, macros, regex, lore, table injection, persona, token trimming,
+  provider shaping, metrics, streaming, and response fold behavior.
+- Store final text as canonical `response_content`, then commit the floor once.
+- Fire `floor:committed` only after commit.
+- Wait for required Next-turn Barriers before resolving Narrator bindings.
+- On cancellation/final failure, discard Pending Floor and restore the user input.
+- Route normal generate, regenerate, swipe, and card `generate(text)` through the same role.
+- Replace workflow-based prompt preview with direct prompt assembly.
+- Do not fall back to `runWorkflow`.
+
+Required tests:
+
+- byte-level Classic prompt parity for representative presets/cards;
+- normal success, stream, cancellation, provider failure, and retry;
+- Pending Floor is never visible as a committed floor;
+- input restoration on failure/cancel;
+- regeneration and swipe preserve ownership and delete/cancel affected Agent runs;
+- required barrier success/failure and optional barrier release;
+- RPM/concurrency shared with background Agents across chats;
+- exact floor event order.
+
+Exit:
+
+- no Classic generation call reaches `workflowEngine.ts`;
+- Classic can complete all existing generation parity suites through the Harness;
+- workflow code remains present only for deletion and any not-yet-extracted non-Classic capability.
+
+Suggested commit: `feat: cut classic generation over to narrator agent`
+
+### Session 9 — Yuzu Scene Director
+
+Objective: run Project Yuzu through the same PlayerGeneration and Harness path.
+
+Change:
+
+- `src/main/services/yuzu/vnPrompt.ts`
+- `src/shared/yuzu/sceneGrammar.ts`
+- YSS parser/validator and stage-command integration;
+- Yuzu renderer state only where warnings need presentation;
+- PlayerGeneration role selection and Run Record warnings.
+
+Work:
+
+- Bind built-in `yuzu.sceneDirector`.
+- Keep Yuzu output mode as text, not JSON.
+- Accept canonical raw YSS mixed with narration text.
+- Validate line by line and identify the exact failed line and reason.
+- Use Corrective Retry for invalid output.
+- After final validation failure, commit narration-only degraded output, preserve warnings in the Run
+  Record, and show the player where parsing failed.
+- Feed valid commands to the existing deterministic stage parser; never make the model's tool
+  protocol the YSS storage format.
+
+Required tests:
+
+- valid mixed narration/YSS storage and stage derivation;
+- invalid line location and message;
+- repair/retry isolation;
+- narration-only fallback after configured attempts;
+- cancellation and swipe;
+- Classic/Yuzu role compatibility validation;
+- no JSON coercion of YSS.
+
+Exit:
+
+- both Player-facing modes use AgentHarness;
+- Yuzu warnings are visible and attributable to a Run Record.
+
+Suggested commit: `feat: run yuzu through scene director agent`
+
+### Session 10 — Complete Agent Workspace
+
+Objective: replace the graph editor with the flat library/editor/plan/activity experience.
+
+Add:
+
+- `src/renderer/src/components/agents/AgentWorkspace.tsx`
+- library, form editor, prompt-binding editor, result/tool/history/model/retry sections;
+- ordered Plan editor with flat parallel groups;
+- Agent diff/restore/import/rename surfaces;
+- Run detail and Manual Invocation surfaces;
+- dedicated Zustand store and typed IPC.
+
+Change:
+
+- workspace navigation and lazy routes in `App.tsx`/view registry;
+- settings links and localization;
+- activity/failure presentation;
+- variable editor: permit ordinary user paths and keep `variables.__rpt` visibly read-only.
+
+Work:
+
+- Expose every approved Agent option with defaults visible and editable.
+- Show source, version, enabled state, role bindings, last activity, and restore state.
+- Validate in the responsible field and prevent activation.
+- Support Run now with direct JSON on the latest committed floor.
+- Support plan JSON import/export and restrictive visual list editing; do not persist plans as runtime
+  objects.
+- Show full Run Record evidence except raw reasoning.
+- Do not reproduce a canvas, ports, edges, nodes, arbitrary branching, or a workflow compatibility
+  view.
+
+Required tests:
+
+- Catalog edit/restore/rename/upgrade UI;
+- collision rename flow;
+- role replacement before disable/delete;
+- every configuration field round-trips;
+- flat parallel plan authoring and invalid nested input;
+- manual invocation identity/coalescing;
+- activity Stop and failure location;
+- Result Slots displayed read-only in the variable editor.
+
+Manual verification:
+
+- edit a built-in and Restore to default;
+- import a colliding Agent and rename it;
+- run a text and JSON Agent;
+- inspect an attempt with a tool call and retry;
+- stop a live invocation;
+- use keyboard-only navigation through the Workspace.
+
+Exit:
+
+- every Agent Runtime function is operable without the workflow editor;
+- no workflow UI is needed for Classic, Yuzu, background, import, inspection, or debugging.
+
+Suggested commit: `feat: replace workflow canvas with agent workspace`
+
+### Session 11 — Extract remaining capabilities and delete workflow
+
+Objective: make the atomic product cutover complete.
+
+Before deletion, classify every node implementation:
+
+| Node family                                                                | Required disposition                                                                                                                       |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| generation/context/prompt/message/preset/lore nodes                        | Already replaced by PlayerGeneration prompt assembly; delete node wrappers.                                                                |
+| `agent.llm`, history, memory recall/maintain, notes maintain               | Re-express only still-supported operations as built-in Agents or explicit built-in Tools over their direct services; delete node wrappers. |
+| table read/query/apply/export                                              | Bind needed direct table services as explicit Tools; keep table storage/replay, delete workflow nodes and cadence gates.                   |
+| combat/duel/lore search tools                                              | Bind direct services as explicit Tools with existing privilege checks.                                                                     |
+| vars/MVU nodes                                                             | Replaced by FloorState operations and card/tool Interfaces; delete wrappers.                                                               |
+| triggers, controls, templates, merge/trim, subgraphs, checkpoints, modules | Delete as workflow-only authoring/control glue.                                                                                            |
+| logging-only nodes                                                         | Delete; Harness/Run Record diagnostics replace them.                                                                                       |
+
+Delete:
+
+- `src/shared/workflow/`
+- `src/main/services/workflowEngine.ts`
+- workflow service/store/events/headless trigger and workflow lore-pick files;
+- node registry and every built-in node wrapper;
+- agent-pack store/service/materialization/transfer/trigger files;
+- workflow and agent-pack IPC registration;
+- renderer workflow components, canvas CSS, stores, routes, traces, panels, and old failure/activity
+  event handlers;
+- preload workflow/agent-pack surface and types;
+- `.rptflow`, `.rptmodule`, recipe, fragment, checkpoint, attachment, and effective-graph
+  import/export paths;
+- seeded workflow examples and workflow-only localization;
+- `@xyflow/react` if `rg` proves no non-workflow consumer;
+- workflow-only tests after equivalent Agent Runtime tests exist.
+
+Change:
+
+- remove `workflows[]` from the active World Card schema and importer while preserving unknown legacy
+  extension data losslessly;
+- stop reading workflow selections and `chat.workflow_id`;
+- leave Legacy Workflow Data tables/rows/files inert on disk;
+- remove the workflow dependency-cruiser rule and retain the new AgentContracts purity rule;
+- replace workflow references in packaging, examples, current code comments, and active UI copy.
+
+Required searches must return no active runtime imports:
+
+```text
+rg -n "shared/workflow|workflowEngine|runWorkflow|workflowService|workflowStore" src test
+rg -n "WorkflowEditor|workflow-trace|workflow-activity|agent-pack-" src
+rg -n "\\.rptflow|\\.rptmodule|effective graph|checkpoint attachment" src resources
+rg -n "@xyflow/react" src
+```
+
+Historical docs and superseded ADR bodies are not rewritten merely to make a repository-wide word
+search empty.
+
+Exit:
+
+- no workflow code is compiled, registered, routed, or selectable;
+- Classic, Yuzu, card scheduling, tools, plans, replay, deletion, and visibility pass;
+- dependency removal is reflected in lockfile;
+- old workflow data is untouched and ignored.
+
+Suggested commit: `refactor: remove workflow system`
+
+### Session 12 — Living contracts, migration audit, and merge gate
+
+Objective: prove the branch is a complete replacement rather than a parallel experiment.
+
+Update:
+
+- `README.md`
+- `CLAUDE.md`
+- `CONTEXT.md`
+- `docs/current-status.md`
+- `docs/documentation-catalog.md`
+- `docs/rpt-api.md`
+- `docs/plugin-api.md`
+- `docs/sdk/README.md`
+- `docs/sdk/component-inventory.md`
+- `docs/compat-comparison.md`
+- status header of `docs/world-card-design.md`
+- Agent Runtime design/plan status lines;
+- any release notes or packaging checks required by the target release.
+
+Remove or supersede:
+
+- `docs/sdk/workflow-module-format.md`;
+- active workflow instructions in living documentation;
+- current examples that tell authors to use nodes, graph triggers, packs, or recipes.
+
+Do not rewrite historical plan/ADR bodies. Update lifecycle headers/catalogue entries or add explicit
+supersession notes.
+
+Final automated gate:
+
+```text
+npm.cmd run typecheck
+npm.cmd run check:deps
+npm.cmd run test
+npm.cmd run check:docs
+npm.cmd run build
+```
+
+Final manual matrix:
+
+- Classic normal generation, stop, retry, regeneration, and swipe;
+- Yuzu valid stage, invalid-line warning, corrective retry, and degraded narration;
+- monthly property/world Agent calls from a real card;
+- same Agent on consecutive floors;
+- independent Agents in parallel;
+- late result replay with a newer floor;
+- deletion of an in-flight Invocation Floor;
+- journaled latest-floor and historical variable edits;
+- built-in edit/restore, card Agent import, collision rename, role replacement;
+- Run Record inspection and Stop;
+- at least one OpenAI-compatible, Anthropic, Gemini, DeepSeek Flash, and DeepSeek Pro preset where
+  credentials are available;
+- RPM/concurrency behavior across two chats;
+- app restart with in-flight work cancelling without partial state.
+
+Exit:
+
+- all gates pass or every pre-existing exception is documented with unchanged evidence;
+- the implementation contains one Agent system and no workflow product surface;
+- the branch is ready for owner review and eventual replacement of the workflow-bearing branch.
+
+Suggested commit: `docs: finalize agent runtime cutover`
+
+## 6. High-risk checkpoints
+
+### Provider protocol
+
+Do not implement DeepSeek-specific behavior in `AgentHarness`. Provider Capability Profiles select
+schema normalization, reasoning-channel handling, cache metrics, and repair support. Test each
+behavior against normalized fixtures before live API checks.
+
+### Atomic replay
+
+Forward Replay is the highest data-integrity risk. Its calculator must be pure and deterministic;
+the database write happens only after the full suffix validates. Use a real SQLite regression test
+that injects a failure late in the suffix and proves byte-for-byte preservation of all original
+floor variables.
+
+### Card tool lifetime
+
+A card-supplied tool is available only while its scoped handler is registered. Preflight all required
+bindings before the provider call, propagate aborts, and reject late callback responses after
+unregistration or floor deletion. Never keep renderer function references in main-process state.
+
+### Classic parity
+
+Do not rewrite prompt assembly during cutover. First place the existing implementation behind the
+PlayerGeneration Interface, prove parity, and deepen/refactor it only after the workflow system has
+been removed.
+
+### Workflow deletion
+
+Deletion is a capability audit, not a directory removal. A workflow node that wraps a useful table,
+memory, combat, lore, or generation service may be deleted only after the surviving capability has a
+non-workflow caller and tests through its new deep Interface.
+
+## 7. Completion definition
+
+The Agent Runtime replacement is complete only when:
+
+- every model-backed Player-facing and background call uses `AgentHarness`;
+- Agent Definitions from built-in, user, and card sources share one Catalog and unique-name domain;
+- cards own scheduling and can use direct results or explicitly bound tools;
+- every result and operation is floor-owned, rewindable, and replayed deterministically;
+- the two approved deletion/late-result cases and same-Agent lane edge case pass with real
+  persistence;
+- Classic and Yuzu use role-bound Agents with no model escalation;
+- activity and failures are visible at the responsible Agent/attempt/binding/tool/line/replay step;
+- all Agent options are editable with Restore to default where a source baseline exists;
+- the workflow engine, nodes, canvas, packs, formats, runtime data reads, and workflow-only dependency
+  are absent from the product;
+- Legacy Workflow Data remains inert and untouched; and
+- the full automated and manual cutover gates pass.

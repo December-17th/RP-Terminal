@@ -83,6 +83,8 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   manual pass.
 - The [Agent Runtime design](agent-system/agent-runtime-design.md) and
   [ADR 0019](adr/0019-agent-runtime-replaces-workflow-system.md) are approved but not implemented.
+  The code-informed [implementation plan](agent-system/implementation-plan.md) sequences the work
+  into independently gated sessions on `agent-system`.
   The planned cutover replaces every model-backed operation with one provider-neutral Harness,
   moves variable/time scheduling to card-side logic, and removes the workflow runtime, canvas, node
   formats, examples, and compatibility surface before merge. There is no migration or dual-runtime

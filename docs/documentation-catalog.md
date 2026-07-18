@@ -76,6 +76,7 @@ map.
 | Document                                                         | Status                                                                                                  |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | [Agent Runtime](agent-system/agent-runtime-design.md)            | Approved design; not implemented. Hard-replaces the workflow system at an atomic cutover.               |
+| [Implementation plan](agent-system/implementation-plan.md)       | Ready on `agent-system`; phased, code-informed cutover plan.                                            |
 | [Agentic mode](agentic-mode-design.md)                           | Partially superseded: manual FSM shipped; unshipped tool-loop design replaced by Agent Runtime.         |
 | [Card custom UI](card-custom-ui-design.md)                       | Partial predecessor design; inline/WCV/static-layout work shipped, native declarative view kit remains. |
 | [Grep notes memory](grep-notes-memory-design.md)                 | Planned prototype; partially superseded by Agentic Plot Recall.                                         |
