@@ -49,8 +49,8 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "user", "user"],
-    "messageCount": 3,
+    "roleOrder": ["system", "user", "system", "user"],
+    "messageCount": 4,
     "mustContain": [
       "Prime directive: keep the vorrel cadence steady.\nSecondary clause: mind the sennet frame.\nTertiary clause: never break the quell line.\nQuaternary clause: hold the lantern-oath.",
       "And did Mirren come with it?"
@@ -61,6 +61,7 @@
     "chat": [
       { "role": "system", "content": "Prime directive: keep the vorrel cadence steady.\nSecondary clause: mind the sennet frame.\nTertiary clause: never break the quell line.\nQuaternary clause: hold the lantern-oath." },
       { "role": "user", "content": "Kaevo — is the night skiff back?" },
+      { "role": "system", "content": "Kaevo, a quiet dock-warden of Sill." },
       { "role": "user", "content": "And did Mirren come with it?" }
     ]
   }

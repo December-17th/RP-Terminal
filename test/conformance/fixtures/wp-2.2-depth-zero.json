@@ -40,8 +40,8 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "user", "assistant", "system"],
-    "messageCount": 4,
+    "roleOrder": ["system", "user", "assistant", "system", "system"],
+    "messageCount": 5,
     "mustContain": ["ORP_dz_inj_bottom"]
   },
   "expected": {
@@ -49,6 +49,7 @@
       { "role": "system", "content": "ORP_dz_main: keep the reply flowing." },
       { "role": "user", "content": "ORP_dz_hist_user" },
       { "role": "assistant", "content": "ORP_dz_hist_asst" },
+      { "role": "system", "content": "Character brindle: Bex, a chronicler mid-sentence on the ledge." },
       { "role": "system", "content": "ORP_dz_inj_bottom" }
     ]
   }

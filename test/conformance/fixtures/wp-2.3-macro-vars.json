@@ -29,14 +29,15 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "user"],
-    "messageCount": 2,
+    "roleOrder": ["system", "system", "user"],
+    "messageCount": 3,
     "mustContain": ["ORP_va: HP is 10."],
     "mustNotContain": ["{{setvar", "{{addvar", "{{getvar"]
   },
   "expected": {
     "chat": [
       { "role": "system", "content": "ORP_va: HP is 10." },
+      { "role": "system", "content": "Character brindle: Vael, a lamp-keeper of Orrin." },
       { "role": "user", "content": "ORP_va_user" }
     ]
   }

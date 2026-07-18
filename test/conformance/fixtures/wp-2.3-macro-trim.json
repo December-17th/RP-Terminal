@@ -29,14 +29,15 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "user"],
-    "messageCount": 2,
+    "roleOrder": ["system", "system", "user"],
+    "messageCount": 3,
     "mustContain": ["ORP_tr: alphabeta"],
     "mustNotContain": ["{{trim}}"]
   },
   "expected": {
     "chat": [
       { "role": "system", "content": "ORP_tr: alphabeta" },
+      { "role": "system", "content": "Character brindle: Vael, a lamp-keeper of Orrin." },
       { "role": "user", "content": "ORP_tr_user" }
     ]
   }

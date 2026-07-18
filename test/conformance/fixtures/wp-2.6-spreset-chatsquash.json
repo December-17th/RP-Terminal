@@ -46,16 +46,13 @@
     "roleOrder": ["system"],
     "messageCount": 1,
     "mustContain": [
-      "You are Vael, keeper of the tide-glass.\nIs the night skiff back?\nNot yet — the fog holds it off the shoals.\nAnd did Mirren come with it?"
+      "You are Vael, keeper of the tide-glass.\nIs the night skiff back?\nNot yet — the fog holds it off the shoals.\nVael, keeper of the tide-glass at Sill.\nAnd did Mirren come with it?"
     ],
     "mustNotContain": ["[Start a new Chat]"]
   },
   "expected": {
     "chat": [
-      {
-        "role": "system",
-        "content": "You are Vael, keeper of the tide-glass.\nIs the night skiff back?\nNot yet — the fog holds it off the shoals.\nAnd did Mirren come with it?"
-      }
+      { "role": "system", "content": "You are Vael, keeper of the tide-glass.\nIs the night skiff back?\nNot yet — the fog holds it off the shoals.\nVael, keeper of the tide-glass at Sill.\nAnd did Mirren come with it?" }
     ]
   }
 }

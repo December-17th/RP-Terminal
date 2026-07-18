@@ -674,6 +674,13 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
     historyRefs.add(m)
     return m
   }
+  // The pending player-action turn + the final history turn, captured when history is emitted (via the
+  // chat_history marker OR the no-marker safety net). Used to position the char_description injection
+  // (owner directive, KNOWN-DIVERGENCES §10) immediately before the player action — or, on a `continue`
+  // with no pending user, just after the history tail. Both are message OBJECTS so `indexOf` still finds
+  // them after later tail splices (depth injects / cache tail / memory block) shift indices around them.
+  let playerActionRef: ChatMessage | null = null
+  let historyTailRef: ChatMessage | null = null
 
   // ST Prompt Manager collection + character-card overrides (issue 11). Drops trigger-filtered /
   // disabled blocks, keeps a structural empty `main`, and folds the card's system_prompt /
@@ -919,14 +926,23 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
   // treatment as the default path's live turn (prompt regex at depth 0, then macros) — only the
   // PRIOR turns arrive pre-processed.
   const historyMessages = (): ChatMessage[] => {
+    let out: ChatMessage[]
     if (!args.historyOverride) {
-      return buildHistory(floors, userAction, macroBase(personaMacro), jUser, jAssistant, markHist)
+      out = buildHistory(floors, userAction, macroBase(personaMacro), jUser, jAssistant, markHist)
+    } else {
+      out = args.historyOverride.map((m) => markHist({ role: m.role, content: m.content }))
+      if (userAction) {
+        out.push(
+          markHist({ role: 'user', content: macroOnly(jUser(userAction, 0), macroBase(personaMacro)) })
+        )
+      }
     }
-    const out = args.historyOverride.map((m) => markHist({ role: m.role, content: m.content }))
-    if (userAction) {
-      out.push(
-        markHist({ role: 'user', content: macroOnly(jUser(userAction, 0), macroBase(personaMacro)) })
-      )
+    // Capture the history tail (and the pending action, which is that tail when a userAction exists —
+    // buildHistory / the override both append it last) so the char_description injection lands correctly
+    // wherever history is emitted.
+    if (out.length) {
+      historyTailRef = out[out.length - 1]
+      if (userAction) playerActionRef = out[out.length - 1]
     }
     return out
   }
@@ -1175,6 +1191,43 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
     const insertAt = userAction !== '' ? messages.length - 1 : messages.length
     messages.splice(insertAt, 0, { role: 'system', content: args.memoryBlock })
     journal?.safetyNet({ kind: 'memory', id: 'memory-tail' }, insertAt, 'system', args.memoryBlock)
+  }
+
+  // Owner directive (KNOWN-DIVERGENCES §10): surface the character even when the assembled preset carries
+  // NO char_description marker. RPT renders the SAME content the marker would produce — a BARE description
+  // for an ST import (isStImport), else Name + Description folded (personality/scenario folded in only when
+  // those markers are ALSO absent, exactly as the char_description marker case above) — and injects it as a
+  // `system` message (the default marker role) IMMEDIATELY BEFORE the pending player action. Chat history
+  // stays before it; anything that legitimately follows the user (post_history / jailbreak) stays after it.
+  // ST instead REPAIRS the import, re-adding the marker at ITS default position (PromptManager.js:995-1067),
+  // so this is a deliberate POSITION divergence, not a presence one. getDefaultPreset carries the marker, so
+  // native/default flows never enter this branch (verified by the promptBuilder characterization tests).
+  const hasCharDescriptionMarker = effectivePrompts.some((b) => b.marker === 'char_description')
+  if (!hasCharDescriptionMarker) {
+    const content = isStImport
+      ? render(card.data.description || '')
+      : buildCharDescription(card, charName, render, {
+          includePersonality: !hasPersonalityMarker,
+          includeScenario: !hasScenarioMarker
+        })
+    if (content) {
+      // Position: immediately before the player action. On a `continue` (no pending user) inject just
+      // AFTER the history tail — the slot the action would occupy, ahead of any post-history block —
+      // falling back to the very end only when there is no history at all. `indexOf` is resolved HERE,
+      // after every tail splice, so the anchor's live index is used.
+      let at: number
+      if (playerActionRef) {
+        at = messages.indexOf(playerActionRef)
+      } else if (historyTailRef) {
+        const t = messages.indexOf(historyTailRef)
+        at = t < 0 ? messages.length : t + 1
+      } else {
+        at = messages.length
+      }
+      if (at < 0) at = messages.length
+      messages.splice(at, 0, { role: 'system', content })
+      journal?.safetyNet({ kind: 'card-field', id: 'char_description-injected' }, at, 'system', content)
+    }
   }
 
   // Project the collected history-turn identity into the explicit budget policy (issue 18d): every

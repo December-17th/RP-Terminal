@@ -42,8 +42,8 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "assistant", "system", "user", "assistant", "user"],
-    "messageCount": 6,
+    "roleOrder": ["system", "assistant", "system", "user", "assistant", "system", "user"],
+    "messageCount": 7,
     "mustContain": ["ORP_nh_inj_deep"]
   },
   "expected": {
@@ -53,6 +53,7 @@
       { "role": "system", "content": "ORP_nh_inj_deep" },
       { "role": "user", "content": "ORP_nh_hist_u1" },
       { "role": "assistant", "content": "ORP_nh_hist_a2" },
+      { "role": "system", "content": "Character brindle: Cal, a keeper of the long ledger." },
       { "role": "user", "content": "ORP_nh_hist_action" }
     ]
   }

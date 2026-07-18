@@ -46,8 +46,8 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "assistant", "user", "system", "system", "system", "assistant", "user"],
-    "messageCount": 8,
+    "roleOrder": ["system", "assistant", "user", "system", "system", "system", "assistant", "system", "user"],
+    "messageCount": 9,
     "mustContain": ["ORP_inj_order_10", "ORP_inj_order_20", "ORP_inj_order_30"]
   },
   "expected": {
@@ -59,6 +59,7 @@
       { "role": "system", "content": "ORP_inj_order_20" },
       { "role": "system", "content": "ORP_inj_order_30" },
       { "role": "assistant", "content": "ORP_dio_hist_a_reply" },
+      { "role": "system", "content": "Character brindle: Marn, a tide-clerk of the quorlish shelf." },
       { "role": "user", "content": "ORP_dio_hist_u_action" }
     ]
   }

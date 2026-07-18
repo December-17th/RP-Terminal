@@ -41,14 +41,15 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "user", "system"],
-    "messageCount": 3,
+    "roleOrder": ["system", "system", "user", "system"],
+    "messageCount": 4,
     "mustContain": ["CARD-JB opener [PRESET-JB: uphold the concord verbatim.] and again [] closer."],
     "mustNotContain": ["{{original}}"]
   },
   "expected": {
     "chat": [
       { "role": "system", "content": "PRESET-MAIN: hold the tide stance." },
+      { "role": "system", "content": "Character brindle: Wen, a tidewatcher of the Sallow coast." },
       { "role": "user", "content": "Wen, has the tide turned?" },
       { "role": "system", "content": "CARD-JB opener [PRESET-JB: uphold the concord verbatim.] and again [] closer." }
     ]

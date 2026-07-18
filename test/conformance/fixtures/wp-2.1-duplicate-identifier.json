@@ -38,8 +38,8 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "system", "user"],
-    "messageCount": 3,
+    "roleOrder": ["system", "system", "system", "user"],
+    "messageCount": 4,
     "mustContain": ["FIRST-WINS: the copper tally is authoritative."],
     "mustNotContain": ["SECOND-LOSES: the tin tally must be ignored."]
   },
@@ -47,6 +47,7 @@
     "chat": [
       { "role": "system", "content": "Vorne mandate: keep the grennel count." },
       { "role": "system", "content": "FIRST-WINS: the copper tally is authoritative." },
+      { "role": "system", "content": "Character brindle: Tolm, keeper of two conflicting ledgers." },
       { "role": "user", "content": "Tolm, which tally do we trust?" }
     ]
   }

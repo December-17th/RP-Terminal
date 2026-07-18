@@ -42,14 +42,15 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "user", "system"],
-    "messageCount": 3,
+    "roleOrder": ["system", "system", "user", "system"],
+    "messageCount": 4,
     "mustContain": ["CARD-MAIN: adopt Sable's clipped courier voice.", "CARD-JB: end every reply with a delivery tally."],
     "mustNotContain": ["PRESET-MAIN: default frelquam stance.", "PRESET-JB: default closing reminder."]
   },
   "expected": {
     "chat": [
       { "role": "system", "content": "CARD-MAIN: adopt Sable's clipped courier voice." },
+      { "role": "system", "content": "Character brindle: Sable, a courier who never sleeps." },
       { "role": "user", "content": "Sable, where's the last parcel?" },
       { "role": "system", "content": "CARD-JB: end every reply with a delivery tally." }
     ]

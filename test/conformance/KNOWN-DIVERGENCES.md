@@ -188,29 +188,44 @@ Some fixtures stay STRUCTURAL (adapter returns null, runner validates schema/inv
   `src/main/services/apiService.ts` (`orderForProvider`, `isOpenAiCompatibleProvider`); adapter
   `test/conformance/rptAdapter.ts`. Scope — `assembly` (harness modeling boundary).
 
-## 10. Import repair — ST auto-adds missing default markers; RPT imports losslessly (issue 11 / capture-day finding)
+## 10. Missing char_description marker — same character, different POSITION (issue 11 / owner directive 2026-07-17)
 
-A preset whose `prompt_order` OMITS a default marker (e.g. `charDescription`) behaves differently on
-import:
+A preset whose `prompt_order` OMITS the `charDescription` default marker still surfaces the character on
+BOTH sides — the difference is now WHERE, not WHETHER (this was a *presence* divergence before the owner
+directive; RPT injected nothing).
 
 - **ST:** its Prompt Manager REPAIRS an imported preset — it adds missing default prompts/markers
   (`charDescription`, `charPersonality`, `scenario`, World Info, `chatHistory`, …) and appends any missing
-  order entries (`PromptManager.js:995-1067`). So importing a preset that omits `charDescription` still
-  yields a character-description message: real ST surfaces the character regardless.
-- **RPT:** `parseStPreset` imports ONLY the prompts the order actually lists — it does no repair, matching
-  the deliberate lossless-import stance (ADR 0018: import what's present, never silently overwrite; any
-  normalization is an explicit compatibility view, not an auto-applied mutation). A preset that omits
-  `charDescription` therefore produces NO description message in RPT.
+  order entries (`PromptManager.js:995-1067`). The re-added `charDescription` marker renders at ITS DEFAULT
+  MARKER POSITION (near the head, ahead of chat history) — real ST surfaces the character there.
+- **RPT:** `parseStPreset` still imports ONLY the prompts the order lists — it does no repair, matching the
+  deliberate lossless-import stance (ADR 0018: import what's present, never silently overwrite; any
+  normalization is an explicit compatibility view, not an auto-applied mutation), so the marker is genuinely
+  absent from the assembled preset. But (**owner directive**) `buildPromptDetailed` now still SURFACES the
+  character when the marker is absent: it renders the SAME content the marker would produce — a bare
+  description for an ST import, or the folded `Name:/Description:` shape for a native preset (folding
+  personality/scenario only when those markers are also absent) — and injects it as a `system` message
+  **immediately BEFORE the pending player action** (after chat history, before the user turn; any
+  post-history / jailbreak block stays after the action). On a `continue` with no pending user it lands just
+  after the history tail (the slot the action would occupy).
+- **So §10 is now a POSITION divergence, not a presence one:** both surface the character; ST at the default
+  marker position, RPT immediately before the player action. RPT chose that position deliberately (it keeps
+  the character adjacent to the live turn without repairing the imported order).
 - **Confirmed both sides (2026-07-17 capture day, isolated ST 1.18.0):** for `wp-2.1-char-card-overrides`
   (preset = `main, chatHistory, jailbreak`, no `charDescription`), real ST assembled the character
-  description into the prompt; RPT's assembler (`assembleForFixture` → `buildPromptDetailed`) produced
-  `[CARD-MAIN, user, CARD-JB]` with no description. The card-override logic itself matched exactly on both
-  (`CARD-MAIN` replaces main, `CARD-JB` replaces jailbreak).
-- **Consequence for fixtures:** synthesized `wp-2.1-*` goldens that omit a marker reflect RPT's behavior
-  (no auto-add) and are correct for RPT. A future `source:"captured"` fixture for such a scenario will show
-  ST's auto-added markers and must be marked `knownDivergence` citing this §10 (or the preset re-authored to
-  include every marker it intends). **Owner decision pending:** whether RPT should replicate ST's missing-
-  marker repair as an opt-in compatibility-import mode; today it deliberately does not.
-- **Grounding:** ST `public/scripts/PromptManager.js:995-1067` (sanitize/repair, add-missing); RPT
-  `src/main/parsers/stPresetParser.ts` (imports listed order only), `docs/adr/0018`. Scope — `import` +
-  `assembly`.
+  description at its default marker position; RPT's assembler (`assembleForFixture` → `buildPromptDetailed`)
+  now produces `[CARD-MAIN, <char description>, user, CARD-JB]` — the description injected right before the
+  player action, `CARD-JB` (post-history) still after it. The card-override logic itself matched exactly on
+  both (`CARD-MAIN` replaces main, `CARD-JB` replaces jailbreak).
+- **Consequence for fixtures:** synthesized `wp-2.1-*` (and `wp-2.2/2.3/2.5/2.6-*`) goldens that omit the
+  marker reflect RPT's inject-before-player-action behavior and are correct for RPT. A future
+  `source:"captured"` fixture for such a scenario will show ST's default-position repair and must be marked
+  `knownDivergence` citing this §10 (or the preset re-authored to include the marker it intends).
+- **Owner decision (RESOLVED 2026-07-17):** RPT surfaces the character even without the marker, positioned
+  before the player action — no longer "pending." Native/default presets carry the marker
+  (`getDefaultPreset`), so their flows are unchanged (pinned by `generateParity` + the `promptBuilder`
+  characterization tests).
+- **Grounding:** ST `public/scripts/PromptManager.js:995-1067` (sanitize/repair, add-missing default markers);
+  RPT `src/main/parsers/stPresetParser.ts` (imports listed order only), `src/main/services/promptBuilder.ts`
+  (the char_description inject-before-player-action block in `buildPromptDetailed`), `docs/adr/0018`. Scope —
+  `import` + `assembly`.

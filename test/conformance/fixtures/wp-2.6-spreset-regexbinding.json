@@ -52,14 +52,15 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "user"],
-    "messageCount": 2,
+    "roleOrder": ["system", "system", "user"],
+    "messageCount": 3,
     "mustContain": ["Keep Vael's tide-cadence steady.", "Tune the lyre before dusk."],
     "mustNotContain": ["kithara", "[Start a new Chat]"]
   },
   "expected": {
     "chat": [
       { "role": "system", "content": "Keep Vael's tide-cadence steady." },
+      { "role": "system", "content": "Vael, keeper of the tide-glass at Sill." },
       { "role": "user", "content": "Tune the lyre before dusk." }
     ]
   }

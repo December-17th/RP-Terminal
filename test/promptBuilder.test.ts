@@ -167,6 +167,44 @@ describe('buildPrompt', () => {
     expect(last(messages)).toEqual({ role: 'user', content: 'I wave back' })
   })
 
+  // Owner directive / KNOWN-DIVERGENCES §10: when the assembled preset carries NO char_description
+  // marker, RPT still surfaces the character — it injects the SAME content the marker would produce as a
+  // `system` message IMMEDIATELY BEFORE the pending player action. History stays before it; a post-history
+  // block stays after the action. (Previously RPT injected nothing — the old §10 presence divergence.)
+  it('injects the character description before the player action when the preset omits the marker (§10)', () => {
+    const messages = buildPrompt({
+      card: card({ description: 'A knight.', post_history_instructions: 'POST-HISTORY REMINDER' }),
+      preset: preset([blk('', 'MAIN SYSTEM'), blk('chat_history'), blk('post_history')]),
+      lorebooks: [],
+      floors: [floor(0, '', 'Hello traveler')],
+      userAction: 'I wave back'
+    })
+    const actionIdx = messages.findIndex((m) => m.role === 'user' && m.content === 'I wave back')
+    // The injected char description sits immediately before the pending player action …
+    expect(messages[actionIdx - 1].role).toBe('system')
+    expect(messages[actionIdx - 1].content).toContain('Name: Aria')
+    expect(messages[actionIdx - 1].content).toContain('A knight.')
+    // … chat history stays before it, and the post-history block stays AFTER the action.
+    expect(messages.some((m, i) => m.content === 'Hello traveler' && i < actionIdx)).toBe(true)
+    expect(last(messages)).toEqual({ role: 'system', content: 'POST-HISTORY REMINDER' })
+    // Exactly one char-description message — no duplication.
+    expect(messages.filter((m) => m.content.includes('Name: Aria')).length).toBe(1)
+  })
+
+  it('does NOT inject a second char description when the marker is present (native/default unaffected)', () => {
+    const messages = buildPrompt({
+      card: card({ description: 'A knight.' }),
+      preset: preset([blk('char_description'), blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, '', 'Hello traveler')],
+      userAction: 'I wave back'
+    })
+    // The marker renders the description at ITS position (the head), not before the action, and only once.
+    expect(messages.filter((m) => m.content.includes('Name: Aria')).length).toBe(1)
+    expect(messages[0].content).toContain('Name: Aria')
+    expect(last(messages)).toEqual({ role: 'user', content: 'I wave back' })
+  })
+
   it('injects a per-mode addendum as a system block before the conversation, action still last', () => {
     const messages = buildPrompt({
       card: card({ description: 'A knight.' }),
@@ -1365,9 +1403,13 @@ describe('buildPrompt — historyOverride / worldInfoOverride', () => {
         { role: 'assistant', content: 'A'.repeat(200) }
       ]
     })
-    // Every override turn + the appended action is classed 'history' (the explicit-data successor to
-    // the retired HISTORY_TAG), so fitToBudget can drop the oldest.
-    expect(budgetClasses.every((c) => c === 'history')).toBe(true)
+    // Each override turn + the appended action is classed 'history' (the explicit-data successor to the
+    // retired HISTORY_TAG), so fitToBudget can drop the oldest. This preset omits the char_description
+    // marker, so RPT now injects the character description (here the folded native "Name: Aria") just
+    // before the action (owner directive, KNOWN-DIVERGENCES §10); that injected block is 'pinned', so
+    // not EVERY class is 'history' — the history turns are what fitToBudget trims.
+    expect(budgetClasses.filter((c) => c === 'history').length).toBe(3) // 2 override turns + the action
+    expect(budgetClasses.filter((c) => c === 'pinned').length).toBe(1) // the injected char description
     const { messages: fit, dropped } = fitToBudget(messages, 5, budgetClasses)
     expect(dropped).toBeGreaterThan(0)
     expect(last(fit).content).toBe('latest') // final action always kept

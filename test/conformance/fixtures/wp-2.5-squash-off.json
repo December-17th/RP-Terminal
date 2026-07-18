@@ -69,12 +69,13 @@
     ]
   },
   "actualDivergent": {
-    "note": "RPT's CURRENT real ASSEMBLY output for this input (pinned so future drift fails — the knownDivergence xfail exempts this fixture from matching `expected`, ST's golden, NOT from pinning RPT's own behavior). It matches `expected` here because the divergence (merge-all `mergeConsecutiveRoles`) is a PRODUCTION provider-shape reshape applied AFTER assembly — the adapter (rptAdapter, KNOWN-DIVERGENCES §5) deliberately excludes it, so at the assembly layer RPT leaves the four adjacent system blocks discrete. If RPT ever started coalescing at the assembly layer, this snapshot would catch it.",
+    "note": "RPT's CURRENT real ASSEMBLY output for this input (pinned so future drift fails — the knownDivergence xfail exempts this fixture from matching `expected`, ST's golden, NOT from pinning RPT's own behavior). It differs from `expected` in TWO ways, both deliberate: (1) the four adjacent system blocks stay DISCRETE — RPT's merge-all `mergeConsecutiveRoles` is a PRODUCTION provider-shape reshape applied AFTER assembly, which the adapter (KNOWN-DIVERGENCES §5) excludes; (2) the extra `system` char-description message before the user turn — this preset omits the `char_description` marker, and RPT now injects the character description immediately before the player action (owner directive, KNOWN-DIVERGENCES §10). This snapshot catches any drift in either.",
     "chat": [
       { "role": "system", "content": "Prime directive: keep the vorrel cadence steady." },
       { "role": "system", "content": "Secondary clause: mind the sennet frame." },
       { "role": "system", "content": "Tertiary clause: never break the quell line." },
       { "role": "system", "content": "Quaternary clause: hold the lantern-oath." },
+      { "role": "system", "content": "Kaevo, a quiet dock-warden of Sill." },
       { "role": "user", "content": "Kaevo — is the night skiff back?" }
     ]
   }

@@ -37,14 +37,15 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "user"],
-    "messageCount": 2,
+    "roleOrder": ["system", "system", "user"],
+    "messageCount": 3,
     "mustContain": ["Note-after-main: the quorlish gate stays open."],
     "mustNotContain": ["PRESET-MAIN: this main is disabled."]
   },
   "expected": {
     "chat": [
       { "role": "system", "content": "Note-after-main: the quorlish gate stays open." },
+      { "role": "system", "content": "Character brindle: Yara, a gate-warden with a copper key." },
       { "role": "user", "content": "Yara, is the gate still open?" }
     ]
   }

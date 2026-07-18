@@ -37,14 +37,15 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "user"],
-    "messageCount": 2,
+    "roleOrder": ["system", "system", "user"],
+    "messageCount": 3,
     "mustContain": ["Summon Vael and hold the lantern-oath.", "Begin the rite."],
     "mustNotContain": ["{{char}}", "[Start a new Chat]"]
   },
   "expected": {
     "chat": [
       { "role": "system", "content": "Summon Vael and hold the lantern-oath." },
+      { "role": "system", "content": "Vael, keeper of the tide-glass at Sill." },
       { "role": "user", "content": "Begin the rite." }
     ]
   }

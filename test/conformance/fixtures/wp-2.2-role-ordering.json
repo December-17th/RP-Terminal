@@ -44,8 +44,8 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "assistant", "assistant", "user", "system", "user"],
-    "messageCount": 6,
+    "roleOrder": ["system", "assistant", "assistant", "user", "system", "system", "user"],
+    "messageCount": 7,
     "mustContain": ["ORP_ro_inj_system", "ORP_ro_inj_user", "ORP_ro_inj_assistant"]
   },
   "expected": {
@@ -55,6 +55,7 @@
       { "role": "assistant", "content": "ORP_ro_inj_assistant" },
       { "role": "user", "content": "ORP_ro_inj_user" },
       { "role": "system", "content": "ORP_ro_inj_system" },
+      { "role": "system", "content": "Character brindle: Wren, a lamp-keeper on the Skarn causeway." },
       { "role": "user", "content": "ORP_ro_hist_user" }
     ]
   }

@@ -42,14 +42,15 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "user", "system"],
-    "messageCount": 3,
+    "roleOrder": ["system", "system", "user", "system"],
+    "messageCount": 4,
     "mustContain": ["PRESET-MAIN: keep the warden protocol, locked.", "CARD-JB: this override MUST apply, end on a watch tally."],
     "mustNotContain": ["CARD-MAIN: this override must NOT apply.", "PRESET-JB: default parley sign-off."]
   },
   "expected": {
     "chat": [
       { "role": "system", "content": "PRESET-MAIN: keep the warden protocol, locked." },
+      { "role": "system", "content": "Character brindle: Corvel, a lockkeeper of the Brenn watch." },
       { "role": "user", "content": "Corvel, are the gates barred?" },
       { "role": "system", "content": "CARD-JB: this override MUST apply, end on a watch tally." }
     ]

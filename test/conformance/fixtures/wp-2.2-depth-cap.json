@@ -40,8 +40,8 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "system", "assistant", "user"],
-    "messageCount": 4,
+    "roleOrder": ["system", "system", "assistant", "system", "user"],
+    "messageCount": 5,
     "mustContain": ["ORP_cap_inj_top"]
   },
   "expected": {
@@ -49,6 +49,7 @@
       { "role": "system", "content": "ORP_cap_main: mind the glass, mind the tide." },
       { "role": "system", "content": "ORP_cap_inj_top" },
       { "role": "assistant", "content": "ORP_cap_hist_asst" },
+      { "role": "system", "content": "Character brindle: Sol, a shelf-watcher counting the quorlish swell." },
       { "role": "user", "content": "ORP_cap_hist_action" }
     ]
   }

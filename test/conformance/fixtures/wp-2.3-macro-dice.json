@@ -29,14 +29,15 @@
     "tokenBudget": 4096
   },
   "invariants": {
-    "roleOrder": ["system", "user"],
-    "messageCount": 2,
+    "roleOrder": ["system", "system", "user"],
+    "messageCount": 3,
     "mustContain": ["the die shows 4 pips"],
     "mustNotContain": ["{{roll", "d6}}"]
   },
   "expected": {
     "chat": [
       { "role": "system", "content": "ORP_di: the die shows 4 pips." },
+      { "role": "system", "content": "Character brindle: Vael, a lamp-keeper of Orrin." },
       { "role": "user", "content": "ORP_di_user" }
     ]
   }
