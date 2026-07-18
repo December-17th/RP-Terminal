@@ -36,8 +36,14 @@ export const registerPresetIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('preset-is-high-trust', (_, profileId, presetId) =>
     presetTrustService.isPresetHighTrust(profileId, presetId)
   )
-  ipcMain.handle('preset-set-high-trust', (_, profileId, presetId, on) =>
-    presetTrustService.setPresetHighTrust(profileId, presetId, on === true)
+  // GATED (self-escalation): unlocking a preset's remote-code scripts actually RUNS them, so a card
+  // iframe / WCV reaching window.api must not grant itself trust — only the app's own top frame (the
+  // PresetManager high-trust opt-in UI, in the trusted main renderer) may. Mirrors plugin-set-grants.
+  ipcMain.handle(
+    'preset-set-high-trust',
+    gate('preset-set-high-trust', (_, profileId, presetId, on) =>
+      presetTrustService.setPresetHighTrust(profileId, presetId, on === true)
+    )
   )
   // Capability inventory of a stored preset (from its lossless envelope) — the Preset Manager reads
   // `remoteCodeScripts` to decide whether to surface the high-trust opt-in. null for a pre-envelope import.

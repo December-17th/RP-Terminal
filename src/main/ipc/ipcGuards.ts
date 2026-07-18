@@ -49,6 +49,8 @@ export const GATED_CHANNELS = [
   'import-script-dialog',
   'import-workflow-dialog',
   'export-workflow-dialog',
+  // preset high-trust opt-in (a card must not unlock its own remote-code preset scripts) (presetIpc)
+  'preset-set-high-trust',
   // plugin/grant mutation (a card must not grant itself trust) + plugin install dialogs (pluginIpc)
   'plugin-set-grants',
   'plugins-set-grants',
