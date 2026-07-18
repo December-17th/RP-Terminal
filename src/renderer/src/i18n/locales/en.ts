@@ -91,6 +91,10 @@ const en: Record<string, string> = {
   'launcher.emptySession': 'Empty session',
   'launcher.sessionOne': '{{count}} session',
   'launcher.sessionMany': '{{count}} sessions',
+  'updates.availableTitle': 'A new RP Terminal release is available',
+  'updates.availableBody': 'You are using v{{current}}. The latest release is v{{latest}}.',
+  'updates.viewRelease': 'View release',
+  'updates.later': 'Later',
 
   'settings.title': 'Settings',
   'settings.groupApp': 'App',

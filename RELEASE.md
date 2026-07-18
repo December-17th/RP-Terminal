@@ -26,6 +26,11 @@ must continue to warn that SmartScreen may flag the executable.
    flow, confirm profiles survive restart, and confirm data appears under Application Support rather
    than inside the app bundle.
 7. Review the generated notes, document any migration or known issues, then publish the draft.
+8. After publishing, verify GitHub's `/releases/latest` API returns the new strict `v<version>` tag as a
+   non-draft, non-prerelease release with the official repository release URL. Launch the previous
+   packaged version with a clean notifier cache, confirm the world chooser reports the current and latest
+   versions, and confirm **View release** opens that published page. **Later** must hide that version until
+   the app is fully restarted.
 
 If the smoke test fails, leave the draft unpublished, fix forward with a new version and tag, and delete
 the failed draft/tag only after confirming that neither was published. Published versions are never
@@ -35,6 +40,12 @@ silently replaced.
 
 - The Windows target is electron-builder `zip`, not NSIS. It has no installer or automatic update
   channel, and the extracted directory is the portability boundary for both the app and its data.
+- Packaged builds use GitHub's latest published release endpoint as a notification source only. Tags must
+  be exact stable `vMAJOR.MINOR.PATCH` versions and newer than `app.getVersion()`. Drafts, prereleases,
+  noncanonical release URLs, and development launches never produce a notice.
+- The notifier caches its validated result app-globally for 24 hours, revalidates with ETags, and may
+  reuse a cached newer release while offline. It never downloads, installs, or accepts a release URL from
+  the renderer; updates remain a manual ZIP replacement.
 - Packaged builds redirect Electron `userData` and `sessionData` beside the executable as well, so
   preferences, browser storage, and caches do not remain in AppData. This redirect is Windows-only;
   macOS uses Electron's standard Application Support location.

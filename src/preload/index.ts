@@ -4,6 +4,9 @@ import type { VarsOrigin } from '../shared/thRuntime/types'
 
 // Custom APIs for renderer
 const api = {
+  // Packaged-build update notifier. Main retains the validated release URL; the renderer supplies none.
+  checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
+  openUpdateRelease: () => ipcRenderer.invoke('open-update-release'),
   getProfiles: () => ipcRenderer.invoke('get-profiles'),
   createProfile: (name: string) => ipcRenderer.invoke('create-profile', name),
   wipeProfile: (profileId: string) => ipcRenderer.invoke('wipe-profile', profileId),

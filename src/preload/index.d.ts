@@ -24,6 +24,11 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: any & {
+      checkForUpdate: () => Promise<{
+        currentVersion: string
+        latestVersion: string
+      } | null>
+      openUpdateRelease: () => Promise<boolean>
       importCharacterDialog: (profileId: string) => Promise<CharacterImportDialogResult | null>
       getRuntimeScripts: (
         profileId: string,

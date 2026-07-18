@@ -5,6 +5,7 @@ import { useUiStore } from '../stores/uiStore'
 import { useToastStore } from '../stores/toastStore'
 import { useT } from '../i18n'
 import { ConfirmDialog } from './ConfirmDialog'
+import { UpdateNotice } from './UpdateNotice'
 
 /**
  * The entry launcher: choose a world (character card) → choose a session → play. Shown by App
@@ -205,6 +206,7 @@ export function Launcher({ profileId }: { profileId: string }): React.ReactEleme
           </button>
         </div>
         <div className="lc-scroll">
+          <UpdateNotice />
           <div className="lc-hero">
             <div className="lc-eyebrow">{t('launcher.eyebrowWorlds')}</div>
             <div className="lc-h">

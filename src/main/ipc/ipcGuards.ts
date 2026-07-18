@@ -23,6 +23,9 @@ export const GATED_CHANNELS = [
   'open-data-location',
   'reset-data-location',
   'restart-app',
+  // Packaged-build update notifier: network check + opening the main-validated GitHub release URL
+  'check-for-update',
+  'open-update-release',
   // profile-level destruction + credential-bearing settings write (profileIpc)
   'wipe-profile',
   'save-settings',
