@@ -401,11 +401,14 @@ and honored in `regexTransform`. The TavernHelper shape bridge
 slash_command,world_info}` ↔ placements 1/2/3/5, plus `run_on_edit` and `min_depth`/`max_depth`.
 Replacement syntax is shared by display and prompt transforms: `$0`/`$&` expand to the full match,
 `$1`/`$2`... to numbered groups, and `$<name>` to named capture groups; `trimStrings` are removed from
-every substituted value (each trimString macro-expanded first, ST filterString). In a **card payload**
-(a replacement carrying
-`<script>`/`<style>`/`<html>`/` ```html `) the whole-match specials `$0`/`$&` are kept **literal**
-so a card's own escape idiom `s.replace(/…/g, '\\$&')` isn't spliced into and broken; numbered groups
-still inject (with `$N` literal when the find-regex has no group N). On the **display** path
+every substituted value (each trimString macro-expanded first, ST filterString). `$0` expands
+**everywhere, card payload or not** — it is ST's whole-match token (ST compiles `{{match}}` to a
+literal `$0`, then resolves `$N` → `args[N]`, and `args[0]` is the whole match; see
+[SillyTavern `engine.js` lines 421–425](https://github.com/SillyTavern/SillyTavern/blob/8172dcd0ee672d3cd9a5e5f7af134f91a45cd2b8/public/scripts/extensions/regex/engine.js#L421-L425)),
+so a card writing ``const data = `$0`;`` is using a documented injection point. In a **card payload**
+(a replacement carrying `<script>`/`<style>`/`<html>`/` ```html `) only `$&` is kept **literal**, so a
+card's own escape idiom `s.replace(/…/g, '\\$&')` isn't spliced into and broken; numbered groups still
+inject (with `$N` literal when the find-regex has no group N). On the **display** path
 (`freezePayloads`), an injected card payload is **opaque to LATER rules**: once a beautifier emits its
 `<html>`/` ```html ` card, subsequent rules can't match, rewrite, or backtrack over its interior — a
 cleanup regex rescanning a 100KB+ paste otherwise stalled the render for seconds (and silently mangled

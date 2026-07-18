@@ -78,20 +78,27 @@ describe('regexStore.apply', () => {
     expect(out).toContain('<pre>HELLO</pre>')
   })
 
-  it('leaves $& / $0 literal inside a card payload (preserves the regex-escape idiom) while $N still injects', () => {
+  it('leaves $& literal inside a card payload (preserves the regex-escape idiom) while $0 / $N still inject', () => {
     // The real bug: a plot beautifier injects the whole match via $1, but the card's own <script>
     // contains the universal escape idiom `s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')`. Substituting $&
     // there splices the ENTIRE matched block into the script (unterminated string → SyntaxError →
-    // every handler undefined → a card that renders but won't expand on click). So $&/$0 must stay
+    // every handler undefined → a card that renders but won't expand on click). So $& must stay
     // literal in a card payload; the numbered-group injection ($1 into the textarea) must still work.
+    //
+    // $0 is NOT protected alongside $&: it is ST's whole-match token, not a JS one. ST's engine
+    // (SillyTavern/public/scripts/extensions/regex/engine.js:421-425) compiles `{{match}}` to the
+    // literal `$0` and then substitutes `$(\d+)` → `args[N]` unconditionally — `args[0]` IS the whole
+    // match — while never touching `$&` at all. A card that opens its script with
+    // `const mockBattleText = \`$0\`;` (命定之诗's 战斗&生产制作美化) is using that documented
+    // injection point; freezing $0 as literal fed it the string "$0" and it rendered an empty panel.
     const card =
       '```html\n<body><textarea>$1</textarea>' +
-      "<script>const esc=(s)=>s.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');const full='$0';</script></body>\n```"
+      "<script>const esc=(s)=>s.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');const full=`$0`;</script></body>\n```"
     const out = apply('<用户本轮输入>PLOT</用户本轮输入>', [
       rule({ source: '(<用户本轮输入>[\\s\\S]*)', replace: card })
     ])
     expect(out).toContain("s.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&')") // escape idiom intact
-    expect(out).toContain("const full='$0';") // $0 left literal in the card script
+    expect(out).toContain('const full=`<用户本轮输入>PLOT</用户本轮输入>`;') // $0 injects the whole match
     expect(out).toContain('<textarea><用户本轮输入>PLOT</用户本轮输入></textarea>') // $1 STILL injects
     expect(out).not.toMatch(/\\\\<用户本轮输入>/) // the whole match was NOT spliced into the escape idiom
   })
