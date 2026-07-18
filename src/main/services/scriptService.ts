@@ -99,6 +99,11 @@ const REMOTE_CODE_PATTERNS: RegExp[] = [
  * remote `.js`/`.mjs`. Per ADR 0017 the import of a preset is the trust act and its content
  * runs by default, but remote-code scripts are the one exception: they stay INERT until a
  * per-preset high-trust opt-in exists (issue 19). Pure; used to flag + gate at import time.
+ *
+ * NOTE (owner decision — do NOT harden the detector): this is a best-effort, statically-EVADABLE trust
+ * LABEL, not a security boundary. Obfuscation, string indirection, or a runtime-assembled URL slips past
+ * these patterns, and that is accepted. The real containment is the WCV isolated realm (contextIsolation
+ * hardening is separately owner-pending — see ADR 0017); this flag only drives the import-time label/gate.
  */
 export const hasRemoteCodeLoad = (code: string): boolean => {
   const c = code || ''
