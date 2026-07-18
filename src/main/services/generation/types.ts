@@ -1,4 +1,4 @@
-import { ChatSession, FloorFile } from '../../types/chat'
+import { ChatSession, FloorFile, YuzuGateStash } from '../../types/chat'
 import { RPTerminalCard, Lorebook } from '../../types/character'
 import { Settings, ModeConfig } from '../../types/models'
 import { Preset } from '../../types/preset'
@@ -51,4 +51,12 @@ export interface GenContext {
    * serialized: `gen` is turn-scoped and dropped after the turn.
    */
   executionRecord?: ExecutionRecord
+  /**
+   * Project Yuzu WP-S2 (ADR 0009 §1): the acceptance gate's turn-scoped stash. In VN mode `parse.response`
+   * runs the WP-B ladder and leaves the validated/fallback scene text + parsed scene + trace here; the
+   * terminal write stage (`output.writeFloor`) reads it to store `finalRaw` as the floor response and to
+   * persist `yuzu_trace`. Absent on classic turns and on any graph whose parse→write path doesn't share
+   * `gen` — the write side then simply persists a classic floor. Never serialized (turn-scoped).
+   */
+  yuzuGate?: YuzuGateStash
 }

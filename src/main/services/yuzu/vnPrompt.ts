@@ -3,7 +3,7 @@ import {
   deriveAssetVocabulary,
   type DerivedAssetVocabulary
 } from '../../../shared/yuzu/assetVocabulary'
-import { createSceneVocabulary } from '../../../shared/yuzu/sceneSchema'
+import { createSceneVocabulary, type SceneVocabulary } from '../../../shared/yuzu/sceneSchema'
 import { YSS_GRAMMAR_PROMPT, renderVocabularyBlock } from '../../../shared/yuzu/sceneGrammar'
 
 /**
@@ -40,11 +40,14 @@ const mergeDerived = (
 const norm = (ids: string[]): string[] => [...new Set(ids)].sort()
 
 /**
- * Build the VN-mode overlay for a chat's lorebook ids. `lorebookIds` are the session's active books
- * (`GenContext.lorebookIds`); the derived vocabulary is the union of each book's asset index. Returns a
- * single string (framing + grammar + vocabulary) suitable for appending to the prompt's memory tail.
+ * Build the concrete `SceneVocabulary` for a chat's lorebook ids: the union of each active book's world-
+ * asset index, deduped + sorted so it is snapshot-stable. Fail-soft — an id with no assets (or one whose
+ * index read throws) contributes nothing. This is the SINGLE derivation shared by both the S1 prompt overlay
+ * ({@link buildVnOverlay}, which renders it as steering text) and the S2 acceptance gate (`vnGate`, which
+ * cross-checks the model's scene against it), so what the model is told and what the ladder validates never
+ * drift apart.
  */
-export const buildVnOverlay = (profileId: string, lorebookIds: string[]): string => {
+export const buildVnVocabulary = (profileId: string, lorebookIds: string[]): SceneVocabulary => {
   const empty: DerivedAssetVocabulary = {
     actors: [],
     expressions: [],
@@ -63,13 +66,21 @@ export const buildVnOverlay = (profileId: string, lorebookIds: string[]): string
     return mergeDerived(acc, derived)
   }, empty)
 
-  const vocab = createSceneVocabulary({
+  return createSceneVocabulary({
     actors: norm(merged.actors),
     expressions: norm(merged.expressions),
     locations: norm(merged.locations),
     cgs: norm(merged.cgs),
     audio: norm(merged.audio)
   })
+}
 
+/**
+ * Build the VN-mode overlay for a chat's lorebook ids. `lorebookIds` are the session's active books
+ * (`GenContext.lorebookIds`); the derived vocabulary is the union of each book's asset index. Returns a
+ * single string (framing + grammar + vocabulary) suitable for appending to the prompt's memory tail.
+ */
+export const buildVnOverlay = (profileId: string, lorebookIds: string[]): string => {
+  const vocab = buildVnVocabulary(profileId, lorebookIds)
   return [VN_MODE_FRAMING, YSS_GRAMMAR_PROMPT, renderVocabularyBlock(vocab)].join('\n\n')
 }

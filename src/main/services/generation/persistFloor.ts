@@ -5,7 +5,7 @@ import { resolveExecutionRecordRetention } from '../settingsService'
 import { ChatMessage } from '../promptBuilder'
 import { RPEvent } from '../../parsers/contentParser'
 import { FloorMetrics } from '../../../shared/usageTypes'
-import { FloorFile } from '../../types/chat'
+import { FloorFile, YuzuGateTrace } from '../../types/chat'
 import { GenContext } from './types'
 
 /**
@@ -25,6 +25,8 @@ export const persistFloor = (
     metrics: FloorMetrics
     /** Optional display-only plot block (plot-recall data layer); persisted only when present. */
     plot_block?: string
+    /** Project Yuzu WP-S2 (ADR 0009 §3): the VN acceptance-gate trace; persisted only for VN floors. */
+    yuzu_trace?: YuzuGateTrace
   }
 ): FloorFile => {
   saveGlobals(ctx.profileId, ctx.globals)
@@ -47,7 +49,10 @@ export const persistFloor = (
     variables: args.variables,
     metrics: args.metrics,
     // Display-only (plot-recall data layer): stored losslessly only when recall produced one.
-    ...(args.plot_block ? { plot_block: args.plot_block } : {})
+    ...(args.plot_block ? { plot_block: args.plot_block } : {}),
+    // Project Yuzu (ADR 0009 §3): the acceptance-gate trace, stored only for VN floors (absent → the field
+    // is not written, so classic floors stay byte-identical).
+    ...(args.yuzu_trace ? { yuzu_trace: args.yuzu_trace } : {})
   }
 
   appendFloor(ctx.profileId, ctx.chatId, floor)

@@ -5,6 +5,7 @@ import { callModelResilient, ResilienceConfig, withPreset } from '../../generati
 import { parseResponse, computeMetrics } from '../../generation/parseResponse'
 import { foldState } from '../../generation/foldState'
 import { persistFloor } from '../../generation/persistFloor'
+import { runVnGate, mergeYuzuMvu } from '../../yuzu/vnGate'
 import { GenContext } from '../../generation/types'
 import { ChatMessage } from '../../promptBuilder'
 import { LorebookEntry } from '../../../types/character'
@@ -322,15 +323,27 @@ export const parseResponseNode: NodeImpl = {
     { name: 'mvu', type: 'Any' },
     { name: 'metrics', type: 'Any' }
   ],
-  run: (_ctx, inputs) => {
+  run: async (ctx, inputs) => {
+    const gen = inputs.gen as GenContext
     const raw = inputs.raw as string
+    const sendMessages = resolveSendMessages(inputs.sendMessages, inputs.prompt) as ChatMessage[]
+    // Project Yuzu WP-S2 (ADR 0009 §1): the mode-gated acceptance-gate seam. In VN mode the raw reply is
+    // run through the WP-B ladder BEFORE anything downstream sees it; the validated/fallback scene text
+    // (finalRaw) is what parse/apply/write consume, and its `<| effect |>` beat effects fold into canon.
+    // The gate result is stashed on the SHARED `gen` for the terminal write stage (same object as
+    // executionRecord). Classic turns (vnMode off) skip this entirely and stay byte-identical.
+    if (gen.vnMode) {
+      const gate = await runVnGate(ctx, gen, raw)
+      gen.yuzuGate = { finalRaw: gate.finalRaw, scene: gate.scene, trace: gate.trace }
+      // Parse the FINAL scene text for events + any stray `<UpdateVariable>` blocks (ADR 0008 §4), then
+      // MERGE those scene-end commands with the effect-derived ones (effects fold first).
+      const { parsed, mvu: classicMvu } = parseResponse(gate.finalRaw)
+      const mvu = mergeYuzuMvu(gate.mvu, classicMvu)
+      const metrics = computeMetrics(gen, sendMessages, gate.finalRaw, inputs.rawUsage)
+      return { outputs: { parsed, mvu, metrics } }
+    }
     const { parsed, mvu } = parseResponse(raw)
-    const metrics = computeMetrics(
-      inputs.gen as GenContext,
-      resolveSendMessages(inputs.sendMessages, inputs.prompt) as ChatMessage[],
-      raw,
-      inputs.rawUsage
-    )
+    const metrics = computeMetrics(gen, sendMessages, raw, inputs.rawUsage)
     return { outputs: { parsed, mvu, metrics } }
   }
 }
@@ -382,14 +395,19 @@ export const outputWriteFloor: NodeImpl = {
   run: (_ctx, inputs) => {
     const gen = inputs.gen as GenContext
     const parsed = inputs.parsed as ReturnType<typeof parseResponse>['parsed']
+    // Project Yuzu WP-S2 (ADR 0009 §1/§3): a VN floor stores the gate's validated/fallback scene text as
+    // its response (not the pre-gate raw) and carries the gate trace. Classic floors (no gate stash) pass
+    // the raw through and never write `yuzu_trace` — byte-identical, mirroring the `plot_block` precedent.
+    const gate = gen.yuzuGate
     const floor = persistFloor(gen, {
       userAction: gen.userAction,
-      raw: inputs.raw as string,
+      raw: gate ? gate.finalRaw : (inputs.raw as string),
       sendMessages: resolveSendMessages(inputs.sendMessages, inputs.prompt) as ChatMessage[],
       events: parsed.events,
       variables: inputs.variables as Record<string, unknown>,
       metrics: inputs.metrics as FloorMetrics,
-      plot_block: inputs.plot_block as string | undefined
+      plot_block: inputs.plot_block as string | undefined,
+      yuzu_trace: gate?.trace
     })
     return { outputs: { floor } }
   }

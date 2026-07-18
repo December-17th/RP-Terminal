@@ -101,7 +101,10 @@ describe('llm.sample', () => {
 })
 
 describe('parse.response', () => {
-  it('delegates to parseResponse + computeMetrics and maps outputs', () => {
+  // WP-S2 (ADR 0009): parse.response is now async (it awaits the VN acceptance gate in VN mode). The
+  // classic path (gen.vnMode falsy) still delegates straight to parseResponse/computeMetrics — just via a
+  // resolved promise, so this delegation test awaits the result.
+  it('delegates to parseResponse + computeMetrics and maps outputs', async () => {
     const gen = { profileId: 'p1' }
     const sendMessages = [{ role: 'user', content: 'hi' }]
     const rawUsage = { tokens: 5 }
@@ -111,7 +114,7 @@ describe('parse.response', () => {
     vi.mocked(parseResponse).mockReturnValue({ cleaned: 'clean', parsed, mvu } as any)
     vi.mocked(computeMetrics).mockReturnValue(metrics as any)
 
-    const result = parseResponseNode.run(baseCtx, { gen, raw: 'raw text', sendMessages, rawUsage })
+    const result = await parseResponseNode.run(baseCtx, { gen, raw: 'raw text', sendMessages, rawUsage })
 
     expect(parseResponse).toHaveBeenCalledWith('raw text')
     expect(computeMetrics).toHaveBeenCalledWith(gen, sendMessages, 'raw text', rawUsage)
