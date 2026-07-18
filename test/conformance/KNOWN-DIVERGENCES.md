@@ -187,3 +187,30 @@ Some fixtures stay STRUCTURAL (adapter returns null, runner validates schema/inv
 - **Grounding:** RPT `src/main/services/generation/providerShape.ts` (the excluded stages B/A-merge/C),
   `src/main/services/apiService.ts` (`orderForProvider`, `isOpenAiCompatibleProvider`); adapter
   `test/conformance/rptAdapter.ts`. Scope — `assembly` (harness modeling boundary).
+
+## 10. Import repair — ST auto-adds missing default markers; RPT imports losslessly (issue 11 / capture-day finding)
+
+A preset whose `prompt_order` OMITS a default marker (e.g. `charDescription`) behaves differently on
+import:
+
+- **ST:** its Prompt Manager REPAIRS an imported preset — it adds missing default prompts/markers
+  (`charDescription`, `charPersonality`, `scenario`, World Info, `chatHistory`, …) and appends any missing
+  order entries (`PromptManager.js:995-1067`). So importing a preset that omits `charDescription` still
+  yields a character-description message: real ST surfaces the character regardless.
+- **RPT:** `parseStPreset` imports ONLY the prompts the order actually lists — it does no repair, matching
+  the deliberate lossless-import stance (ADR 0018: import what's present, never silently overwrite; any
+  normalization is an explicit compatibility view, not an auto-applied mutation). A preset that omits
+  `charDescription` therefore produces NO description message in RPT.
+- **Confirmed both sides (2026-07-17 capture day, isolated ST 1.18.0):** for `wp-2.1-char-card-overrides`
+  (preset = `main, chatHistory, jailbreak`, no `charDescription`), real ST assembled the character
+  description into the prompt; RPT's assembler (`assembleForFixture` → `buildPromptDetailed`) produced
+  `[CARD-MAIN, user, CARD-JB]` with no description. The card-override logic itself matched exactly on both
+  (`CARD-MAIN` replaces main, `CARD-JB` replaces jailbreak).
+- **Consequence for fixtures:** synthesized `wp-2.1-*` goldens that omit a marker reflect RPT's behavior
+  (no auto-add) and are correct for RPT. A future `source:"captured"` fixture for such a scenario will show
+  ST's auto-added markers and must be marked `knownDivergence` citing this §10 (or the preset re-authored to
+  include every marker it intends). **Owner decision pending:** whether RPT should replicate ST's missing-
+  marker repair as an opt-in compatibility-import mode; today it deliberately does not.
+- **Grounding:** ST `public/scripts/PromptManager.js:995-1067` (sanitize/repair, add-missing); RPT
+  `src/main/parsers/stPresetParser.ts` (imports listed order only), `docs/adr/0018`. Scope — `import` +
+  `assembly`.
