@@ -238,10 +238,11 @@ export const deleteScriptsByOwner = (
  * identity to attribute to.
  *
  * TODO(F1 — tavernhelper-docs-spec §2): the docs are SILENT on TH's real enabled-script execution
- * order (ID-sorted vs tree/array vs folder-then-order). This ID-sorted choice is the most faithful
- * order the docs support (ids are the only stable, documented `Script` identity), GUARDED pending
- * the F1 black-box fixture on a live ST+TavernHelper install. If F1 shows tree/array order, change
- * ONLY the comparator here — the id is already preserved end-to-end.
+ * order (ID-sorted vs tree/array vs folder-then-order) — the docs support NO order. F1-pending
+ * hypothesis: ID-sorted, unverified until the F1 black-box fixture on a live ST+TavernHelper install
+ * (ids are the only stable, documented `Script` identity, so this is the pinnable guess, not a
+ * doc-backed order). If F1 shows tree/array order, change ONLY the comparator here — the id is
+ * already preserved end-to-end.
  *
  * `ctx.isolatedRealm` is forwarded to `isScopeActive`, so high-trust remote-code scripts (ADR 0017)
  * surface ONLY when the caller is the isolated WCV realm.

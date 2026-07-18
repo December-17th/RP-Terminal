@@ -21,6 +21,7 @@
     { "id": "wp-2.1-char-card-overrides", "wp": "2.1", "generationType": "normal", "title": "Character card overrides main/jailbreak when allowed", "inputs": "forbid_overrides=false; card main_prompt + jailbreak replace preset text." },
     { "id": "wp-2.1-empty-main", "wp": "2.1", "generationType": "normal", "title": "ST structural empty main message retained", "inputs": "main prompt content empty; ST keeps the empty system slot at position." },
     { "id": "wp-2.1-duplicate-identifier", "wp": "2.1", "generationType": "normal", "title": "Duplicate identifier resolves first-match", "inputs": "Two enabled prompts share identifier 'custom_x'; first in order wins, second dropped." },
+    { "id": "wp-2.1-override-combo", "wp": "2.1", "generationType": "normal", "title": "forbid_overrides gates per-block: main forbidden, jailbreak allowed", "inputs": "One preset; main forbid_overrides=true (card system_prompt ignored) + jailbreak forbid_overrides=false (card post_history applied)." },
 
     { "id": "wp-2.2-depth-injection-order", "wp": "2.2", "generationType": "normal", "title": "Same-depth grouping by injection_order descending", "inputs": "Three in-chat injections at depth 2 with injection_order 30/20/10." },
     { "id": "wp-2.2-role-ordering", "wp": "2.2", "generationType": "normal", "title": "Same depth+order role grouping (system,user,assistant; final reverse)", "inputs": "Injections at depth 1, equal order, roles system/user/assistant (openai.js:795-868)." },
@@ -33,6 +34,7 @@
     { "id": "wp-2.3-macro-dice", "wp": "2.3", "generationType": "normal", "title": "Legacy-space dice macro {{roll:1d6}}", "inputs": "Prompt with a dice macro; capture value is frozen (seeded/manual)." },
     { "id": "wp-2.3-macro-vars", "wp": "2.3", "generationType": "normal", "title": "Scoped variables + operators {{setvar}}/{{getvar}}/{{addvar}}", "inputs": "Prompt sets then reads a scoped var with an operator." },
     { "id": "wp-2.3-macro-unknown-literal", "wp": "2.3", "generationType": "normal", "title": "Unknown macro preserved literally (error preservation)", "inputs": "Prompt with {{not_a_macro}} stays verbatim." },
+    { "id": "wp-2.3-macro-original", "wp": "2.3", "generationType": "normal", "title": "One-shot {{original}} in a card override (first=replaced text, second=empty)", "inputs": "Card post_history override uses {{original}} twice; first yields the replaced preset jailbreak text, second yields ''." },
 
     { "id": "wp-2.4-regex-placements", "wp": "2.4", "generationType": "normal", "title": "Regex placements 3/5/6 applied to correct targets", "inputs": "Three regex scripts at placements 3 (AI output), 5 (slash cmd), 6 (world info)." },
     { "id": "wp-2.4-regex-phase-selection", "wp": "2.4", "generationType": "normal", "title": "both-flags-false regex runs only in neither-display-nor-prompt calls", "inputs": "Script with markdownOnly=false + promptOnly=false; divergence at regexTypes.ts:51-58." },

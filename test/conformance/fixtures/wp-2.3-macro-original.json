@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "wp-2.3-macro-original",
+  "source": "synthesized",
+  "st": { "version": "1.18.0", "commit": "51ad27f", "macroEngine": "new" },
+  "generationType": "normal",
+  "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+  "note": "SYNTHESIZED from ST 1.18.0 source, not captured. Pins the ONE-SHOT `{{original}}` macro inside a character-card post_history override: the FIRST `{{original}}` expands to the preset jailbreak text the override replaced (openai.js:1489-1492 → substituteParams `{ original }`), every LATER `{{original}}` in the same string expands to '' (MacroEnvBuilder.js:144-151). Distinct from wp-2.3-macro-unknown-literal (unknown → literal): here the macro is KNOWN and dynamic, and its second use is deliberately empty. Adapter-reproduced (promptBuilder.ts:781/1040 threads originalContent into macroPass; macros.ts:47-52). Prose is RPT-authored + scrambled.",
+  "input": {
+    "description": "Card post_history override uses {{original}} twice; first yields the replaced preset jailbreak text, second yields empty.",
+    "preset": {
+      "name": "Oracle Macro Original (scrambled)",
+      "temperature": 1,
+      "openai_max_tokens": 4096,
+      "prompts": [
+        { "identifier": "main", "name": "Main", "role": "system", "content": "PRESET-MAIN: hold the tide stance." },
+        { "identifier": "chatHistory", "name": "Chat History", "role": "system", "marker": true },
+        { "identifier": "jailbreak", "name": "Post-History", "role": "system", "content": "PRESET-JB: uphold the concord verbatim." }
+      ],
+      "prompt_order": [
+        {
+          "character_id": 100001,
+          "order": [
+            { "identifier": "main", "enabled": true },
+            { "identifier": "chatHistory", "enabled": true },
+            { "identifier": "jailbreak", "enabled": true }
+          ]
+        }
+      ]
+    },
+    "character": {
+      "name": "Wen",
+      "description": "Character brindle: Wen, a tidewatcher of the Sallow coast.",
+      "post_history_instructions": "CARD-JB opener [{{original}}] and again [{{original}}] closer."
+    },
+    "chatMessages": [ { "role": "user", "content": "Wen, has the tide turned?" } ],
+    "generationType": "normal",
+    "macroEngine": "new",
+    "settings": { "chat_completion_source": "custom", "squash_system_messages": false },
+    "worldInfo": [],
+    "tokenBudget": 4096
+  },
+  "invariants": {
+    "roleOrder": ["system", "user", "system"],
+    "messageCount": 3,
+    "mustContain": ["CARD-JB opener [PRESET-JB: uphold the concord verbatim.] and again [] closer."],
+    "mustNotContain": ["{{original}}"]
+  },
+  "expected": {
+    "chat": [
+      { "role": "system", "content": "PRESET-MAIN: hold the tide stance." },
+      { "role": "user", "content": "Wen, has the tide turned?" },
+      { "role": "system", "content": "CARD-JB opener [PRESET-JB: uphold the concord verbatim.] and again [] closer." }
+    ]
+  }
+}
