@@ -1,8 +1,9 @@
 # Workflow module format — the agent UI contract
 
-**Status:** ✅ contract surface built (agent & memory UX WP-A); ✅ `control.mode` node + engine
-`wiredInputs` (WP-B); ✅ seeded "Default" memory doc + open-slot convention (WP-C); ✅ all-in-one
-`memory.maintain` node + seeded default **v2** (memory.maintain plan). Living doc — edit in place.
+**Status:** Implemented legacy contract, frozen on 2026-07-18. ADR 0019 and the
+[Agent Runtime design](../agent-system/agent-runtime-design.md) supersede this format for future
+development and schedule its complete removal at the atomic cutover. Current builds continue to
+support the behavior documented below until that cutover ships.
 
 A workflow **module** is a reusable slab of a workflow graph: a named group of in-place nodes, its
 internal edges, and the settings it exposes. It ships as a `.rptmodule` file

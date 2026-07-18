@@ -31,10 +31,11 @@ cards) reads them as the contract. They must track the code.
   template-export + last-maintained surface (issue 06), and the chat-level progress store +
   manual-backfill engine + auto-retry (issue 07 — `table_progress`, `tableProgressService`,
   `tableBackfillService`; the gate's per-workflow node-state pointer is retired).
-- **[workflow-module-format.md](workflow-module-format.md)** — the workflow **module / agent** format:
-  the agent UI contract (a named group rooted at a trigger ⇒ stock agent UI), the `GroupDecl.note` /
-  `GroupDecl.origin` fields, the node-type descriptor hints (`isTrigger` / `promptFields` /
-  `dynamicEnum`) surfaced through `list-node-types`, and the `.rptmodule` envelope round-trip.
+- **[workflow-module-format.md](workflow-module-format.md)** — the implemented legacy workflow
+  **module / agent** format, frozen pending the atomic Agent Runtime cutover approved by
+  [ADR 0019](../adr/0019-agent-runtime-replaces-workflow-system.md). Until that cutover ships, it
+  remains the current contract for named-group/trigger UI, descriptor hints, and `.rptmodule`
+  round-trips.
 - **[../card-script-wcv-surfaces-design.md](../card-script-wcv-surfaces-design.md)** — design (not built):
   run full-page card scripts in a process-isolated WCV and let cards register their own panel/modal surfaces
   (the `创意工坊` case). Touches `thRuntime` + the format when implemented — update this contract then.

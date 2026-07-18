@@ -1,7 +1,7 @@
 # RP Terminal — Current Status
 
 **Status:** Living implementation and release-status summary. Update in place.
-**As of:** 2026-07-17
+**As of:** 2026-07-18
 **Grounded revision:** `33b9080bef1f` (`main`). The current `feat/persona-presets` branch (PR 99) is
 described separately below and is not yet merged.
 
@@ -65,7 +65,7 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
 | Card custom UI            | Inline/WCV execution, static layouts, overlays, and runtime theming exist | Declarative native StatusMenuBuilder view kit and some dynamic panel APIs remain deferred.                                  |
 | Release hardening         | Trust-boundary coverage and a packaged-build release notifier landed      | Owner in-app trust pass, packaged data-dir verification, automatic update helper/recovery UX, and broader release gates remain. |
 
-## Designed or queued locally
+## Designed or queued
 
 - Agentic plot recall (`docs/plot-recall-memory-design.md` and `.scratch/plot-recall/`) is designed and
   ready for implementation but is not part of `main`.
@@ -81,13 +81,20 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   stop-and-resume failure, cancellation, discard, and transcript-staleness recovery. The test-surface
   refactor is implemented and gate-green in the working tree, pending owner review/commit and an in-app
   manual pass.
+- The [Agent Runtime design](agent-system/agent-runtime-design.md) and
+  [ADR 0019](adr/0019-agent-runtime-replaces-workflow-system.md) are approved but not implemented.
+  The planned cutover replaces every model-backed operation with one provider-neutral Harness,
+  moves variable/time scheduling to card-side logic, and removes the workflow runtime, canvas, node
+  formats, examples, and compatibility surface before merge. There is no migration or dual-runtime
+  release; legacy workflow data remains inert on disk.
 
 ## Superseded or retired
 
 - The removed episodic/vector-memory engine is superseded by SQL-table memory.
-- Agent packs, fragments, checkpoints, attachments, activation gates/scopes, recipes as a distinct
-  artifact, and effective-graph projections are retired user-facing concepts. ADR 0011's one-canvas,
-  trigger-rooted agent model replaces them; some underlying code remains for compatibility/internal reuse.
+- The entire workflow/agent graph product model—packs, fragments, checkpoints, attachments,
+  activation gates/scopes, recipes, effective graphs, one-canvas workflows, trigger-rooted chains,
+  nodes, and modules—is superseded by ADR 0019. The implementation remains present only until the
+  approved atomic Agent Runtime cutover; no new workflow features are planned.
 - The June maintainability plans and dated reviews are historical records, not current backlogs.
 
 ## Current documentation and release risks
