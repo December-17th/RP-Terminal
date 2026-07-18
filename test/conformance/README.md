@@ -10,8 +10,12 @@ by the repo's `test/**/*.test.ts` include).
   the ST-default-prose **leak guard** (`findStDefaultLeaks`), and
   `checkInvariants`. No dependency on `src/` — it is a stable contract.
 - `rptAdapter.ts` — the seam where RPT assembly output gets compared to a fixture.
-  **Currently unwired** (returns null); deep wiring lands with Phase-2 issues
-  11-15, each behind `assemblePrompt`. Until then the runner is structural-only.
+  **Wired** to the real assembly path (`parseStPreset` → `buildPromptDetailed` →
+  `fitToBudget` → stage-A coalescing, mirroring `assemblePrompt`): a fixture's
+  machine-readable `input` is re-driven through RPT and the result diffed against
+  `expected.chat`. It returns null only for scenarios it can't reproduce
+  deterministically (a nondeterministic macro, or an unparseable preset), which stay
+  structural-only.
 - `conformance.test.ts` — enumerates `tools/oracle/scenarios.json`; absent fixtures
   are counted skips, present fixtures are asserted (schema + leak guard + macro
   engine + invariants + adapter diff when wired).

@@ -1202,7 +1202,10 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
   // ST instead REPAIRS the import, re-adding the marker at ITS default position (PromptManager.js:995-1067),
   // so this is a deliberate POSITION divergence, not a presence one. getDefaultPreset carries the marker, so
   // native/default flows never enter this branch (verified by the promptBuilder characterization tests).
-  const hasCharDescriptionMarker = effectivePrompts.some((b) => b.marker === 'char_description')
+  // Check the RAW prompt list (like `hasPersonaMarker` above), NOT `effectivePrompts`: a marker the author
+  // explicitly DISABLED is an opt-out — present → no injection. `resolveEffectivePrompts` drops disabled /
+  // trigger-filtered blocks, so reading it would treat a disabled marker as ABSENT and duplicate the field.
+  const hasCharDescriptionMarker = preset.prompts.some((b) => b.marker === 'char_description')
   if (!hasCharDescriptionMarker) {
     const content = isStImport
       ? render(card.data.description || '')

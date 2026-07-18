@@ -208,6 +208,12 @@ directive; RPT injected nothing).
   **immediately BEFORE the pending player action** (after chat history, before the user turn; any
   post-history / jailbreak block stays after the action). On a `continue` with no pending user it lands just
   after the history tail (the slot the action would occupy).
+- **Absent vs. DISABLED marker:** the safety net fires only when the `charDescription` marker is *fully
+  absent* from the imported order. A marker the author included but explicitly DISABLED (`enabled:false`) is
+  treated as a deliberate opt-out — present, so NO injection (the character is suppressed, matching the
+  author's intent). `buildPromptDetailed` checks the RAW `preset.prompts` list (not the trigger/enabled-filtered
+  effective list) for this, mirroring the sibling `persona_description` safety net; reading the filtered list
+  would misread a disabled marker as absent and duplicate the description.
 - **So §10 is now a POSITION divergence, not a presence one:** both surface the character; ST at the default
   marker position, RPT immediately before the player action. RPT chose that position deliberately (it keeps
   the character adjacent to the live turn without repairing the imported order).

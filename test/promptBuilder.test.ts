@@ -205,6 +205,25 @@ describe('buildPrompt', () => {
     expect(last(messages)).toEqual({ role: 'user', content: 'I wave back' })
   })
 
+  // A char_description marker the author explicitly DISABLED is an opt-out, not an absence: the safety net
+  // must NOT re-add the description (that would duplicate what the author chose to suppress). The presence
+  // check reads the RAW prompt list, so a disabled marker still counts as PRESENT even though
+  // resolveEffectivePrompts drops it from the assembled blocks.
+  it('does NOT inject when a char_description marker is present but DISABLED (author opt-out)', () => {
+    const messages = buildPrompt({
+      card: card({ description: 'A knight.' }),
+      preset: preset([{ ...blk('char_description'), enabled: false }, blk('chat_history')]),
+      lorebooks: [],
+      floors: [floor(0, '', 'Hello traveler')],
+      userAction: 'I wave back'
+    })
+    // The disabled marker emits nothing at its position AND the safety net stays quiet — zero occurrences.
+    expect(messages.filter((m) => m.content.includes('Name: Aria')).length).toBe(0)
+    expect(messages.filter((m) => m.content.includes('A knight.')).length).toBe(0)
+    // The action still lands last; the disabled marker didn't push a stray system message before it.
+    expect(last(messages)).toEqual({ role: 'user', content: 'I wave back' })
+  })
+
   it('injects a per-mode addendum as a system block before the conversation, action still last', () => {
     const messages = buildPrompt({
       card: card({ description: 'A knight.' }),
