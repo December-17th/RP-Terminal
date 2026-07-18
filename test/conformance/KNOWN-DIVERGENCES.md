@@ -157,3 +157,33 @@ POPULATED.
 - **Grounding:** ST `public/scripts/openai.js:801-864` (loop + splice + final reverse), `:813` (`=== i`
   filter), `script.js:499` + `:3222-3223`; RPT `src/main/services/promptBuilder.ts` (depth splice-plan
   clamp). Scope — `assembly`.
+
+## 9. Conformance adapter compares ASSEMBLY, not the provider-shaped wire (M5 / issue 20, 20a)
+
+The wired conformance adapter (`test/conformance/rptAdapter.ts`) feeds each fixture's `input` into RPT's
+REAL assembly and diffs the result against the golden `expected.chat`. The comparison target is RPT's
+**assembled** prompt — `buildPromptDetailed` → `fitToBudget` → ST-faithful system COALESCING only (SPreset
+ChatSquash, else ST `squashSystemMessages` when the preset sets `squash_system_messages: true`, else
+nothing). Two RPT post-assembly provider-correctness reshapes are DELIBERATELY EXCLUDED, because they
+mutate the wire in ways that are not part of ST's assembled prompt (ADR 0016 pins *assembly* parity):
+
+- **merge-all `mergeConsecutiveRoles` (see §5).** ST has no merge-all; it leaves adjacent unnamed system
+  messages discrete. RPT's production default coalesces them — which would collapse exactly the per-message
+  marker/format-string output the marker/depth fixtures verify. So the adapter does NOT apply it. The
+  production merge-all divergence itself is still pinned by `wp-2.5-squash-off` (`knownDivergence` §5); with
+  merge-all excluded here, RPT's assembly matches ST-off, so that fixture's exact-match is tolerated (xfail).
+- **`orderForProvider` end-on-user reordering.** For an OpenAI-compatible provider RPT moves the last user
+  turn to the very end of the wire. ST does NOT: a post-history / `jailbreak` system block legitimately
+  follows the last user turn (e.g. `wp-2.1-char-card-overrides` ends `[system, user, system]`), and a
+  depth-0 injection on a `continue` tail lands after the last message (`wp-2.2-depth-zero`). Applying the
+  end-on-user reshape would corrupt those goldens, so the adapter compares the pre-shape assembly order.
+- **`system_as_user` demotion** is off by default and only fires on the OpenAI-compatible path when opted
+  in, so it is a no-op here.
+
+Some fixtures stay STRUCTURAL (adapter returns null, runner validates schema/invariants only) when their
+`expected` can't be reproduced from the recorded input: a nondeterministic macro (`{{roll}}`/`{{random}}`/
+`{{pick}}`) needs a seeded RNG the fixture doesn't supply (`wp-2.3-macro-dice` pins a frozen placeholder).
+
+- **Grounding:** RPT `src/main/services/generation/providerShape.ts` (the excluded stages B/A-merge/C),
+  `src/main/services/apiService.ts` (`orderForProvider`, `isOpenAiCompatibleProvider`); adapter
+  `test/conformance/rptAdapter.ts`. Scope — `assembly` (harness modeling boundary).

@@ -48,6 +48,10 @@ export interface FixtureInput {
   preset?: Record<string, unknown>
   /** The character card fed in (ST reads `description`, `personality`, `scenario`, …). */
   character?: Record<string, unknown>
+  /** The active user-persona NAME ST expanded `{{user}}` to (default `User`). Recorded so the adapter
+   *  reproduces `{{user}}` faithfully — otherwise a fixture whose `expected` embeds the persona name is
+   *  un-reproducible (was a documented gap in wp-2.3-macro-basic). */
+  userName?: string
   /** The chat transcript fed to assembly, oldest-first. */
   chatMessages: FixtureMessage[]
   /** Generation type driving assembly (`normal` | `continue` | `impersonation` | `group` | …). */

@@ -191,17 +191,56 @@ export const resolveParams = (legacy: unknown, prompt: unknown): PresetParameter
   (legacy as PresetParameters | undefined) ?? artifactParams(prompt)
 
 /**
- * 18c — the explicit per-message budget policy an artifact carries for `messages.trim`, but ONLY when
- * its contributions align 1:1 with `messages` AND every one declares a `budgetClass`. That holds for a
- * Prompt-native artifact whose authored contributions ARE the message list; it does NOT hold for a
- * fully-assembled artifact (its contributions are the PRE-shape authored inputs, so they differ in
- * length/order from the post-shape wire) nor for a synthetic wrapped-`Messages` artifact (no
- * `budgetClass`). In those cases → `undefined`, and the caller falls back to `fitToBudget`'s legacy
- * position-based trim on the wire — the pre-18c behavior. */
+ * 18c/M5(M3-review) — the explicit per-message budget policy an artifact carries for `messages.trim`:
+ * one `BudgetClass` per wire message, or `undefined` when no reliable policy exists.
+ *
+ * The alignment is by MESSAGE IDENTITY (role + content), NOT by position/length (the pre-M5 rule was
+ * `contributions.length === messages.length` + `messages[i] ⇄ contributions[i]`). Positional alignment
+ * broke two ways the M3 review flagged:
+ *  · Finding 1 — provider shaping REORDERS the wire (e.g. `orderForProvider` moves the trailing user
+ *    last, or a merge/prefill reshuffles) WITHOUT changing length. Positionally, `messages[i]` then gets
+ *    contribution `i`'s class — a `pinned` system could inherit a `history` class and be evicted. Identity
+ *    alignment classifies each message by WHAT it is, so a reorder can't misclass it.
+ *  · Finding 3 — a CHAINED second trim: after `withTrimmedMessages` swapped in a shorter `messages`, the
+ *    length no longer equals `contributions`, so the positional guard returned `undefined` and the second
+ *    trim degraded to `fitToBudget`'s position-based fallback. Identity alignment maps the REMAINING
+ *    messages back to their contributions regardless of the length gap, so the policy survives re-trims.
+ *
+ * A message with NO matching contribution ⇒ `undefined` (no reliable per-message policy → the caller
+ * falls back to `fitToBudget`'s legacy position-based trim). This preserves the pre-18c outcome exactly
+ * where the pre-M5 code also returned `undefined`:
+ *  · a synthetic wrapped-`Messages` artifact declares no `budgetClass` on any contribution (guarded first);
+ *  · a fully-assembled artifact whose shaping COALESCED messages (merge-all / ST squash / ChatSquash)
+ *    produces wire content that matches no single pre-shape contribution → `undefined`. When shaping did
+ *    NOT change the content (native / merge-off / reorder-only), the wire identity-matches its
+ *    contributions and the history-aware policy is retained.
+ *
+ * Duplicate messages (same role+content) are consumed in contribution order via a per-key queue, so two
+ * identical turns map to two distinct contributions rather than both grabbing the first.
+ */
 export const artifactBudgetClasses = (a: PromptArtifact): BudgetClass[] | undefined => {
-  if (a.contributions.length !== a.messages.length) return undefined
-  const classes = a.contributions.map((c) => c.budgetClass)
-  return classes.every((c): c is BudgetClass => c != null) ? (classes as BudgetClass[]) : undefined
+  // Every contribution must declare a class for a policy to exist at all (synthetic artifacts don't).
+  if (!a.contributions.length) return undefined
+  if (!a.contributions.every((c) => c.budgetClass != null)) return undefined
+
+  // Queue the declared classes per identity key, in contribution order (handles duplicates).
+  const key = (m: { role: string; content: string }): string => `${m.role} ${m.content}`
+  const pool = new Map<string, BudgetClass[]>()
+  for (const c of a.contributions) {
+    const k = key(c)
+    const q = pool.get(k)
+    if (q) q.push(c.budgetClass as BudgetClass)
+    else pool.set(k, [c.budgetClass as BudgetClass])
+  }
+
+  // Assign each wire message its contribution's class by identity; any unmatched message ⇒ no policy.
+  const out: BudgetClass[] = []
+  for (const m of a.messages) {
+    const q = pool.get(key(m))
+    if (!q || q.length === 0) return undefined
+    out.push(q.shift() as BudgetClass)
+  }
+  return out
 }
 
 /**
