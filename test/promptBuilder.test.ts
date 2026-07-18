@@ -3,16 +3,13 @@ import {
   buildPrompt,
   buildPromptDetailed,
   buildScanText,
-  collectRenderMarkers,
-  estimateTokens,
-  fitToBudget,
-  groupDepthInjections,
-  mergeConsecutiveRoles,
-  resolveEffectivePrompts,
-  shouldTrigger,
-  systemToUser,
-  ChatMessage
+  collectRenderMarkers
 } from '../src/main/services/promptBuilder'
+import { estimateTokens, fitToBudget } from '../src/main/services/promptBudget'
+import { groupDepthInjections } from '../src/main/services/promptDepthInjections'
+import { mergeConsecutiveRoles, systemToUser } from '../src/main/services/promptMessageShaping'
+import { resolveEffectivePrompts, shouldTrigger } from '../src/main/services/promptSelection'
+import type { ChatMessage } from '../src/main/services/promptTypes'
 import { RPTerminalCardSchema, LorebookSchema } from '../src/main/types/character'
 import { initTemplates } from '../src/main/services/templateService'
 
@@ -352,11 +349,7 @@ describe('buildPrompt', () => {
   it('places the RAW persona (no header) at the preset persona_description marker', () => {
     const messages = buildPrompt({
       card: card(),
-      preset: preset([
-        blk('char_description'),
-        blk('persona_description'),
-        blk('chat_history')
-      ]),
+      preset: preset([blk('char_description'), blk('persona_description'), blk('chat_history')]),
       lorebooks: [],
       floors: [floor(0, 'u0', 'a0')],
       userAction: 'go',
@@ -1547,9 +1540,24 @@ describe('buildPrompt — ST in-chat injection grouping (WP-2.2)', () => {
       card: card(),
       preset: preset([
         blk('char_description'),
-        { ...blk('none', 'O10', 'system'), identifier: 'a', injection_depth: 2, injection_order: 10 },
-        { ...blk('none', 'O30', 'system'), identifier: 'b', injection_depth: 2, injection_order: 30 },
-        { ...blk('none', 'O20', 'system'), identifier: 'c', injection_depth: 2, injection_order: 20 },
+        {
+          ...blk('none', 'O10', 'system'),
+          identifier: 'a',
+          injection_depth: 2,
+          injection_order: 10
+        },
+        {
+          ...blk('none', 'O30', 'system'),
+          identifier: 'b',
+          injection_depth: 2,
+          injection_order: 30
+        },
+        {
+          ...blk('none', 'O20', 'system'),
+          identifier: 'c',
+          injection_depth: 2,
+          injection_order: 20
+        },
         blk('chat_history')
       ]),
       lorebooks: [],

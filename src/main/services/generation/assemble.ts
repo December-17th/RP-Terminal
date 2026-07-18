@@ -2,7 +2,9 @@ import { getActivePresetId } from '../presetService'
 import { resolveYuzuMaxTokens } from '../settingsService'
 import { matchAcross } from '../lorebookService'
 import { getCachedWorldInfo, setCachedWorldInfo } from '../chatService'
-import { buildPromptDetailed, fitToBudget, ChatMessage, BudgetClass } from '../promptBuilder'
+import { buildPromptDetailed } from '../promptBuilder'
+import { fitToBudget } from '../promptBudget'
+import type { BudgetClass, ChatMessage } from '../promptTypes'
 import { getPromptRules, getWorldInfoRules, type RegexTierOrder } from '../regexService'
 import { buildTemplateContext } from '../templateService'
 import { providerShape } from './providerShape'
@@ -166,7 +168,9 @@ export const assemblePrompt = (
   // Absent on native / plain-ST presets → every branch below is the pre-SPreset default (parity gate).
   //  • RegexBinding → preset-first regex tier order (preset ahead of global/character); else st-default.
   //  • MacroNest:false → a single non-nesting macro pass; true/absent → RPT's default nesting cap.
-  const regexOrder: RegexTierOrder = preset.spreset?.regexBindingEnabled ? 'preset-first' : 'st-default'
+  const regexOrder: RegexTierOrder = preset.spreset?.regexBindingEnabled
+    ? 'preset-first'
+    : 'st-default'
   const macroMaxPasses = preset.spreset?.macroNest === false ? 1 : undefined
 
   // WS4 (D10): fold the capped per-table memory block into the SAME memory tail as the recall / pack
@@ -268,11 +272,11 @@ export const assemblePrompt = (
   // the retired non-enumerable HISTORY_TAG; `trimmedClasses` stays aligned with `trimmed` and rides
   // onto the artifact's contributions as `budgetClass`.
   const budget = settings.generation?.max_context_tokens || 200000
-  const { messages: trimmed, dropped, budgetClasses: trimmedClasses } = fitToBudget(
-    built,
-    budget,
-    budgetClasses
-  )
+  const {
+    messages: trimmed,
+    dropped,
+    budgetClasses: trimmedClasses
+  } = fitToBudget(built, budget, budgetClasses)
   if (dropped > 0) {
     log('info', `context budget ${budget} tok — trimmed ${dropped} oldest message(s)`)
     record.arrayStage(

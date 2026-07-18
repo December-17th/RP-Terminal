@@ -36,3 +36,26 @@ export interface ScriptInfo extends StoredScript {
    */
   highTrust?: boolean
 }
+
+/**
+ * Why a runtime script is allowed to execute in the isolated WCV.
+ *
+ * Card/world-owned code is the only class controlled by the per-card trust decision. Ordinary
+ * library and preset scripts were authorized when the user installed/imported them; remote-code
+ * preset scripts require the separate per-preset high-trust grant.
+ */
+export type RuntimeScriptAuthorization = 'card-trust' | 'import-trust' | 'preset-high-trust'
+
+/** Pure source-to-authorization mapping shared by IPC assembly and regression tests. */
+export const resolveRuntimeScriptAuthorization = (
+  scope: ArtifactScope,
+  highTrust = false
+): RuntimeScriptAuthorization => {
+  if (scope === 'preset' && highTrust) return 'preset-high-trust'
+  if (scope === 'world') return 'card-trust'
+  return 'import-trust'
+}
+
+export interface RuntimeScript extends StoredScript {
+  authorization: RuntimeScriptAuthorization
+}

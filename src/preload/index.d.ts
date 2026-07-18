@@ -25,6 +25,17 @@ declare global {
     electron: ElectronAPI
     api: any & {
       importCharacterDialog: (profileId: string) => Promise<CharacterImportDialogResult | null>
+      getRuntimeScripts: (
+        profileId: string,
+        cardId: string | null,
+        chatId: string | null,
+        isolatedRealm?: boolean
+      ) => Promise<{
+        scripts: import('../shared/scriptTypes').RuntimeScript[]
+        remoteHosts: string[]
+      }>
+      wcvDestroyAwait: (id: string) => Promise<boolean>
+      presetSetHighTrust: (profileId: string, presetId: string, on: boolean) => Promise<number>
       backfillUsageMetrics: (profileId: string, chatId: string) => Promise<unknown[]>
       // Feature 2 — save (session) export/import. export → { name } | { error } | null (cancel);
       // import → { chatId } | { error, worldName? } | null (cancel).

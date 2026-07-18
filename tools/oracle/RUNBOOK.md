@@ -29,18 +29,22 @@ Set-Location "E:\Projects\RP Terminal\.worktrees\st-preset-compat"
 ## 1. Start the capture server (this repo)
 
 ```powershell
-node tools/oracle/capture-server.mjs
+node tools/oracle/capture-server.mjs --apply
 # -> Oracle capture server on http://127.0.0.1:8899
 #    OpenAI endpoint: http://127.0.0.1:8899/v1
 #    writing fixtures to: tools/oracle/captures
-# (optional: node tools/oracle/capture-server.mjs --port 8899 --out tools/oracle/captures)
+# (optional: add --port 8899 --out tools/oracle/captures)
 ```
+
+`capture-server.mjs` is non-mutating by default. Without `--apply` it still
+serves the endpoints and reports each path it would write, but it creates no
+directory or capture file. A real capture session must include `--apply`.
 
 Leave it running. Sanity check in another PowerShell window:
 
 ```powershell
 curl.exe http://127.0.0.1:8899/health       # {"ok":true,...}  — note curl.exe, NOT the curl alias
-node tools/oracle/self-test.mjs             # posts a synthetic wire body, prints "SELF-TEST OK: N capture files ..."
+node tools/oracle/self-test.mjs             # verifies dry-run/apply/force and cleans repo-local artifacts
 ```
 
 > PowerShell aliases `curl` to `Invoke-WebRequest`, which prints a different object;
@@ -58,11 +62,13 @@ Copy-Item -Path "$src\manifest.json", "$src\index.js" -Destination $dest
 ```
 
 > POSIX `sh` equivalent:
+>
 > ```sh
 > mkdir -p "E:/Projects/SillyTavern/public/scripts/extensions/third-party/rpt-oracle-capture"
 > cp tools/oracle/st-capture-extension/manifest.json tools/oracle/st-capture-extension/index.js \
 >    "E:/Projects/SillyTavern/public/scripts/extensions/third-party/rpt-oracle-capture/"
 > ```
+>
 > `Copy-Item` needs its sources as a **comma-separated `-Path` list**; it will not read
 > trailing positional sources like POSIX `cp`.
 
@@ -101,7 +107,7 @@ observable from the prompt-ready event, so tag it explicitly; default is `normal
 
 ```js
 rptOracleScenario('wp-2.1-markers-basic')
-rptOracleGenType('normal')   // or 'continue' / 'impersonation' / 'group'
+rptOracleGenType('normal') // or 'continue' / 'impersonation' / 'group'
 ```
 
 Then:
@@ -127,7 +133,8 @@ For each capture, normalize it into the fixture schema
 
 The `tools/oracle/normalize-capture.mjs` helper does the mechanical part — it copies
 the observed `input` (chat messages, preset name, token budget, generation type)
-straight through and leaves `worldInfo: []` for you to fill:
+straight through. Missing fields remain missing, explicit empty/null values remain
+explicit, and unobservable fields are left for you to fill:
 
 ```powershell
 node tools/oracle/normalize-capture.mjs `
@@ -135,6 +142,26 @@ node tools/oracle/normalize-capture.mjs `
   --scenario wp-2.1-markers-basic `
   --out test/conformance/fixtures/wp-2.1-markers-basic.json
 ```
+
+That command is a dry-run: it validates the capture and reports the directory
+and fixture path it would write. After checking the paths, repeat it with
+`--apply`:
+
+```powershell
+node tools/oracle/normalize-capture.mjs `
+  --in tools/oracle/captures/<file>__capture.json `
+  --scenario wp-2.1-markers-basic `
+  --out test/conformance/fixtures/wp-2.1-markers-basic.json `
+  --apply
+```
+
+Normalization refuses an existing output file by default, including with
+`--apply`, so a repeat run cannot erase fields completed by the operator. Use a
+new output path when possible. To deliberately replace an existing fixture,
+both write flags are required: `--apply --force`. This is destructive; review
+the existing fixture first. The helper saves the old file beside it as
+`<fixture>.bak` (or the next numbered backup); restore it with `Copy-Item
+<fixture>.bak <fixture>`. `--force` without `--apply` is rejected.
 
 > POSIX `sh`: same command with `\` line-continuations instead of PowerShell's
 > backtick `` ` ``. Or put it on one line.
@@ -145,14 +172,14 @@ runner's `validateFixture` fails without `input.chatMessages` / `generationType`
 
 - **`input.worldInfo[]`** — the pre-activated World Info entries you fed, in ST
   activation order, each `{ position, depth?, order?, role?, content }`. Under
-  assembly-only parity (ADR 0016) WI *selection* is an INPUT the oracle supplies, so
+  assembly-only parity (ADR 0016) WI _selection_ is an INPUT the oracle supplies, so
   record exactly what was active — do not expect RPT to recompute it.
 - **`input.preset`** / **`input.character`** — add the inline preset and character
   card you set up, when the scenario is self-contained rather than referencing a
   named preset. Use only scrambled, RPT-authored prose.
 - **`input.tokenBudget`** — confirm the fixed budget the assembly ran under.
 
-Re-run the suite; the scenario moves from *skipped (fixture absent)* to *asserted*:
+Re-run the suite; the scenario moves from _skipped (fixture absent)_ to _asserted_:
 
 ```powershell
 Set-Location "E:\Projects\RP Terminal\.worktrees\st-preset-compat"

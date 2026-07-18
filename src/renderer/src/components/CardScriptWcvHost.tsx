@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCardScriptsStore } from '../stores/cardScriptsStore'
 import { useToolbarStore } from '../stores/toolbarStore'
 import { CARD_CSP } from '../../../shared/cardCsp'
-import { resolveCardScriptGate, GateScript } from './cardScriptGate'
+import type { RuntimeScript } from '../../../shared/scriptTypes'
+import { resolveCardScriptGate } from './cardScriptGate'
 
 /**
  * The card **script engine** (Phase 2–4) — a single, invisible, process-isolated `WebContentsView` that runs
@@ -24,11 +25,6 @@ import { resolveCardScriptGate, GateScript } from './cardScriptGate'
 // resolve. (Mirrors thRuntime/bridgeShim's MODULE_SYNTAX, inlined to avoid the legacy-stack dependency.)
 const isModuleScript = (code: string): boolean =>
   /^[ \t]*(?:import[\s{*'"]|export[\s{*])/m.test(code || '')
-
-interface RuntimeScript {
-  name: string
-  code: string
-}
 
 const buildScriptDoc = (scripts: RuntimeScript[]): string => {
   const tags = scripts
@@ -56,6 +52,8 @@ interface Props {
   chatId: string
   cardId: string
   cardName: string
+  activePresetId: string | null
+  presetRuntimeRevision: number
 }
 
 interface Grants {
@@ -70,7 +68,9 @@ export function CardScriptWcvHost({
   profileId,
   chatId,
   cardId,
-  cardName
+  cardName,
+  activePresetId,
+  presetRuntimeRevision
 }: Props): React.ReactElement | null {
   const slotId = `card-scripts:${cardId}:${chatId}`
   const enabled = useCardScriptsStore((s) => s.enabledByCard[cardId] ?? true)
@@ -80,9 +80,6 @@ export function CardScriptWcvHost({
   const grantsRef = useRef<Grants>({})
   const [grantsLoaded, setGrantsLoaded] = useState(false)
   const [scripts, setScripts] = useState<RuntimeScript[] | null>(null)
-  // Scripts the ACTIVE preset's high-trust grant authorizes (a subset of `scripts`) — run regardless
-  // of card trust (ADR 0017). Populated from get-runtime-scripts alongside the full set.
-  const [presetHighTrustScripts, setPresetHighTrustScripts] = useState<GateScript[]>([])
 
   // Load persisted grants (enabled + trusted/remoteScripts) for this card.
   useEffect(() => {
@@ -101,37 +98,55 @@ export function CardScriptWcvHost({
     }
   }, [profileId, cardId])
 
-  // Fetch the merged runtime script set (card-embedded + active store scopes) + the subset the active
-  // preset's high-trust grant authorizes (a strict subset — runs regardless of card trust, ADR 0017).
+  // Fetch the merged runtime script set. Main attaches each entry's source authorization so this host
+  // can distinguish card-owned code from import-authorized and high-trust preset code.
   useEffect(() => {
     if (!enabled || !grantsLoaded) return
     let alive = true
-    // isolatedRealm=true: this is the WCV transport, the only realm where high-trust remote-code
-    // scripts (ADR 0017) are allowed to resolve. The inline CardScriptHost never sets this.
-    window.api.getRuntimeScripts(profileId, cardId, chatId, true).then((res: any) => {
-      if (!alive) return
-      setScripts(res?.scripts || [])
-      setPresetHighTrustScripts(res?.presetHighTrustScripts || [])
-    })
+    const refresh = async (): Promise<void> => {
+      try {
+        setScripts(null)
+        // Stop the previous document before resolving the new preset/grant state.
+        await window.api.wcvDestroyAwait(slotId)
+        if (!alive) return
+        // isolatedRealm=true: this is the WCV transport, the only realm where high-trust remote-code
+        // scripts (ADR 0017) are allowed to resolve. The inline CardScriptHost never sets this.
+        const res = await window.api.getRuntimeScripts(profileId, cardId, chatId, true)
+        if (alive) setScripts(res?.scripts || [])
+      } catch (error) {
+        if (!alive) return
+        console.warn('[card-script] failed to refresh runtime scripts', error)
+        setScripts([])
+      }
+    }
+    void refresh()
     return () => {
       alive = false
     }
-  }, [profileId, cardId, chatId, enabled, grantsLoaded, trustedGrant])
+  }, [
+    profileId,
+    cardId,
+    chatId,
+    enabled,
+    grantsLoaded,
+    trustedGrant,
+    activePresetId,
+    presetRuntimeRevision,
+    slotId
+  ])
 
   const trusted = trustedGrant === true || grantsRef.current.trusted === true
   const decided = decidedGrant === true || grantsRef.current.decided === true
-  // Reconcile the two INDEPENDENT trust grants (ADR 0017): a high-trusted preset's scripts run
-  // regardless of card trust; the card's own scripts still wait for the card decision. `runScripts` is
-  // the authorized subset the WCV doc actually runs; `needsConsent` gates only the card-trust prompt.
+  // Reconcile independent source authorizations (ADR 0017). Preset/library scripts do not inherit card
+  // trust; card/world-owned scripts still wait for the card decision.
   const { runScripts, needsConsent } = useMemo(
     () =>
       resolveCardScriptGate({
         scripts: scripts ?? [],
-        presetHighTrustScripts,
         cardTrusted: trusted,
         cardDecided: decided
       }),
-    [scripts, presetHighTrustScripts, trusted, decided]
+    [scripts, trusted, decided]
   )
 
   const doc = useMemo(() => (runScripts.length ? buildScriptDoc(runScripts) : ''), [runScripts])

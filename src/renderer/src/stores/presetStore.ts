@@ -85,6 +85,9 @@ interface PresetState {
   activeId: string | null
   preset: Preset | null
   dirty: boolean
+  /** Invalidates runtime consumers when the active preset's installed script set changes in place. */
+  runtimeRevision: number
+  invalidateRuntime: () => void
   load: (profileId: string) => Promise<void>
   select: (profileId: string, presetId: string) => Promise<void>
   createNew: (profileId: string) => Promise<void>
@@ -112,6 +115,8 @@ export const usePresetStore = create<PresetState>((set, get) => ({
   activeId: null,
   preset: null,
   dirty: false,
+  runtimeRevision: 0,
+  invalidateRuntime: () => set((s) => ({ runtimeRevision: s.runtimeRevision + 1 })),
 
   load: async (profileId) => {
     const presets = await window.api.listPresets(profileId)
@@ -123,7 +128,12 @@ export const usePresetStore = create<PresetState>((set, get) => ({
   select: async (profileId, presetId) => {
     await window.api.setActivePreset(profileId, presetId)
     const preset = await window.api.getPreset(profileId, presetId)
-    set({ activeId: presetId, preset, dirty: false })
+    set((s) => ({
+      activeId: presetId,
+      preset,
+      dirty: false,
+      runtimeRevision: s.runtimeRevision + 1
+    }))
   },
 
   createNew: async (profileId) => {

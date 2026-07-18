@@ -82,6 +82,7 @@ export default function App(): React.ReactElement {
   const loadChats = useChatStore((s) => s.loadChats)
   const activeChatId = useChatStore((s) => s.activeChatId)
   const activePresetId = usePresetStore((s) => s.activeId)
+  const presetRuntimeRevision = usePresetStore((s) => s.runtimeRevision)
   // The runtime play-theme override (session slot) — layered over the static card theme on `.play-root`.
   const runtimeTheme = useUiStore((s) => s.runtimeTheme)
   // A card's session-scoped light/dark override (WCV rptHost.setColorScheme); null = follow the app theme.
@@ -148,7 +149,11 @@ export default function App(): React.ReactElement {
         ok = applyRuntimeTheme(
           theme as Record<string, unknown> | null,
           opts as { target?: 'shell' | 'message'; persist?: 'session' | 'chat' | 'global' },
-          { profileId: pid, chatId, characterId: useCharacterStore.getState().activeCharacter?.id ?? '' }
+          {
+            profileId: pid,
+            chatId,
+            characterId: useCharacterStore.getState().activeCharacter?.id ?? ''
+          }
         )
       }
       window.api.wcvSetPlayThemeReply(id, ok)
@@ -212,9 +217,7 @@ export default function App(): React.ReactElement {
     })
     // Opt-in node output panels (spec D4): append deltas; a chat's panels belong to its latest
     // turn, so clear them on the turn's rising edge (isGenerating false→true).
-    const unsubPanel = window.api.onWorkflowPanel((p) =>
-      useWorkflowPanelStore.getState().append(p)
-    )
+    const unsubPanel = window.api.onWorkflowPanel((p) => useWorkflowPanelStore.getState().append(p))
     const unsubPanelClear = useChatStore.subscribe((state, prev) => {
       if (state.isGenerating && !prev.isGenerating && state.activeChatId) {
         useWorkflowPanelStore.getState().clear(state.activeChatId)
@@ -399,7 +402,9 @@ export default function App(): React.ReactElement {
         <div
           className="play-root"
           style={
-            effectivePlayTokens ? (effectivePlayTokens as unknown as React.CSSProperties) : undefined
+            effectivePlayTokens
+              ? (effectivePlayTokens as unknown as React.CSSProperties)
+              : undefined
           }
         >
           <TopStrip profileId={activeProfile.id} profileName={activeProfile.name} />
@@ -428,6 +433,8 @@ export default function App(): React.ReactElement {
               chatId={activeChatId}
               cardId={activeCharacter.id}
               cardName={activeCharacter.card.data.name}
+              activePresetId={activePresetId}
+              presetRuntimeRevision={presetRuntimeRevision}
             />
           )}
 
@@ -448,9 +455,7 @@ export default function App(): React.ReactElement {
       <Suspense fallback={null}>
         {settingsOpen && <SettingsModal profileId={activeProfile.id} />}
         {workflowEditorOpen && <WorkflowEditorOverlay profileId={activeProfile.id} />}
-        {(duelPopupOpen || activeChatMode === 'duel') && (
-          <DuelPopup profileId={activeProfile.id} />
-        )}
+        {(duelPopupOpen || activeChatMode === 'duel') && <DuelPopup profileId={activeProfile.id} />}
         {assetsPopupOpen && <AssetsPopup profileId={activeProfile.id} />}
         {memoryManagerOpen && <MemoryManagerView profileId={activeProfile.id} />}
         {templateReminderOpen && <TableTemplateReminderModal profileId={activeProfile.id} />}

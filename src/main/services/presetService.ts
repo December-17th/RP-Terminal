@@ -9,7 +9,13 @@ import {
   listFilesSync
 } from './storageService'
 import { log } from './logService'
-import { Preset, PresetSchema, PresetEnvelope, PromptBlock, getDefaultPreset } from '../types/preset'
+import {
+  Preset,
+  PresetSchema,
+  PresetEnvelope,
+  PromptBlock,
+  getDefaultPreset
+} from '../types/preset'
 import type { HostPresetView, HostPresetPrompt } from '../../shared/thRuntime/hostPrimitives'
 import { parseStPreset, selectPromptOrder } from '../parsers/stPresetParser'
 import * as regexService from './regexService'
@@ -127,7 +133,9 @@ export const computePresetInventory = (parsed: any): PresetInventory => {
   const regexScripts = Array.isArray(ext.regex_scripts) ? ext.regex_scripts.length : 0
   const spresetArr = ext?.SPreset?.RegexBinding?.regexes
   const spresetRegex = Array.isArray(spresetArr) ? spresetArr.length : 0
-  const thScripts: any[] = Array.isArray(ext?.tavern_helper?.scripts) ? ext.tavern_helper.scripts : []
+  const thScripts: any[] = Array.isArray(ext?.tavern_helper?.scripts)
+    ? ext.tavern_helper.scripts
+    : []
   const remoteCodeScripts = thScripts.filter((s) =>
     scriptService.hasRemoteCodeLoad(scriptSource(s))
   ).length
@@ -211,6 +219,11 @@ const activePath = (profileId: string): string => path.join(presetsDir(profileId
 const envelopesDir = (profileId: string): string => path.join(presetsDir(profileId), 'envelopes')
 const envelopePath = (profileId: string, id: string): string =>
   path.join(envelopesDir(profileId), `${id}.json`)
+const profileDir = (profileId: string): string => path.join(getAppDir(), 'profiles', profileId)
+const regexDir = (profileId: string): string => path.join(profileDir(profileId), 'regex')
+const scriptsDir = (profileId: string): string => path.join(profileDir(profileId), 'scripts')
+const deletionBackupsDir = (profileId: string): string =>
+  path.join(profileDir(profileId), 'preset-deletion-backups')
 
 const sha256Hex = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex')
 
@@ -388,17 +401,105 @@ export const savePreset = (profileId: string, presetId: string, preset: Preset):
   writeJsonSyncAtomic(presetPath(profileId, presetId), PresetSchema.parse(preset))
 }
 
+interface PresetDeletionBackup {
+  dir: string
+  files: string[]
+  activeExisted: boolean
+}
+
+/**
+ * Snapshot every file deletePreset can mutate before the first deletion. Artifacts are copied with
+ * their scope sidecars, and the manifest is written last so a backup directory with a manifest is a
+ * complete, profile-local rollback point.
+ */
+const stagePresetDeletion = (profileId: string, presetId: string): PresetDeletionBackup => {
+  const dir = path.join(deletionBackupsDir(profileId), `${presetId}-${randomUUID()}`)
+  const files: string[] = []
+  const copy = (source: string, relative: string): void => {
+    if (!fs.existsSync(source)) return
+    const destination = path.join(dir, relative)
+    ensureDir(path.dirname(destination))
+    fs.copyFileSync(source, destination)
+    files.push(relative)
+  }
+
+  try {
+    copy(presetPath(profileId, presetId), path.join('presets', `${presetId}.json`))
+    copy(envelopePath(profileId, presetId), path.join('presets', 'envelopes', `${presetId}.json`))
+    const active = activePath(profileId)
+    const activeExisted = fs.existsSync(active)
+    copy(active, path.join('presets', '_active.json'))
+
+    const ownedRegex = regexService
+      .listScripts(profileId)
+      .filter((s) => s.scope === 'preset' && s.owner === presetId)
+    const ownedScripts = scriptService
+      .listScripts(profileId)
+      .filter((s) => s.scope === 'preset' && s.owner === presetId)
+    for (const artifact of ownedRegex) {
+      copy(path.join(regexDir(profileId), artifact.file), path.join('regex', artifact.file))
+    }
+    for (const artifact of ownedScripts) {
+      copy(path.join(scriptsDir(profileId), artifact.file), path.join('scripts', artifact.file))
+    }
+    copy(path.join(regexDir(profileId), '_meta.json'), path.join('regex', '_meta.json'))
+    copy(path.join(scriptsDir(profileId), '_meta.json'), path.join('scripts', '_meta.json'))
+
+    writeJsonSyncAtomic(path.join(dir, 'manifest.json'), {
+      profileId,
+      presetId,
+      createdAt: new Date().toISOString(),
+      files
+    })
+    return { dir, files, activeExisted }
+  } catch (error) {
+    fs.rmSync(dir, { recursive: true, force: true })
+    throw error
+  }
+}
+
+const restorePresetDeletion = (profileId: string, backup: PresetDeletionBackup): void => {
+  const root = profileDir(profileId)
+  for (const relative of backup.files) {
+    const source = path.join(backup.dir, relative)
+    const destination = path.join(root, relative)
+    ensureDir(path.dirname(destination))
+    fs.copyFileSync(source, destination)
+  }
+  if (!backup.activeExisted) fs.rmSync(activePath(profileId), { force: true })
+  fs.rmSync(`${activePath(profileId)}.tmp`, { force: true })
+}
+
 export const deletePreset = (profileId: string, presetId: string): void => {
-  const p = presetPath(profileId, presetId)
-  if (fs.existsSync(p)) fs.unlinkSync(p)
-  const env = envelopePath(profileId, presetId)
-  if (fs.existsSync(env)) fs.unlinkSync(env)
-  // Remove any regex/scripts the preset bundled (scope=preset, owner=presetId) so a
-  // deleted preset doesn't leave orphaned artifacts firing for a preset that's gone.
-  regexService.deleteScriptsByOwner(profileId, 'preset', presetId)
-  scriptService.deleteScriptsByOwner(profileId, 'preset', presetId)
-  const next = getActivePresetId(profileId)
-  writeJsonSyncAtomic(activePath(profileId), { id: next ?? null })
+  const backup = stagePresetDeletion(profileId, presetId)
+  try {
+    const p = presetPath(profileId, presetId)
+    if (fs.existsSync(p)) fs.unlinkSync(p)
+    const env = envelopePath(profileId, presetId)
+    if (fs.existsSync(env)) fs.unlinkSync(env)
+    // Remove any regex/scripts the preset bundled (scope=preset, owner=presetId) so a
+    // deleted preset doesn't leave orphaned artifacts firing for a preset that's gone.
+    regexService.deleteScriptsByOwner(profileId, 'preset', presetId)
+    scriptService.deleteScriptsByOwner(profileId, 'preset', presetId)
+    const next = getActivePresetId(profileId)
+    writeJsonSyncAtomic(activePath(profileId), { id: next ?? null })
+  } catch (error) {
+    try {
+      restorePresetDeletion(profileId, backup)
+      log(
+        'error',
+        `Preset deletion failed and was rolled back; backup kept at ${backup.dir}`,
+        error
+      )
+    } catch (rollbackError) {
+      log(
+        'error',
+        `Preset deletion failed; automatic rollback also failed. Restore from ${backup.dir}`,
+        rollbackError
+      )
+    }
+    throw error
+  }
 }
 
 /**
@@ -430,7 +531,8 @@ export const installBundledPreset = (profileId: string, raw: any): string | null
       parsed: presetRoot(raw),
       originalBase64: null,
       importedAt: new Date().toISOString(),
-      importerVersion: IMPORTER_VERSION
+      importerVersion: IMPORTER_VERSION,
+      importedView: preset
     })
     return preset.name
   } catch (error) {
@@ -465,7 +567,8 @@ export const importPresetFromFile = (
       parsed: raw,
       originalBase64: bytes.toString('base64'),
       importedAt: new Date().toISOString(),
-      importerVersion: IMPORTER_VERSION
+      importerVersion: IMPORTER_VERSION,
+      importedView: preset
     })
 
     // Route bundled regex (each ST rule → its own script file) scoped to the preset.
@@ -555,10 +658,7 @@ export const getPresetProvenance = (
  * Manager reads it to decide whether to surface the per-preset high-trust opt-in (issue 19): that opt-in
  * is only meaningful when the preset actually carries remote-code scripts (`remoteCodeScripts > 0`).
  */
-export const getPresetInventory = (
-  profileId: string,
-  presetId: string
-): PresetInventory | null => {
+export const getPresetInventory = (profileId: string, presetId: string): PresetInventory | null => {
   const env = readEnvelope(profileId, presetId)
   return env ? computePresetInventory(env.parsed) : null
 }
@@ -574,25 +674,36 @@ const SAMPLER_KEYS = [
 ] as const
 
 /**
- * Overlay a view prompt's editable scalars onto a matching raw prompt object, touching ONLY keys
- * the raw already carries — exactly like the sampler overlay above. This is what keeps an *unedited*
- * export byte-equal: for an unedited prompt the view values equal the raw's, so every assignment is a
- * no-op AND no absent key (e.g. a marker prompt's missing `role`/`content`) is ever introduced. An
- * edit to a field the raw carries (a literal's `content`/`role`/`name`) is reflected; edits to a field
- * the raw lacks are out of scope (the niche depth-injection add is left to the runtime view).
+ * Overlay a view prompt's editable scalars onto a matching raw prompt object. Existing keys are always
+ * updated; absent keys are introduced only when the value differs from the import-time normalized view.
+ * That preserves the unedited JSON.parse-equal invariant while allowing valid editor changes to add keys.
  */
-const overlayPromptEdits = (rawPrompt: Record<string, any>, vp: PromptBlock): void => {
-  if ('name' in rawPrompt) rawPrompt.name = vp.name
-  if ('role' in rawPrompt) rawPrompt.role = vp.role
-  if ('content' in rawPrompt) rawPrompt.content = vp.content
-  if ('injection_order' in rawPrompt && typeof vp.injection_order === 'number') {
+const overlayPromptEdits = (
+  rawPrompt: Record<string, any>,
+  vp: PromptBlock,
+  imported?: PromptBlock
+): void => {
+  if ('name' in rawPrompt || (imported && vp.name !== imported.name)) rawPrompt.name = vp.name
+  if ('role' in rawPrompt || (imported && vp.role !== imported.role)) rawPrompt.role = vp.role
+  if ('content' in rawPrompt || (imported && vp.content !== imported.content)) {
+    rawPrompt.content = vp.content
+  }
+  if (
+    vp.marker === 'none' &&
+    typeof vp.injection_order === 'number' &&
+    ('injection_order' in rawPrompt ||
+      (imported && vp.injection_order !== imported.injection_order))
+  ) {
     rawPrompt.injection_order = vp.injection_order
   }
-  // Depth is editable in the Preset Manager (~PresetManager:423); overlay it like the other scalars so a
-  // depth edit survives semantic export instead of reverting to the imported value (runtime kept it; export
-  // dropped it). Touch only when the raw carries the key, so an unedited export stays byte-equal.
-  if ('injection_depth' in rawPrompt && typeof vp.injection_depth === 'number') {
+  const depthChanged =
+    vp.marker === 'none' && imported != null && vp.injection_depth !== imported.injection_depth
+  if (typeof vp.injection_depth === 'number' && ('injection_depth' in rawPrompt || depthChanged)) {
+    if (depthChanged && rawPrompt.injection_position !== 1) rawPrompt.injection_position = 1
     rawPrompt.injection_depth = vp.injection_depth
+  } else if (depthChanged && vp.injection_depth === null) {
+    delete rawPrompt.injection_depth
+    if (rawPrompt.injection_position === 1) delete rawPrompt.injection_position
   }
 }
 
@@ -635,12 +746,17 @@ const overlayPromptsAndOrder = (root: any, originalRoot: any, view: Preset): voi
 
   const importView = ((): Preset | null => {
     try {
-      return parseStPreset(originalRoot, originalRoot?.name || 'preset') as Preset | null
+      const parsed = parseStPreset(originalRoot, originalRoot?.name || 'preset')
+      const normalized = PresetSchema.safeParse(parsed)
+      return normalized.success ? normalized.data : null
     } catch {
       return null
     }
   })()
   const importIds = new Set<string>((importView?.prompts ?? []).map((p) => p.identifier))
+  const importById = new Map<string, PromptBlock>(
+    (importView?.prompts ?? []).map((p) => [p.identifier, p])
+  )
   const viewIds = new Set(view.prompts.map((p) => p.identifier))
 
   // 1) Overlay edits onto matching raw prompts (existing keys only, so unedited stays byte-equal).
@@ -652,7 +768,7 @@ const overlayPromptsAndOrder = (root: any, originalRoot: any, view: Preset): voi
   }
   for (const vp of view.prompts) {
     const rp = rawById.get(vp.identifier)
-    if (rp) overlayPromptEdits(rp, vp)
+    if (rp) overlayPromptEdits(rp, vp, importById.get(vp.identifier))
   }
 
   // 2) Reflect order + enablement. Resolve the active `prompt_order` list via the SHARED selector
@@ -664,7 +780,8 @@ const overlayPromptsAndOrder = (root: any, originalRoot: any, view: Preset): voi
 
   if (activeOrder) {
     // Additions need a prompt DEFINITION too (the order alone can't carry content).
-    for (const vp of view.prompts) if (!rawById.has(vp.identifier)) root.prompts.push(newRawPrompt(vp))
+    for (const vp of view.prompts)
+      if (!rawById.has(vp.identifier)) root.prompts.push(newRawPrompt(vp))
 
     const existing: any[] = activeOrder
     const entryById = new Map<string, any>()
@@ -677,7 +794,9 @@ const overlayPromptsAndOrder = (root: any, originalRoot: any, view: Preset): voi
     for (const vp of view.prompts) {
       const e = entryById.get(vp.identifier)
       // Reuse the existing order entry (preserving any extra keys) but write the view's enabled state.
-      rebuilt.push(e ? { ...e, enabled: vp.enabled } : { identifier: vp.identifier, enabled: vp.enabled })
+      rebuilt.push(
+        e ? { ...e, enabled: vp.enabled } : { identifier: vp.identifier, enabled: vp.enabled }
+      )
     }
     for (const e of existing) {
       const id = e && typeof e.identifier === 'string' ? e.identifier : null
@@ -692,7 +811,8 @@ const overlayPromptsAndOrder = (root: any, originalRoot: any, view: Preset): voi
     // No `prompt_order`: reorder `prompts[]` to the view and reflect enablement, P1-safe (only write
     // `enabled` when it actually changed from import, or the raw prompt already carries the key).
     const importEnabled = new Map<string, boolean>()
-    for (const ip of importView?.prompts ?? []) importEnabled.set(ip.identifier, ip.enabled !== false)
+    for (const ip of importView?.prompts ?? [])
+      importEnabled.set(ip.identifier, ip.enabled !== false)
     const reordered: any[] = []
     for (const vp of view.prompts) {
       const rp = rawById.get(vp.identifier) ?? newRawPrompt(vp)
@@ -717,21 +837,38 @@ const overlayPromptsAndOrder = (root: any, originalRoot: any, view: Preset): voi
  * reflected. Every other ST field (extra `prompt_order` lists, `extensions.*`, unknown top-level keys)
  * passes through untouched, and an *unedited* preset re-serializes to a JSON.parse-equal copy of its import.
  */
-const overlaySemanticView = (parsed: any, view: Preset): any => {
+const overlaySemanticView = (parsed: any, view: Preset, importedView?: Preset): any => {
   const clone = JSON.parse(JSON.stringify(parsed))
   const root = Array.isArray(clone) ? clone.find((x: any) => x && typeof x === 'object') : clone
   if (!root || typeof root !== 'object') return clone
-  if ('name' in root) root.name = view.name
+  if ('name' in root || (importedView && view.name !== importedView.name)) root.name = view.name
   const p = view.parameters
-  if ('temperature' in root && typeof p.temperature === 'number') root.temperature = p.temperature
+  const importedParameters = importedView?.parameters
+  if (
+    typeof p.temperature === 'number' &&
+    ('temperature' in root ||
+      (importedParameters && p.temperature !== importedParameters.temperature))
+  ) {
+    root.temperature = p.temperature
+  }
   if ('openai_max_tokens' in root && typeof p.max_tokens === 'number') {
     root.openai_max_tokens = p.max_tokens
   } else if ('max_tokens' in root && typeof p.max_tokens === 'number') {
     root.max_tokens = p.max_tokens
+  } else if (
+    importedParameters &&
+    typeof p.max_tokens === 'number' &&
+    p.max_tokens !== importedParameters.max_tokens
+  ) {
+    root.openai_max_tokens = p.max_tokens
   }
   for (const k of SAMPLER_KEYS) {
     const v = (p as Record<string, unknown>)[k]
-    if (k in root && typeof v === 'number') (root as Record<string, unknown>)[k] = v
+    const importedValue = (importedParameters as Record<string, unknown> | undefined)?.[k]
+    if (typeof v === 'number' && (k in root || (importedParameters && v !== importedValue))) {
+      const target = root as Record<string, unknown>
+      target[k] = v
+    }
   }
   overlayPromptsAndOrder(root, presetRoot(parsed), view)
   return clone
@@ -747,7 +884,12 @@ export const exportPresetSemantic = (profileId: string, presetId: string): strin
   const env = readEnvelope(profileId, presetId)
   if (!env) return null
   const view = getPresetById(profileId, presetId)
-  const merged = view ? overlaySemanticView(env.parsed, view) : env.parsed
+  const parsedImportView = PresetSchema.safeParse(
+    parseStPreset(env.parsed, presetRoot(env.parsed)?.name || 'preset')
+  )
+  const importedView =
+    env.importedView ?? (parsedImportView.success ? parsedImportView.data : undefined)
+  const merged = view ? overlaySemanticView(env.parsed, view, importedView) : env.parsed
   return JSON.stringify(merged, null, 2)
 }
 

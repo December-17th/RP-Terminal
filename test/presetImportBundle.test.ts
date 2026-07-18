@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect, afterAll, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -116,5 +116,42 @@ describe('importPresetFromFile — bundled regex/scripts', () => {
     deletePreset(profileId, presetId)
     expect(regexService.listScripts(profileId)).toHaveLength(0)
     expect(scriptService.listScripts(profileId)).toHaveLength(0)
+  })
+})
+
+describe('deletePreset recovery', () => {
+  it('restores the preset, envelope, active selection, and owned artifacts when deletion fails', () => {
+    const rollbackProfileId = `test-${randomUUID()}`
+    const rollbackProfileDir = path.join(getAppDir(), 'profiles', rollbackProfileId)
+    const file = writeTmpPreset(stPresetWithBundle('Rollback Preset'))
+    importPresetFromFile(rollbackProfileId, file)
+    const presetId = getActivePresetId(rollbackProfileId)!
+    const activeFile = path.join(rollbackProfileDir, 'presets', '_active.json')
+    const renameSync = fs.renameSync.bind(fs)
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation((source, destination) => {
+      if (path.resolve(String(destination)) === path.resolve(activeFile)) {
+        throw new Error('injected active-write failure')
+      }
+      return renameSync(source, destination)
+    })
+
+    try {
+      expect(() => deletePreset(rollbackProfileId, presetId)).toThrow(
+        'injected active-write failure'
+      )
+    } finally {
+      rename.mockRestore()
+    }
+
+    expect(getActivePresetId(rollbackProfileId)).toBe(presetId)
+    expect(fs.existsSync(path.join(rollbackProfileDir, 'presets', `${presetId}.json`))).toBe(true)
+    expect(
+      fs.existsSync(path.join(rollbackProfileDir, 'presets', 'envelopes', `${presetId}.json`))
+    ).toBe(true)
+    expect(regexService.listScripts(rollbackProfileId)).toHaveLength(2)
+    expect(scriptService.listScripts(rollbackProfileId)).toHaveLength(2)
+    expect(fs.existsSync(path.join(rollbackProfileDir, 'preset-deletion-backups'))).toBe(true)
+
+    fs.rmSync(rollbackProfileDir, { recursive: true, force: true })
   })
 })
