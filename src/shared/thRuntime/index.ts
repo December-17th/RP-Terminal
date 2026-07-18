@@ -342,6 +342,16 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     return true
   }
 
+  // replacePreset and setPreset are exact aliases — the same merge-onto-current-view-and-persist write.
+  // Keep ONE body here and expose it under both names (API compat: a card may call either). Both call
+  // shapes are tolerated: replacePreset(preset) and replacePreset(name, preset).
+  const replacePresetImpl = async (name?: any, incoming?: any): Promise<boolean> => {
+    const base = host.preset()
+    if (!base) return false
+    const payload = incoming !== undefined ? incoming : name
+    return host.savePreset(mergePresetView(base, payload))
+  }
+
   // --- TavernHelper helpers (bare + namespaced) ---
   const helpers: Record<string, any> = {
     // SYNC getters
@@ -417,19 +427,8 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     // identifier (so a partial edit never drops prompts) and persists a full normalized preset via the host.
     // `replacePreset`/`setPreset` are aliases; `updatePresetWith` takes an updater over the current shape.
     // Returns whether the write succeeded. (Exact write NAME/durability is F6-guarded — see savePreset.)
-    replacePreset: async (name?: any, incoming?: any) => {
-      const base = host.preset()
-      if (!base) return false
-      // Tolerate both replacePreset(preset) and replacePreset(name, preset) call shapes.
-      const payload = incoming !== undefined ? incoming : name
-      return host.savePreset(mergePresetView(base, payload))
-    },
-    setPreset: async (name?: any, incoming?: any) => {
-      const base = host.preset()
-      if (!base) return false
-      const payload = incoming !== undefined ? incoming : name
-      return host.savePreset(mergePresetView(base, payload))
-    },
+    replacePreset: replacePresetImpl,
+    setPreset: replacePresetImpl,
     updatePresetWith: async (updater?: any) => {
       const base = host.preset()
       if (!base) return false
