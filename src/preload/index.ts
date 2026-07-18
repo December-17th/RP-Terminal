@@ -143,6 +143,11 @@ const api = {
   listPresets: (profileId: string) => ipcRenderer.invoke('list-presets', profileId),
   getActivePresetId: (profileId: string) => ipcRenderer.invoke('get-active-preset-id', profileId),
   getActivePreset: (profileId: string) => ipcRenderer.invoke('get-active-preset', profileId),
+  // Envelope-backed active preset VIEW, read SYNCHRONOUSLY — the inline cardBridge host uses this at
+  // getPreset() time so its prompts_unused/extensions match the WCV transport (both read the same
+  // presetService.getActivePresetView). Mirrors the other sync card getters (pluginGlobalsGetSync, …).
+  getActivePresetViewSync: (profileId: string) =>
+    ipcRenderer.sendSync('get-active-preset-view-sync', profileId),
   getPreset: (profileId: string, presetId: string) =>
     ipcRenderer.invoke('get-preset', profileId, presetId),
   setActivePreset: (profileId: string, presetId: string) =>

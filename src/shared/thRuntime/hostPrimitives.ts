@@ -88,9 +88,10 @@ export type HostPresetPrompt = {
  * The Host's normalized view of the active ('in_use') preset — the M2 normalized runtime view plus any
  * envelope-derived `prompts_unused`. The runtime maps it into the TavernHelper `Preset` shape
  * (`{ settings, prompts, prompts_unused, extensions }`, docs-confirmed spec §7) AND keeps the legacy
- * `{ name, parameters }` fields cards already read. `prompts_unused` is envelope-derived (main transport
- * only — the inline transport has no envelope, so it is `[]` there; a data-availability difference, not a
- * behavior drift, since the runtime maps both identically).
+ * `{ name, parameters }` fields cards already read. `prompts_unused` + `extensions` are envelope-derived;
+ * BOTH transports source this view from the same main-side projection (`presetService.getActivePresetView`
+ * — WCV via its sync channel, inline via `getActivePresetViewSync`), so they are at parity (`[]`/`{}` only
+ * for a pre-envelope import).
  */
 export type HostPresetView = {
   name: string

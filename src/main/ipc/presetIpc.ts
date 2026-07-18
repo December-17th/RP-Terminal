@@ -9,6 +9,13 @@ export const registerPresetIpc = (ipcMain: IpcMain): void => {
     presetService.getActivePresetId(profileId)
   )
   ipcMain.handle('get-active-preset', (_, profileId) => presetService.getActivePreset(profileId))
+  // Sync active-preset VIEW (name/parameters/prompts/prompts_unused/extensions) — the envelope-backed
+  // Host preset view. The inline cardBridge host reads this synchronously at getPreset() time so it
+  // returns the SAME prompts_unused/extensions as the WCV transport: both bottom out in
+  // getActivePresetView (transport parity, CLAUDE.md). Mirrors the WCV `preset` sync channel (wcvIpc).
+  ipcMain.on('get-active-preset-view-sync', (e, profileId) => {
+    e.returnValue = presetService.getActivePresetView(String(profileId))
+  })
   ipcMain.handle('get-preset', (_, profileId, presetId) =>
     presetService.getPresetById(profileId, presetId)
   )

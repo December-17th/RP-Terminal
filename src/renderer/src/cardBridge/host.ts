@@ -13,7 +13,7 @@ import { buildRenderContext } from '../plugin/renderTemplate'
 import { storeRuleToTavernRegex } from '../../../shared/thRuntime/tavernRegex'
 import { categoryForType } from '../../../shared/worldAssets/types'
 import type { AssetType } from '../../../shared/worldAssets/types'
-import type { Host, CardCtx, FloorLike } from '../../../shared/thRuntime/types'
+import type { Host, CardCtx, FloorLike, HostPresetView } from '../../../shared/thRuntime/types'
 import type { VarOp } from '../../../shared/thRuntime/ops'
 
 // Global vars are per-PROFILE, so ALL inline card hosts in this renderer realm share ONE cache per profile
@@ -130,28 +130,15 @@ export function createInlineHost(ctx: CardCtx): Host {
     floors: () => floorsOf(),
     charData: () => cardOf(),
     charAvatarPath: () => null,
+    // getPreset('in_use') — the envelope-backed active preset VIEW, sourced synchronously from the SAME
+    // main-side projection (presetService.getActivePresetView) the WCV transport reads. Both transports
+    // bottom out in getActivePresetView, so prompts_unused/extensions are identical (transport parity —
+    // CLAUDE.md "two transports at parity"); the shared runtime maps this view into the TH getPreset shape.
     preset: () => {
-      const p = usePresetStore.getState().preset as any
-      if (!p) return null
-      // The inline transport has no lossless envelope, so prompts_unused/extensions are empty here (a
-      // data-availability difference from the WCV transport — the runtime maps both identically, so
-      // there is no behavior drift). `prompts` carries the full control surface a card toggles.
-      return {
-        name: p.name,
-        parameters: p.parameters || {},
-        prompts: (p.prompts || []).map((b: any) => ({
-          id: b.identifier,
-          identifier: b.identifier,
-          name: b.name,
-          role: b.role,
-          content: b.content,
-          enabled: b.enabled,
-          marker: b.marker,
-          injection_depth: b.injection_depth,
-          injection_order: b.injection_order
-        })),
-        prompts_unused: [],
-        extensions: {}
+      try {
+        return (window.api.getActivePresetViewSync(ctx.profileId) as HostPresetView | null) ?? null
+      } catch {
+        return null
       }
     },
     presetNames: () => usePresetStore.getState().presets.map((p: any) => p.name),
