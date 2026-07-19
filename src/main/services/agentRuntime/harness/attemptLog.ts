@@ -28,7 +28,8 @@ const renderText = (text: string, render: ((text: string) => string) | undefined
 
 const resolvePromptMessage = (
   message: PromptMessage,
-  request: HarnessExecuteRequest
+  request: HarnessExecuteRequest,
+  render: ((text: string) => string) | undefined
 ): { ok: true; content: string } | { ok: false; binding: string } => {
   const chunks: string[] = []
   for (const segment of message.content) {
@@ -36,7 +37,7 @@ const resolvePromptMessage = (
       // ADR 0021: the AUTHORED text evaluates through the injected renderer (ST-Prompt-Template EJS
       // + macros). Bound values below deliberately do NOT — upstream data must never become
       // executable template code. Fail-open: a renderer that throws yields the raw text.
-      chunks.push(renderText(segment.text, request.render))
+      chunks.push(renderText(segment.text, render))
       continue
     }
     const source = segment.source
@@ -64,8 +65,16 @@ export const buildAttemptLog = (
   const immutablePrefix: ProviderMessage[] = [{ role: 'system', content: policy }]
   const attemptLog: ProviderMessage[] = []
   let volatile = false
-  for (const prompt of definition.prompt) {
-    const rendered = resolvePromptMessage(prompt, request)
+  // ADR 0021: an upstream-assembled prompt SUBSTITUTES for the definition's own messages. It already
+  // ends with those messages (the preset assembles context, `prompt` is the task instruction), so
+  // nothing is lost by not reading `definition.prompt` here.
+  //
+  // An assembled prompt is also never re-rendered: the assembler already ran the engine over it, and
+  // a second pass would treat card/lore/history CONTENT as template code. Enforced structurally here
+  // rather than left to the caller to remember.
+  const render = request.prompt ? undefined : request.render
+  for (const prompt of request.prompt ?? definition.prompt) {
+    const rendered = resolvePromptMessage(prompt, request, render)
     if (!rendered.ok) {
       return {
         ok: false,

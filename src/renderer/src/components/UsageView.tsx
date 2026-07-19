@@ -5,6 +5,7 @@ import { useProfileStore } from '../stores/profileStore'
 import type { FloorMetrics } from '../../../shared/usageTypes'
 import { costFor, cacheHitPct } from '../../../shared/usageCost'
 import { TurnChart } from './TurnChart'
+import { useT } from '../i18n'
 
 const tok = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`)
 const pct = (n: number): string => `${Math.round(n)}%`
@@ -23,12 +24,13 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
   const activeChatId = useChatStore((s) => s.activeChatId)
   const setActiveChat = useChatStore((s) => s.setActiveChat)
   const activeProfile = useProfileStore((s) => s.activeProfile)
+  const t = useT()
 
   if (!settings) return null
   if (series.length === 0) {
     return (
       <div style={{ padding: 12 }}>
-        <div style={{ opacity: 0.6 }}>No metered turns in this chat yet.</div>
+        <div style={{ opacity: 0.6 }}>{t('usage.view.noMetered')}</div>
         <BackfillButton
           profileId={profileId}
           chatId={activeChatId}
@@ -82,24 +84,24 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
       <div
         style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px', fontSize: 13 }}
       >
-        <span>turns</span>
+        <span>{t('usage.turns')}</span>
         <span>{c.turns}</span>
-        <span>avg est cache</span>
+        <span>{t('usage.view.avgEstCache')}</span>
         <span>{pct(c.avgProxyPct)}</span>
-        <span>avg actual cache</span>
+        <span>{t('usage.view.avgActualCache')}</span>
         <span>{c.usageTurns ? pct(c.avgCacheHitPct) : '—'}</span>
-        <span>avg prompt tok</span>
+        <span>{t('usage.view.avgPromptTok')}</span>
         <span>{tok(c.avgPromptTokens)}</span>
-        <span>total read / write</span>
+        <span>{t('usage.view.totalReadWrite')}</span>
         <span>{c.usage ? `${tok(c.usage.cacheRead)} / ${tok(c.usage.cacheWrite)}` : '—'}</span>
-        <span>session $</span>
+        <span>{t('usage.sessionCost')}</span>
         <span>{sessionCost == null ? '—' : `$${sessionCost.toFixed(2)}`}</span>
       </div>
 
       <div>
         <div style={{ fontSize: 12, opacity: 0.7, display: 'flex', gap: 12 }}>
-          <span style={{ color: '#7aa2f7' }}>— est (proxy)</span>
-          <span style={{ color: '#4caf72' }}>— actual</span>
+          <span style={{ color: '#7aa2f7' }}>{t('usage.view.legendEst')}</span>
+          <span style={{ color: '#4caf72' }}>{t('usage.view.legendActual')}</span>
         </div>
         <TurnChart
           min={0}
@@ -115,12 +117,12 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
         <thead>
           <tr style={{ textAlign: 'right', opacity: 0.7 }}>
             <th style={{ textAlign: 'left' }}>#</th>
-            <th>prompt</th>
-            <th>est</th>
-            <th>actual</th>
-            <th>read</th>
-            <th>write</th>
-            <th>out</th>
+            <th>{t('usage.view.colPrompt')}</th>
+            <th>{t('usage.view.colEst')}</th>
+            <th>{t('usage.view.colActual')}</th>
+            <th>{t('usage.view.colRead')}</th>
+            <th>{t('usage.view.colWrite')}</th>
+            <th>{t('usage.view.colOut')}</th>
             <th>$</th>
           </tr>
         </thead>
@@ -145,8 +147,8 @@ export const UsageView: React.FC<{ profileId: string }> = ({ profileId }) => {
       </table>
 
       <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={() => exportData('csv')}>Export CSV</button>
-        <button onClick={() => exportData('json')}>Export JSON</button>
+        <button onClick={() => exportData('csv')}>{t('usage.view.exportCsv')}</button>
+        <button onClick={() => exportData('json')}>{t('usage.view.exportJson')}</button>
         <BackfillButton
           profileId={profileId}
           chatId={activeChatId}
@@ -163,6 +165,7 @@ const BackfillButton: React.FC<{
   onDone: () => void
 }> = ({ profileId, chatId, onDone }) => {
   const [busy, setBusy] = React.useState(false)
+  const t = useT()
   if (!chatId) return null
   return (
     <button
@@ -174,7 +177,7 @@ const BackfillButton: React.FC<{
         onDone()
       }}
     >
-      {busy ? 'Backfilling…' : 'Backfill proxy'}
+      {busy ? t('usage.view.backfilling') : t('usage.view.backfill')}
     </button>
   )
 }

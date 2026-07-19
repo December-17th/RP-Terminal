@@ -389,9 +389,10 @@ describe('InvocationRuntime prompt-renderer injection', () => {
         evidence: { attempts: [] }
       })
     )
-    const promptRenderer = vi.fn(() => (text: string) => `rendered:${text}`)
+    const agent = catalogAgent('A')
+    const promptRenderer = vi.fn(() => ({ render: (text: string) => `rendered:${text}` }))
     const runtime = createInvocationRuntime({
-      catalog: { get: () => catalogAgent('A') },
+      catalog: { get: () => agent },
       harness: { execute, stop: () => false },
       floor: floorPort,
       promptRenderer
@@ -399,8 +400,16 @@ describe('InvocationRuntime prompt-renderer injection', () => {
 
     await runtime.run({ profileId: 'p', chatId: 'c', floor: 9, agent: 'A' })
 
-    expect(promptRenderer).toHaveBeenCalledWith({ profileId: 'p', chatId: 'c', floor: 9 })
+    // ADR 0021 slice 3 widened the scope from profile/chat/floor to include the Agent (and any
+    // invocation options), because the port now decides BETWEEN rendering and preset assembly.
+    expect(promptRenderer).toHaveBeenCalledWith({
+      profileId: 'p',
+      chatId: 'c',
+      floor: 9,
+      agent: agent.effective
+    })
     expect(execute.mock.calls[0][0].render?.('x')).toBe('rendered:x')
+    expect(execute.mock.calls[0][0]).not.toHaveProperty('prompt')
   })
 
   it('omits the renderer entirely when no port is wired', async () => {

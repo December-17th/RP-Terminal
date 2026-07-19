@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import {
   normalizeAgentName,
   parseInvocationPlan,
+  type AgentDefinition,
   type InvocationOptions,
   type InvocationPlanCall,
   type JsonObject,
@@ -85,16 +86,31 @@ export interface InvocationRunStorePort {
 }
 
 /**
- * Prompt-policy seam (ADR 0021). The Invocation Runtime knows the chat scope (profile/chat/floor)
- * but must NOT own — or import — the template engine, so it asks this injected port for a renderer
- * and hands it to the Harness. Wired at the `InvocationRuntimeService` composition root; absent in
- * lightweight/test compositions, where prompts stay verbatim.
+ * Prompt-policy seam (ADR 0021). The Invocation Runtime knows the chat scope (profile/chat/floor/
+ * Agent) but must NOT own — or import — the template engine or the preset assembler, so it asks this
+ * injected port to PRODUCE THE PROMPT and hands the answer to the Harness. Wired at the
+ * `InvocationRuntimeService` composition root; absent in lightweight/test compositions, where prompts
+ * stay verbatim.
+ *
+ * Two shapes come back, and only one at a time (slice 3 generalised this from "render text"):
+ *  · `render` — a messages Agent: its authored text evaluates through the engine, unchanged since
+ *    slice 2;
+ *  · `prompt` — a preset Agent: fully assembled, already-rendered messages that SUBSTITUTE for the
+ *    definition's own. The Agent still runs the complete `execute` path (tools, retries, result
+ *    contract); only the messages differ.
  */
+export interface InvocationPromptResult {
+  render?: (text: string) => string
+  prompt?: AgentDefinition['prompt']
+}
+
 export type InvocationPromptRendererPort = (scope: {
   profileId: string
   chatId: string
   floor: number
-}) => ((text: string) => string) | undefined
+  agent: AgentDefinition
+  options?: InvocationOptions
+}) => InvocationPromptResult | undefined
 
 export interface InvocationRequest {
   profileId: string
@@ -433,11 +449,14 @@ export const createInvocationRuntime = ({
         const disposeOuter = linkSignal(item.controller.signal, attemptController)
         let execution: HarnessExecutionResult
         // Built per attempt, not per invocation: a restarted attempt re-reads the floor it renders
-        // against, so the prompt reflects the source snapshot it is actually executing on.
-        const render = promptRenderer?.({
+        // (or assembles) against, so the prompt reflects the source snapshot it is actually executing
+        // on. For a preset Agent that is load-bearing — assembly reads the live chat state.
+        const prompt = promptRenderer?.({
           profileId: item.request.profileId,
           chatId: item.request.chatId,
-          floor: item.request.floor
+          floor: item.request.floor,
+          agent: resolvedAgent.effective,
+          ...(item.request.options ? { options: item.request.options } : {})
         })
         try {
           execution = await harness.execute({
@@ -457,7 +476,8 @@ export const createInvocationRuntime = ({
               : invocationOptions(item.request.options),
             ...(source.promptValues ? { promptValues: source.promptValues } : {}),
             ...(source.history !== undefined ? { history: source.history } : {}),
-            ...(render ? { render } : {}),
+            ...(prompt?.render ? { render: prompt.render } : {}),
+            ...(prompt?.prompt ? { prompt: prompt.prompt } : {}),
             signal: attemptController.signal,
             ...(corrective
               ? {

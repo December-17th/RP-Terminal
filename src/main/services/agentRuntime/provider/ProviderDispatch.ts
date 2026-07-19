@@ -297,8 +297,12 @@ export const createProviderDispatch = (
         )
       }
       const generationPreset = (options.getActivePreset ?? getActivePreset)(selection.profileId)
+      // Parameter precedence (ADR 0021 §2), lowest to highest:
+      //   resolved generation preset  →  the Agent's bundled preset  →  the invocation's own override.
+      // The middle layer is the only thing this ADR added; the outer two are unchanged.
       const parameters = {
         ...generationPreset.parameters,
+        ...selection.presetBundleParameters,
         ...selection.generationParameters
       }
       const model = selection.model ?? apiPreset.model

@@ -722,6 +722,11 @@ export const createAgentHarness = ({
         profileId: request.profileId,
         ...(resolved.value.apiPresetId ? { apiPresetId: resolved.value.apiPresetId } : {}),
         ...(resolved.value.model ? { model: resolved.value.model } : {}),
+        // ADR 0021 §2: a bundled preset's parameter overrides ride BELOW the invocation's own, so the
+        // Harness forwards them as their own selection layer rather than pre-merging them here.
+        ...(request.definition.preset?.generationParameters
+          ? { presetBundleParameters: request.definition.preset.generationParameters }
+          : {}),
         ...(resolved.value.generationParameters
           ? { generationParameters: resolved.value.generationParameters }
           : {})

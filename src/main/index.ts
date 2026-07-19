@@ -16,6 +16,7 @@ import * as avatarProtocol from './services/avatarProtocol'
 // characterService → workflowService cycle). Must load before any card import runs.
 import './services/cardWorkflowBridge'
 import './services/cardAgentCatalogBridge'
+import './services/agentPresetAssemblyBridge'
 import { registerIpc } from './ipc'
 import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'

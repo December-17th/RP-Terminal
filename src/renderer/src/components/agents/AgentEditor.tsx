@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { AgentDefinition, NotificationPolicy } from '../../../../shared/agentRuntime'
+import type {
+  AgentDefinition,
+  AgentLorebookSelection,
+  AgentPresetBundle,
+  GenerationParameters,
+  NotificationPolicy
+} from '../../../../shared/agentRuntime'
 import { useT } from '../../i18n'
 
 type Draft = AgentDefinition
@@ -30,6 +36,22 @@ export const validateDraft = (draft: Draft): FieldError[] => {
   if (draft.result.mode !== 'tools-only' && draft.result.saveAs) {
     if (!draft.result.saveAs.startsWith('variables.__rpt.agent_results.')) {
       errors.push({ field: 'result.saveAs', message: 'slotPath' })
+    }
+  }
+  const bundle = draft.preset
+  if (bundle) {
+    const envelope: unknown = bundle.preset
+    if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
+      errors.push({ field: 'preset.envelope', message: 'envelopeObject' })
+    }
+    const selection = bundle.lorebooks
+    if (selection && selection.mode === 'explicit') {
+      if (selection.lorebooks.length === 0) {
+        errors.push({ field: 'preset.lorebooks', message: 'lorebooksRequired' })
+      }
+      selection.lorebooks.forEach((name, index) => {
+        if (!name.trim()) errors.push({ field: `preset.lorebooks.${index}`, message: 'required' })
+      })
     }
   }
   const d = draft.defaults
@@ -86,6 +108,62 @@ const JsonField = ({
 }
 
 /**
+ * A line-per-item string list. Holds its own text so a blank or partially typed line does not get
+ * eaten between keystrokes; the parsed list only ever contains trimmed, non-empty entries.
+ */
+const LineListField = ({
+  label,
+  value,
+  onChange,
+  disabled,
+  rows = 3
+}: {
+  label: string
+  value: string[] | undefined
+  onChange: (list: string[]) => void
+  disabled: boolean
+  rows?: number
+}): React.ReactElement => {
+  const [text, setText] = useState(() => (value ?? []).join('\n'))
+
+  return (
+    <label className="agent-field">
+      <span>{label}</span>
+      <textarea
+        disabled={disabled}
+        rows={rows}
+        spellCheck={false}
+        value={text}
+        onChange={(event) => {
+          setText(event.target.value)
+          onChange(
+            event.target.value
+              .split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean)
+          )
+        }}
+      />
+    </label>
+  )
+}
+
+/** The numeric knobs of `GenerationParameters`; `stop` is a string list and is edited separately. */
+const NUMERIC_GENERATION_PARAMETERS = [
+  'temperature',
+  'max_tokens',
+  'top_p',
+  'top_k',
+  'frequency_penalty',
+  'presence_penalty',
+  'repetition_penalty',
+  'min_p',
+  'top_a'
+] as const
+
+type NumericGenerationParameter = (typeof NUMERIC_GENERATION_PARAMETERS)[number]
+
+/**
  * The full definition form: identity, prompt, result contract, tools, model, and execution defaults.
  * Prompt messages get a real repeating editor (add / remove / reorder / role); `tools` and
  * `inputSchema` are JSON fields because both are open-ended JSON Schema shapes with no fixed form.
@@ -118,6 +196,76 @@ export function AgentEditor({
   const patch = (next: Partial<Draft>): void => setDraft({ ...draft, ...next })
   const patchDefaults = (next: Partial<Draft['defaults']>): void =>
     setDraft({ ...draft, defaults: { ...draft.defaults, ...next } })
+
+  const bundle = draft.preset
+
+  /**
+   * The whole point of going through here: "no bundle" is the ABSENCE of the key, never
+   * `preset: undefined`. A spread-based patch would leave the key behind and change what a saved
+   * definition serialises to, so removal deletes it outright.
+   */
+  const setBundle = (next: AgentPresetBundle | undefined): void => {
+    const copy: Draft = { ...draft }
+    if (next) copy.preset = next
+    else delete copy.preset
+    setDraft(copy)
+  }
+
+  /** Same rule one level down: an empty override set drops the optional key rather than storing `{}`. */
+  const setGenerationParameters = (next: GenerationParameters): void => {
+    if (!bundle) return
+    const copy: AgentPresetBundle = { ...bundle }
+    if (Object.keys(next).length > 0) copy.generationParameters = next
+    else delete copy.generationParameters
+    setBundle(copy)
+  }
+
+  const setGenerationParameter = (
+    key: NumericGenerationParameter,
+    value: number | undefined
+  ): void => {
+    const next: GenerationParameters = { ...(bundle?.generationParameters ?? {}) }
+    if (value === undefined || Number.isNaN(value)) delete next[key]
+    else next[key] = value
+    setGenerationParameters(next)
+  }
+
+  const setStopSequences = (stop: string[]): void => {
+    const next: GenerationParameters = { ...(bundle?.generationParameters ?? {}) }
+    if (stop.length > 0) next.stop = stop
+    else delete next.stop
+    setGenerationParameters(next)
+  }
+
+  const setLorebookSelection = (next: AgentLorebookSelection | undefined): void => {
+    if (!bundle) return
+    const copy: AgentPresetBundle = { ...bundle }
+    if (next) copy.lorebooks = next
+    else delete copy.lorebooks
+    setBundle(copy)
+  }
+
+  const setEntryFilter = (kind: 'include' | 'exclude', titles: string[]): void => {
+    const selection = bundle?.lorebooks
+    if (!selection) return
+    const entries = { ...(selection.entries ?? {}) }
+    if (titles.length > 0) entries[kind] = titles
+    else delete entries[kind]
+    const next = { ...selection }
+    if (Object.keys(entries).length > 0) next.entries = entries
+    else delete next.entries
+    setLorebookSelection(next)
+  }
+
+  const setLorebookNames = (names: string[]): void => {
+    const selection = bundle?.lorebooks
+    if (!selection || selection.mode !== 'explicit') return
+    setLorebookSelection({ ...selection, lorebooks: names })
+  }
+
+  /** Narrowed once here: a property path cannot stay narrowed inside the JSX event closures. */
+  const explicitLorebooks =
+    bundle?.lorebooks?.mode === 'explicit' ? bundle.lorebooks.lorebooks : undefined
 
   const messageText = (index: number): string =>
     draft.prompt[index]!.content.map((part) => (part.type === 'text' ? part.text : '')).join('')
@@ -262,6 +410,153 @@ export function AgentEditor({
         >
           {t('agents.editor.addMessage')}
         </button>
+      </section>
+
+      <section className="agent-editor__section">
+        <h4>{t('agents.editor.preset.section')}</h4>
+        {!bundle ? (
+          <>
+            <p className="agent-editor__note">{t('agents.editor.preset.none')}</p>
+            <button type="button" disabled={readOnly} onClick={() => setBundle({ preset: {} })}>
+              {t('agents.editor.preset.add')}
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="agent-editor__note">{t('agents.editor.preset.envelopeHint')}</p>
+            <JsonField
+              t={t}
+              label={t('agents.editor.preset.envelope')}
+              value={bundle.preset}
+              rows={10}
+              onError={setJsonError}
+              onChange={(envelope) => setBundle({ ...bundle, preset: envelope as never })}
+            />
+            {errorFor('preset.envelope') ? (
+              <em className="agent-field__error">{t('agents.editor.err.envelopeObject')}</em>
+            ) : null}
+
+            <h5 className="agent-editor__subhead">{t('agents.editor.preset.parameters')}</h5>
+            <p className="agent-editor__note">{t('agents.editor.preset.parametersHint')}</p>
+            <div className="agent-field-grid">
+              {NUMERIC_GENERATION_PARAMETERS.map((key) => (
+                <label className="agent-field agent-field--inline" key={key}>
+                  <span>{t(`agents.editor.preset.param.${key}`)}</span>
+                  <input
+                    type="number"
+                    disabled={readOnly}
+                    placeholder={t('agents.editor.preset.inherit')}
+                    value={bundle.generationParameters?.[key] ?? ''}
+                    onChange={(event) =>
+                      setGenerationParameter(
+                        key,
+                        event.target.value === '' ? undefined : Number(event.target.value)
+                      )
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+            <LineListField
+              label={t('agents.editor.preset.stop')}
+              value={bundle.generationParameters?.stop}
+              disabled={readOnly}
+              onChange={setStopSequences}
+            />
+
+            <h5 className="agent-editor__subhead">{t('agents.editor.preset.lorebooks')}</h5>
+            <label className="agent-field agent-field--inline">
+              <span>{t('agents.editor.preset.lorebookMode')}</span>
+              <select
+                disabled={readOnly}
+                value={bundle.lorebooks?.mode ?? ''}
+                onChange={(event) => {
+                  const mode = event.target.value
+                  const entries = bundle.lorebooks?.entries
+                  if (mode === 'session') setLorebookSelection({ mode, ...(entries ? { entries } : {}) })
+                  else if (mode === 'explicit')
+                    setLorebookSelection({ mode, lorebooks: [], ...(entries ? { entries } : {}) })
+                  else setLorebookSelection(undefined)
+                }}
+              >
+                <option value="">{t('agents.editor.preset.modeUnset')}</option>
+                <option value="session">{t('agents.editor.preset.modeSession')}</option>
+                <option value="explicit">{t('agents.editor.preset.modeExplicit')}</option>
+              </select>
+            </label>
+
+            {explicitLorebooks ? (
+              <div className="agent-field">
+                <span>{t('agents.editor.preset.lorebookNames')}</span>
+                {errorFor('preset.lorebooks') ? (
+                  <em className="agent-field__error">{t('agents.editor.err.lorebooksRequired')}</em>
+                ) : null}
+                {explicitLorebooks.map((name, index) => (
+                  <div key={index}>
+                    <div className="agent-lorebook-row">
+                      <input
+                        disabled={readOnly}
+                        className={
+                          errorFor(`preset.lorebooks.${index}`) ? 'agent-input--invalid' : ''
+                        }
+                        value={name}
+                        placeholder={t('agents.editor.preset.lorebookNamePlaceholder')}
+                        onChange={(event) =>
+                          setLorebookNames(
+                            explicitLorebooks.map((existing, i) =>
+                              i === index ? event.target.value : existing
+                            )
+                          )
+                        }
+                      />
+                      <button
+                        type="button"
+                        disabled={readOnly}
+                        onClick={() =>
+                          setLorebookNames(explicitLorebooks.filter((_, i) => i !== index))
+                        }
+                      >
+                        {t('agents.editor.preset.removeLorebook')}
+                      </button>
+                    </div>
+                    {errorFor(`preset.lorebooks.${index}`) ? (
+                      <em className="agent-field__error">{t('agents.editor.err.required')}</em>
+                    ) : null}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  disabled={readOnly}
+                  onClick={() => setLorebookNames([...explicitLorebooks, ''])}
+                >
+                  {t('agents.editor.preset.addLorebook')}
+                </button>
+              </div>
+            ) : null}
+
+            {bundle.lorebooks ? (
+              <>
+                <p className="agent-editor__note">{t('agents.editor.preset.entriesHint')}</p>
+                <LineListField
+                  label={t('agents.editor.preset.include')}
+                  value={bundle.lorebooks.entries?.include}
+                  disabled={readOnly}
+                  onChange={(titles) => setEntryFilter('include', titles)}
+                />
+                <LineListField
+                  label={t('agents.editor.preset.exclude')}
+                  value={bundle.lorebooks.entries?.exclude}
+                  disabled={readOnly}
+                  onChange={(titles) => setEntryFilter('exclude', titles)}
+                />
+              </>
+            ) : null}
+
+            <button type="button" disabled={readOnly} onClick={() => setBundle(undefined)}>
+              {t('agents.editor.preset.remove')}
+            </button>
+          </>
+        )}
       </section>
 
       <section className="agent-editor__section">

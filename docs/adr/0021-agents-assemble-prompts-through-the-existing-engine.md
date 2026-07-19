@@ -12,10 +12,23 @@ Implemented on `agent-system` 2026-07-19:
   `InvocationRuntime`, wired at the `InvocationRuntimeService` composition root. The Harness imports
   no engine; `HarnessPreparedRequest` has no `render` field, so Classic's prepared path cannot
   acquire one and stays byte-identical.
-- **§1/§2/§3/§5 contract surface only** — `AgentPresetBundle` (envelope + optional
-  `generationParameters` + optional `lorebooks`) is defined and parsed in `shared/agentRuntime`, but
-  **nothing consumes it yet**. Preset-driven assembly, parameter-override precedence, and lorebook
-  selection are NOT implemented.
+- **§1/§3/§5 (preset-driven assembly)** — `agentRuntime/prompt/agentPresetAssembler.ts` holds the
+  registration slot + the planner that decides, per attempt, between rendering and assembly;
+  `generation/agentPresetAssembly.ts` is the real assembler (owning floor's `buildGenContext`,
+  `matchAcross`, `assemblePrompt`), installed by `services/agentPresetAssemblyBridge.ts` — the same
+  bridge shape `cardAgentCatalogBridge.ts` uses, because `generation → agentRuntime` already exists
+  and the reverse import would close a cycle. The assembled messages substitute for
+  `definition.prompt` via `HarnessExecuteRequest.prompt`, so a preset Agent still runs the FULL
+  `execute` path (tools, retries, result contract). `HarnessPreparedRequest` gained nothing.
+  History is `[]` unless a `HistoryPolicy` is declared, and `maxFloors`/`maxTokens`/
+  `includeUserMessages`/`includePlayerResults` are enforced in `historyMessages`.
+- **§2 (parameter precedence)** — one layer inserted in `ProviderDispatch.resolve` as
+  `ProviderSelection.presetBundleParameters`: resolved generation preset → bundle → invocation
+  override. `AgentHarness.execute` forwards it from `definition.preset.generationParameters`.
+- **Unspecified by this ADR, decided in implementation:** `includePlayerResults` renders the owning
+  floor's `variables.__rpt.agent_results` as ONE trailing system block, not a per-floor diff; entry
+  filters match by `comment` and therefore match every entry sharing a title (documented in
+  `filterEntries`); an explicit lorebook name that resolves to nothing is logged and skipped.
 
 Known gap: `initTemplates()` is fire-and-forget at `src/main/index.ts:194`, so an Agent invoked in the
 first moments of startup can find the engine unready and fall open to raw prompt text. Classic shares
@@ -51,21 +64,27 @@ composition."
 
 ## Decision
 
-**Assembly happens BEFORE the Harness. The Harness keeps receiving prepared messages.**
+**Assembly happens BEFORE the Harness. The Harness never assembles; it receives finished messages.**
 
-Both Agent kinds converge on the seam Classic already uses, `AgentHarness.executePrepared`:
+Both Agent kinds resolve their messages outside the Harness and hand them in:
 
 ```text
 messages Agent → templateEngine (EJS + macros + TH shim) ─┐
-                                                          ├→ prepared messages → executePrepared
+                                                          ├→ HarnessExecuteRequest.prompt → execute
 preset Agent   → assemblePrompt(GenContext + bundle) ─────┘
 ```
 
+They enter through `execute`, NOT `executePrepared`. That correction matters and was made during
+implementation: a preset Agent still needs the full `execute` path — tools, retries, Result Contract —
+so routing it to the prepared path would have silently stripped those. The assembled messages instead
+substitute for `definition.prompt` via `HarnessExecuteRequest.prompt`. `executePrepared` remains
+Classic's private door and gained nothing, which is what keeps Classic byte-identical.
+
 Consequences of that placement: the Harness gains nothing, its tool loop is untouched, and prompt
-policy stays in `generation/`. `InvocationRuntime` must NOT import `generation/` directly — that
-inverts the existing `generation → agentRuntime` direction and risks the `no-circular` rule. The
-assembler is injected as a swappable seam wired at the `InvocationRuntimeService` composition root,
-the pattern yuzu WP-S2 used for `YssRepairFn`.
+policy stays in `generation/`. `agentRuntime` must NOT import `generation/` — that inverts the
+existing `generation → agentRuntime` direction and closes a cycle. `agentRuntime` therefore owns an
+empty registration slot that a generation-side bridge fills at startup, the same shape
+`cardAgentCatalogBridge.ts` uses.
 
 ### 1. An Agent declares either messages or a bundled preset
 

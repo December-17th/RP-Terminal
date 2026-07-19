@@ -21,6 +21,12 @@ export interface ProviderSelection {
   profileId: string
   apiPresetId?: string
   model?: string
+  /**
+   * ADR 0021 §2: the bundled preset's own parameter overrides. Exactly ONE layer, sitting directly
+   * ABOVE the resolved API preset's parameters and BELOW `generationParameters` — an Agent that ships
+   * `temperature: 0.2` in its bundle is still overridable per invocation.
+   */
+  presetBundleParameters?: Partial<PresetParameters>
   generationParameters?: Partial<PresetParameters>
 }
 

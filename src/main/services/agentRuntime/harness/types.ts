@@ -2,7 +2,8 @@ import type {
   AgentDefinition,
   InvocationOptions,
   JsonObject,
-  JsonValue
+  JsonValue,
+  PromptMessage
 } from '../../../../shared/agentRuntime'
 import type { SceneVocabulary } from '../../../../shared/yuzu/sceneSchema'
 import type {
@@ -36,6 +37,19 @@ export interface HarnessExecuteRequest {
    * fails is expected to return its input, and `buildAttemptLog` guards that contract anyway.
    */
   render?: (text: string) => string
+  /**
+   * Prompt messages that SUBSTITUTE for `definition.prompt` (ADR 0021, slices 3/4). A preset Agent's
+   * prompt is assembled upstream — card, persona, world info, opt-in history, then the Agent's own
+   * `prompt` as the task instruction — and arrives here already ordered and already rendered.
+   *
+   * The Harness stays free of prompt policy: it does not know a preset was involved, only that it was
+   * handed messages instead of reading them off the definition. Everything else (harness policy line,
+   * serialized input, addendum, corrective turn, tools, retries) is unchanged, which is why a preset
+   * Agent still runs the FULL `execute` path and never `executePrepared`.
+   *
+   * Deliberately NOT on `HarnessPreparedRequest`: Classic's prepared path must stay renderer-free.
+   */
+  prompt?: PromptMessage[]
   /**
    * Fired ONCE, synchronously, with the exact messages the attempt log was built from — before any
    * provider call. This is the ONLY way an observer can obtain the rendered prompt: templates read

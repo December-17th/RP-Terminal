@@ -4129,6 +4129,19 @@ select {
   border-left: 2px solid var(--rpt-app-warning, var(--rpt-border, #999));
   background: var(--rpt-surface-2, rgba(127, 127, 127, 0.08));
 }
+.agent-editor__subhead {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  color: var(--rpt-text-secondary);
+}
+.agent-lorebook-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.agent-lorebook-row input {
+  flex: 1 1 auto;
+}
 .agent-editor__actions {
   display: flex;
   justify-content: flex-end;
