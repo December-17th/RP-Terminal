@@ -16,6 +16,7 @@ import {
   type InvocationRuntime,
   type InvocationSourceSnapshot
 } from './invocation'
+import { createAgentPromptRenderer } from './prompt'
 import { createProviderDispatch } from './provider'
 import { agentRunStore } from './runs/AgentRunStore'
 import { createHarnessRunAdapter } from './runs/HarnessRunAdapter'
@@ -238,7 +239,10 @@ export const initializeInvocationRuntime = (): InvocationRuntime => {
     },
     harness,
     floor: createSessionInvocationFloorPort(),
-    runStore: agentRunStore
+    runStore: agentRunStore,
+    // ADR 0021: prompt policy is wired HERE, at the composition root, and injected downward as a
+    // plain `(text) => string`. Neither the Invocation Runtime nor the Harness imports the engine.
+    promptRenderer: createAgentPromptRenderer()
   })
   const active = runtime
   disposeBeforeDelete = agentRunStore.onBeforeDeleteFromFloor((chatId, fromFloor) => {

@@ -36,6 +36,9 @@ export interface HarnessRunRequest {
   options?: Omit<InvocationOptions, 'floor' | 'input' | 'inputBindings'>
   promptValues?: Record<string, JsonValue>
   history?: JsonValue
+  /** Injected prompt-text renderer (ADR 0021). Threaded through to the Harness unchanged, and used
+   *  here too so the Run Record's `renderedPrompt` stores what was actually sent. */
+  render?: (text: string) => string
   toolScope?: ToolExecutionScope
   signal?: AbortSignal
   yssVocabulary?: SceneVocabulary
@@ -157,6 +160,7 @@ export const createHarnessRunAdapter = ({
         options: resolved.value,
         ...(request.promptValues ? { promptValues: request.promptValues } : {}),
         ...(request.history !== undefined ? { history: request.history } : {}),
+        ...(request.render ? { render: request.render } : {}),
         ...(request.yssVocabulary ? { yssVocabulary: request.yssVocabulary } : {}),
         ...(request.corrective ? { corrective: request.corrective } : {})
       }

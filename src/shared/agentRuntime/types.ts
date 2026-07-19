@@ -71,7 +71,45 @@ export interface GenerationParameters {
   stop?: string[]
 }
 
+/**
+ * The lossless ST prompt-preset envelope (ADR 0018) embedded in an Agent Definition so the Agent
+ * stays self-contained and portable. Opaque at the contract layer: the envelope's internals are the
+ * preset layer's business, and modelling them here would drag preset code across the shared/main
+ * module boundary. Consumers parse it themselves.
+ */
+export type AgentPresetEnvelope = JsonObject
+
+/**
+ * Entry-level narrowing applied after lorebook selection. Names match a lorebook entry's `comment`
+ * (its ST title). `exclude` is applied after `include`.
+ */
+export interface AgentLorebookEntryFilter {
+  include?: string[]
+  exclude?: string[]
+}
+
+/**
+ * Which lorebooks feed assembly: the session's normal set, or an explicit list of lorebooks by name
+ * (never by user-local id — a portable Agent cannot reference one).
+ */
+export type AgentLorebookSelection =
+  | { mode: 'session'; entries?: AgentLorebookEntryFilter }
+  | { mode: 'explicit'; lorebooks: string[]; entries?: AgentLorebookEntryFilter }
+
+/**
+ * A prompt preset bundled into an Agent Definition (ADR 0021). Its presence turns on full
+ * preset-driven assembly; the Definition's `prompt` remains the Agent's task instruction.
+ */
+export interface AgentPresetBundle {
+  preset: AgentPresetEnvelope
+  generationParameters?: GenerationParameters
+  lorebooks?: AgentLorebookSelection
+}
+
 export type NotificationPolicy = 'none' | 'failure' | 'completion'
+
+/** The player-facing roles an Agent can be bound to. Re-exported by the main-side AgentCatalog. */
+export type AgentRole = 'classic.narrator' | 'yuzu.sceneDirector'
 
 export interface InvocationDefaults {
   required: boolean
@@ -91,6 +129,8 @@ export interface AgentDefinition {
   name: string
   description?: string
   prompt: PromptMessage[]
+  /** Optional bundled prompt preset (ADR 0021). Absent for a plain messages Agent. */
+  preset?: AgentPresetBundle
   inputSchema: JsonSchema
   result: ResultContract
   tools: AgentToolDefinition[]

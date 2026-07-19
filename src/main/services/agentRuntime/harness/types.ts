@@ -29,6 +29,13 @@ export interface HarnessExecuteRequest {
   options?: InvocationOptions
   promptValues?: Record<string, JsonValue>
   history?: JsonValue
+  /**
+   * Prompt-text renderer injected by the caller that OWNS prompt policy (ADR 0021): the Harness
+   * never imports the template engine, it only applies the function it is handed to the authored
+   * text of each prompt message. Absent → text is used verbatim. Must never throw; a renderer that
+   * fails is expected to return its input, and `buildAttemptLog` guards that contract anyway.
+   */
+  render?: (text: string) => string
   signal?: AbortSignal
   yssVocabulary?: SceneVocabulary
   corrective?: {

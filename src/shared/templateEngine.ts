@@ -141,6 +141,14 @@ export const initEngine = async (loader: () => Promise<QuickJSWASMModule>): Prom
   }
 }
 
+/**
+ * Has a quickjs module been loaded (`initEngine`) in THIS process? Callers that must distinguish
+ * "the engine ran and the template failed" from "there is no engine yet" need this: without it both
+ * look like a clean `evalTemplateDetailed` result, because the not-initialized path deliberately
+ * strips tags instead of erroring. Agent prompt rendering uses it to fall back to the RAW text.
+ */
+export const isEngineReady = (): boolean => QJS !== null
+
 export const hasTags = (s: string): boolean => s.includes('<%')
 export const stripTags = (s: string): string => s.replace(/<%[\s\S]*?%>/g, '')
 

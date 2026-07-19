@@ -84,6 +84,18 @@ export interface InvocationRunStorePort {
   deleteFromFloor(chatId: string, fromFloor: number): void
 }
 
+/**
+ * Prompt-policy seam (ADR 0021). The Invocation Runtime knows the chat scope (profile/chat/floor)
+ * but must NOT own — or import — the template engine, so it asks this injected port for a renderer
+ * and hands it to the Harness. Wired at the `InvocationRuntimeService` composition root; absent in
+ * lightweight/test compositions, where prompts stay verbatim.
+ */
+export type InvocationPromptRendererPort = (scope: {
+  profileId: string
+  chatId: string
+  floor: number
+}) => ((text: string) => string) | undefined
+
 export interface InvocationRequest {
   profileId: string
   chatId: string
@@ -181,6 +193,7 @@ interface Dependencies {
   harness: InvocationHarnessPort
   floor: InvocationFloorPort
   runStore?: InvocationRunStorePort
+  promptRenderer?: InvocationPromptRendererPort
   createId?: () => string
 }
 
@@ -277,6 +290,7 @@ export const createInvocationRuntime = ({
   harness,
   floor,
   runStore,
+  promptRenderer,
   createId = () => crypto.randomUUID()
 }: Dependencies): InvocationRuntime => {
   const identities = new Map<string, QueuedInvocation>()
@@ -418,6 +432,13 @@ export const createInvocationRuntime = ({
         item.stale = false
         const disposeOuter = linkSignal(item.controller.signal, attemptController)
         let execution: HarnessExecutionResult
+        // Built per attempt, not per invocation: a restarted attempt re-reads the floor it renders
+        // against, so the prompt reflects the source snapshot it is actually executing on.
+        const render = promptRenderer?.({
+          profileId: item.request.profileId,
+          chatId: item.request.chatId,
+          floor: item.request.floor
+        })
         try {
           execution = await harness.execute({
             invocationId: item.invocationId,
@@ -436,6 +457,7 @@ export const createInvocationRuntime = ({
               : invocationOptions(item.request.options),
             ...(source.promptValues ? { promptValues: source.promptValues } : {}),
             ...(source.history !== undefined ? { history: source.history } : {}),
+            ...(render ? { render } : {}),
             signal: attemptController.signal,
             ...(corrective
               ? {

@@ -21,6 +21,7 @@ export {
   evalTemplateDetailed,
   hasTags,
   stripTags,
+  isEngineReady,
   buildTemplateContext
 } from '../../shared/templateEngine'
 export type {

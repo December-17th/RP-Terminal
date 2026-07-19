@@ -140,6 +140,49 @@ const GenerationParametersSchema = z.strictObject({
   stop: z.array(z.string()).optional()
 })
 
+const LorebookEntryFilterSchema = z
+  .strictObject({
+    include: z.array(NonEmptyStringSchema).min(1).optional(),
+    exclude: z.array(NonEmptyStringSchema).min(1).optional()
+  })
+  .superRefine((filter, context) => {
+    if (filter.include === undefined && filter.exclude === undefined) {
+      context.addIssue({
+        code: 'custom',
+        message: 'entries must narrow with include or exclude'
+      })
+      return
+    }
+    const included = new Set(filter.include ?? [])
+    for (const [index, name] of (filter.exclude ?? []).entries()) {
+      if (included.has(name)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['exclude', index],
+          message: `entry "${name}" cannot be both included and excluded`
+        })
+      }
+    }
+  })
+
+const LorebookSelectionSchema = z.discriminatedUnion('mode', [
+  z.strictObject({
+    mode: z.literal('session'),
+    entries: LorebookEntryFilterSchema.optional()
+  }),
+  z.strictObject({
+    mode: z.literal('explicit'),
+    lorebooks: z.array(NonEmptyStringSchema).min(1),
+    entries: LorebookEntryFilterSchema.optional()
+  })
+])
+
+const AgentPresetBundleSchema = z.strictObject({
+  preset: JsonObjectSchema,
+  generationParameters: GenerationParametersSchema.optional(),
+  lorebooks: LorebookSelectionSchema.optional()
+})
+
 const InvocationDefaultFields = {
   required: z.boolean().default(true),
   maxSteps: z.int().positive().optional(),
@@ -179,6 +222,7 @@ const RawAgentDefinitionSchema = z.strictObject({
   name: NonEmptyStringSchema,
   description: NonEmptyStringSchema.optional(),
   prompt: PromptSchema,
+  preset: AgentPresetBundleSchema.optional(),
   inputSchema: JsonSchemaSchema.default({ type: 'object' }),
   result: ResultContractSchema,
   tools: z.array(AgentToolDefinitionSchema).default([]),

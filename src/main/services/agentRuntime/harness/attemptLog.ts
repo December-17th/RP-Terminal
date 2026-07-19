@@ -11,6 +11,21 @@ export type BuildAttemptLogResult =
   | { ok: true; immutablePrefix: ProviderMessage[]; attemptLog: ProviderMessage[] }
   | { ok: false; failure: HarnessFailure }
 
+/**
+ * Apply the injected prompt renderer, guarding the Harness against a renderer that throws or returns
+ * a non-string. Prompt rendering must never take down an invocation (ADR 0021), so every failure
+ * degrades to the authored text.
+ */
+const renderText = (text: string, render: ((text: string) => string) | undefined): string => {
+  if (!render) return text
+  try {
+    const rendered = render(text)
+    return typeof rendered === 'string' ? rendered : text
+  } catch {
+    return text
+  }
+}
+
 const resolvePromptMessage = (
   message: PromptMessage,
   request: HarnessExecuteRequest
@@ -18,7 +33,10 @@ const resolvePromptMessage = (
   const chunks: string[] = []
   for (const segment of message.content) {
     if (segment.type === 'text') {
-      chunks.push(segment.text)
+      // ADR 0021: the AUTHORED text evaluates through the injected renderer (ST-Prompt-Template EJS
+      // + macros). Bound values below deliberately do NOT — upstream data must never become
+      // executable template code. Fail-open: a renderer that throws yields the raw text.
+      chunks.push(renderText(segment.text, request.render))
       continue
     }
     const source = segment.source
