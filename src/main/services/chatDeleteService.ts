@@ -29,7 +29,7 @@ import { agentRunStore } from './agentRuntime/runs/AgentRunStore'
 export const deleteChatFully = (profileId: string, chatId: string): void => {
   // Abort live invocations before removing the owning session folder; this also emits deletion
   // edges so renderer activity cannot remain stuck on a chat that no longer exists.
-  agentRunStore.deleteChat(chatId)
+  agentRunStore.deleteChatForProfile(profileId, chatId)
   const db = getDb()
   db.transaction(() => {
     db.prepare('DELETE FROM workflow_run_history WHERE chat_id = ?').run(chatId)
