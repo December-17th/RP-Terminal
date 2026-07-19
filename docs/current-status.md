@@ -97,8 +97,11 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   one transaction while cancelling affected work. Sessions 8-12 remain planned and unimplemented;
   the public card Agent API now provides scoped run/plan calls, live card tools, cancellation, and exact-once floor commit scheduling with inline/WCV parity. Player Generation cutover and workflow removal are not implemented, so
   Classic and Yuzu still use the workflow-backed product path.
-  The code-informed [implementation plan](agent-system/implementation-plan.md) sequences the remaining
-  work into independently gated sessions.
+  The [Classic Narrator first execution plan](agent-system/classic-narrator-first-execution-plan.md)
+  reorders Session 8 validation ahead of debloating. Its first runtime patch passes the existing
+  assembled Classic request through a one-call, tool-less Harness seam without changing provider-visible
+  messages. The original [implementation plan](agent-system/implementation-plan.md) remains the broader
+  session record. Plot/memory node conversion is design-only until separately approved.
   The planned cutover replaces every model-backed operation with one provider-neutral Harness,
   moves variable/time scheduling to card-side logic, and removes the workflow runtime, canvas, node
   formats, examples, and compatibility surface before merge. There is no migration or dual-runtime
