@@ -49,6 +49,14 @@ module.exports = {
       to: { path: '^src/(main|renderer|preload)|node_modules/electron/' }
     },
     {
+      name: 'agent-contracts-pure',
+      comment:
+        'AgentContracts (src/shared/agentRuntime) is a pure shared Module and must not import renderer, main, preload, or electron.',
+      severity: 'error',
+      from: { path: '^src/shared/agentRuntime(?:/|$)' },
+      to: { path: '^src/(main|renderer|preload)|node_modules/electron/' }
+    },
+    {
       name: 'transports-no-cross-import-inline-to-wcv',
       comment:
         'The card transports never import each other: inline cardBridge must not reach the WCV transport.',
