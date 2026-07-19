@@ -377,6 +377,16 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
                             <button type="button" onClick={() => setRunDetail(record)}>
                               <strong>{record.agentName}</strong>
                               <span>{t(`agentRuns.status.${record.status}`)}</span>
+                              {/* A run can succeed on a prompt that silently lost its card / persona /
+                                  world info (ADR 0021 fail-open). The status alone cannot show that. */}
+                              {record.warnings?.length ? (
+                                <span
+                                  className="agent-runs__degraded"
+                                  title={t('agents.run.degradedLabel')}
+                                >
+                                  {t('agents.run.degraded')}
+                                </span>
+                              ) : null}
                               <span>{t('agents.run.floor', { floor: record.floor })}</span>
                               <span>{record.startedAt}</span>
                             </button>
@@ -393,6 +403,12 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
                             {t('common.close')}
                           </button>
                         </div>
+                        {runDetail.warnings?.length ? (
+                          <p className="agent-runs__degraded-detail" role="alert">
+                            <strong>{t('agents.run.degradedTitle')}</strong>
+                            {runDetail.warnings.join(' · ')}
+                          </p>
+                        ) : null}
                         {/* Full Run Record evidence, minus raw reasoning (Session 10). */}
                         <pre>
                           {JSON.stringify(

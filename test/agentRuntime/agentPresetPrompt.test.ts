@@ -267,20 +267,37 @@ describe('Agent prompt planner', () => {
     expect(assembler.mock.calls[0][0]).not.toHaveProperty('history')
   })
 
-  it('falls open to the renderer when assembly throws or yields nothing', () => {
+  // Fail-open stays fail-open — but never SILENTLY. Each fallback must carry a warning naming what
+  // was lost, or a degraded run is indistinguishable from a healthy one in the UI.
+  it('falls open to the renderer when assembly throws, and marks the run degraded', () => {
     const agent = definition({ preset: { preset: ENVELOPE } })
-    const throwing = plannerDeps(() => {
-      throw new Error('assembler exploded')
+    const deps = plannerDeps(() => {
+      throw new Error('the bundled preset envelope could not be read')
     })
-    const empty = plannerDeps(() => undefined)
 
-    expect(createAgentPromptPlanner(throwing)({ ...scope, agent })?.render?.('x')).toBe('rendered:x')
-    expect(throwing.warn).toHaveBeenCalled()
-    expect(createAgentPromptPlanner(empty)({ ...scope, agent })?.render?.('x')).toBe('rendered:x')
-    expect(empty.warn).toHaveBeenCalled()
+    const plan = createAgentPromptPlanner(deps)({ ...scope, agent })
+
+    expect(plan?.render?.('x')).toBe('rendered:x')
+    expect(plan?.warnings).toHaveLength(1)
+    // Names the cause AND the consequence.
+    expect(plan?.warnings?.[0]).toContain('the bundled preset envelope could not be read')
+    expect(plan?.warnings?.[0]).toContain('character card, persona, world info and history')
+    expect(deps.warn).toHaveBeenCalled()
   })
 
-  it('falls open to the renderer when no assembler is registered at all', () => {
+  it('marks the run degraded when assembly yields nothing', () => {
+    const deps = plannerDeps(() => undefined)
+
+    const plan = createAgentPromptPlanner(deps)({
+      ...scope,
+      agent: definition({ preset: { preset: ENVELOPE } })
+    })
+
+    expect(plan?.render?.('x')).toBe('rendered:x')
+    expect(plan?.warnings?.[0]).toContain('produced no messages')
+  })
+
+  it('marks the run degraded when no assembler is registered at all', () => {
     const deps = plannerDeps(undefined)
 
     const plan = createAgentPromptPlanner(deps)({
@@ -289,7 +306,17 @@ describe('Agent prompt planner', () => {
     })
 
     expect(plan?.render?.('x')).toBe('rendered:x')
+    expect(plan?.warnings?.[0]).toContain('No preset assembler is registered')
     expect(deps.warn).toHaveBeenCalled()
+  })
+
+  it('never marks a healthy run — neither a messages Agent nor a successful assembly', () => {
+    const planner = createAgentPromptPlanner(plannerDeps(() => [text('assembled')]))
+
+    expect(planner({ ...scope, agent: definition() })).not.toHaveProperty('warnings')
+    expect(
+      planner({ ...scope, agent: definition({ preset: { preset: ENVELOPE } }) })
+    ).not.toHaveProperty('warnings')
   })
 })
 
@@ -345,7 +372,35 @@ describe('InvocationRuntime → Harness prompt substitution', () => {
     const request = execute.mock.calls[0][0]
     expect(request.prompt).toEqual([text('ASSEMBLED')])
     expect(request).not.toHaveProperty('render')
+    expect(request).not.toHaveProperty('warnings')
     // The Agent's identity is unchanged — the Run Record still stores the real definition.
     expect(request.agent.definition).toBe(agent.effective)
+  })
+
+  it('carries degradation warnings from the port through to the run', async () => {
+    const execute = vi.fn<InvocationHarnessPort['execute']>(
+      async (): Promise<HarnessExecutionResult> => ({
+        ok: true,
+        result: 'done',
+        stagedOperations: [],
+        evidence: { attempts: [] }
+      })
+    )
+    const agent = catalogAgent(definition({ preset: { preset: ENVELOPE } }))
+    const runtime = createInvocationRuntime({
+      catalog: { get: () => agent },
+      harness: { execute, stop: () => false },
+      floor: floorPort,
+      promptRenderer: () => ({
+        render: (value: string) => value,
+        warnings: ['Preset assembly failed — context missing']
+      })
+    })
+
+    await runtime.run({ profileId: 'p', chatId: 'c', floor: 4, agent: agent.name })
+
+    expect(execute.mock.calls[0][0].warnings).toEqual([
+      'Preset assembly failed — context missing'
+    ])
   })
 })

@@ -28,6 +28,13 @@ export interface AgentRunStart {
   input: JsonObject
   renderedPrompt: AgentRunMessage[]
   history: JsonValue
+  /**
+   * Degradation notices known BEFORE the run executes (ADR 0021): a preset Agent whose assembly
+   * failed still runs and still bills a provider call, but it lost its card / persona / world info /
+   * history. Seeding them here is what makes such a run distinguishable from a healthy one instead of
+   * a line in the log nobody reads.
+   */
+  warnings?: string[]
 }
 
 export interface AgentRunFinal {
@@ -441,7 +448,10 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
       evidence: sanitize(evidence),
       ...(evidence.contextBudget ? { contextBudget: evidence.contextBudget } : {}),
       metrics: aggregateMetrics(evidence.attempts),
-      warnings
+      // UNION, not replace. `update`/`finalize` default this argument to `[]`, so replacing would
+      // erase a degradation notice seeded at `create` the moment the first evidence arrives — the
+      // run would silently look healthy again. De-duplicated so a repeated notice appears once.
+      warnings: [...new Set([...(record.warnings ?? []), ...warnings])]
     }) as unknown as AgentRunRecord
 
   const deleteFromFloor = (
@@ -505,7 +515,7 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
         evidence: { attempts: [] },
         replay: { status: 'not-applicable', operations: 0 },
         metrics: emptyMetrics(),
-        warnings: []
+        warnings: [...(start.warnings ?? [])]
       }) as unknown as AgentRunRecord
       persist(record)
       controllers.set(start.invocationId, {

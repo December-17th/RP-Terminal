@@ -4235,6 +4235,26 @@ select {
 .agent-runs__list button:hover {
   background: var(--rpt-surface-2, rgba(127, 127, 127, 0.1));
 }
+/* A degraded run succeeded on an incomplete prompt (ADR 0021 fail-open). Warning, not danger:
+   the run produced a result, it just did not see everything it was written against. */
+.agent-runs__degraded {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--rpt-warning-soft, rgba(224, 162, 60, 0.14));
+  color: var(--rpt-warning, #e0a23c);
+  font-weight: 600;
+}
+.agent-runs__degraded-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 0 8px;
+  padding: 7px 9px;
+  border-left: 3px solid var(--rpt-warning, #e0a23c);
+  background: var(--rpt-warning-soft, rgba(224, 162, 60, 0.14));
+  border-radius: 0 6px 6px 0;
+  font-size: 11px;
+}
 .agent-runs__detail {
   margin-top: 12px;
   padding: 9px 11px;

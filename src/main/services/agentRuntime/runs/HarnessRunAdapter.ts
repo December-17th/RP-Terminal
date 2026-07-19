@@ -42,6 +42,8 @@ export interface HarnessRunRequest {
    *  Record still stores the UNMODIFIED definition; what was actually dispatched is captured by
    *  `onPromptBuilt` below, so the two stay distinguishable. */
   prompt?: AgentDefinition['prompt']
+  /** Degradation notices seeded onto the Run Record so a fallen-open run is visibly degraded. */
+  warnings?: string[]
   toolScope?: ToolExecutionScope
   signal?: AbortSignal
   yssVocabulary?: SceneVocabulary
@@ -186,7 +188,8 @@ export const createHarnessRunAdapter = ({
           config: resolved.value,
           input: request.input,
           renderedPrompt,
-          history: request.history ?? null
+          history: request.history ?? null,
+          ...(request.warnings?.length ? { warnings: request.warnings } : {})
         })
         handles.set(request.invocationId, handle)
       } else {

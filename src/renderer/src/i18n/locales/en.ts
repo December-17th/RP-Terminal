@@ -225,6 +225,10 @@ const en: Record<string, string> = {
   'agents.editor.err.atLeastOne': 'Must be at least 1.',
   'agents.editor.err.nonNegative': 'Cannot be negative.',
   'agents.editor.err.envelopeObject': 'The preset envelope must be a JSON object.',
+  'agents.editor.err.envelopeNoPrompts':
+    'The preset envelope has no "prompts" array, so it cannot produce a preset. This agent would silently fall back to its prompt messages alone.',
+  'agents.editor.err.envelopeNoUsablePrompts':
+    'The preset envelope defines no usable prompt blocks (each needs an "identifier"). This agent would silently fall back to its prompt messages alone.',
   'agents.editor.err.lorebooksRequired': 'An explicit selection needs at least one lorebook.',
   'agents.plan.hint':
     'A plan is an ordered sequence of steps; a step is one call or one flat parallel group. Groups cannot nest. Plans are not stored — export the JSON and pass it to rpt.agents.runPlan.',
@@ -252,6 +256,9 @@ const en: Record<string, string> = {
   'agents.run.noRuns': 'No runs recorded for this session.',
   'agents.run.floor': 'floor {{floor}}',
   'agents.run.detail': 'Run detail',
+  'agents.run.degraded': 'Degraded',
+  'agents.run.degradedLabel': 'This run was degraded — its prompt was incomplete.',
+  'agents.run.degradedTitle': 'Degraded run',
   'agents.title': 'Agent library',
   'agents.folderHint':
     'Agent Definitions are authored as .rptagent JSON files and imported into this profile. Set RPT_AGENT_DIR to change the folder.',

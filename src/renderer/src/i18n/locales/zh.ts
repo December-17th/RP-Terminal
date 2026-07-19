@@ -222,6 +222,10 @@ const zh: Record<string, string> = {
   'agents.editor.err.atLeastOne': '至少为 1。',
   'agents.editor.err.nonNegative': '不能为负数。',
   'agents.editor.err.envelopeObject': '预设信封必须是一个 JSON 对象。',
+  'agents.editor.err.envelopeNoPrompts':
+    '预设信封缺少 "prompts" 数组，无法生成预设。该智能体将静默回退为仅使用其提示词消息。',
+  'agents.editor.err.envelopeNoUsablePrompts':
+    '预设信封未定义可用的提示词块（每块都需要 "identifier"）。该智能体将静默回退为仅使用其提示词消息。',
   'agents.editor.err.lorebooksRequired': '显式选择至少需要一本世界书。',
   'agents.plan.hint':
     '编排是一个有序步骤序列；每个步骤是一次调用或一个扁平并行组。并行组不能嵌套。编排不会被存储 — 导出 JSON 并传给 rpt.agents.runPlan。',
@@ -249,6 +253,9 @@ const zh: Record<string, string> = {
   'agents.run.noRuns': '此会话尚无运行记录。',
   'agents.run.floor': '楼层 {{floor}}',
   'agents.run.detail': '运行详情',
+  'agents.run.degraded': '降级',
+  'agents.run.degradedLabel': '本次运行已降级——其提示词并不完整。',
+  'agents.run.degradedTitle': '降级运行',
   'agents.title': '智能体库',
   'agents.folderHint':
     '智能体定义以 .rptagent JSON 文件编写并导入到此配置文件。设置 RPT_AGENT_DIR 可更改文件夹。',

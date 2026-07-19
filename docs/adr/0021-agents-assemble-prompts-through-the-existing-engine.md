@@ -1,8 +1,9 @@
 # Agents assemble prompts through the existing engine, never inside the Harness
 
-**Status: Accepted (2026-07-19), partially implemented.** Extends
+**Status: Accepted and fully implemented (2026-07-19).** Extends
 [ADR 0020](0020-agent-runtime-replaces-workflow-system.md) and the
-[Agent Runtime design](../agent-system/agent-runtime-design.md) §3, §10.
+[Agent Runtime design](../agent-system/agent-runtime-design.md) §3, §10. All five decisions below are
+implemented on `agent-system`; the gate (typecheck, `check:deps`, 4322 tests) is green.
 
 Implemented on `agent-system` 2026-07-19:
 
@@ -25,6 +26,16 @@ Implemented on `agent-system` 2026-07-19:
 - **§2 (parameter precedence)** — one layer inserted in `ProviderDispatch.resolve` as
   `ProviderSelection.presetBundleParameters`: resolved generation preset → bundle → invocation
   override. `AgentHarness.execute` forwards it from `definition.preset.generationParameters`.
+- **Fail-open is marked, never silent.** Assembly failure still lets the invocation proceed (a
+  degraded prompt is recoverable, a crashed turn is not), but the reason is recorded on the Run
+  Record's `warnings` and rendered as a "Degraded" badge in the Runs list plus a warning line in the
+  run detail (`AgentWorkspace.tsx`). `AgentRunStore.withEvidence` UNIONS warnings rather than
+  replacing them, so a notice seeded at `create` survives the first `update(evidence)`.
+- **A guaranteed-inert bundle cannot be saved.** The contract layer keeps the envelope opaque, so the
+  gate lives in `shared/agentPresetEnvelope.ts` (`inspectAgentPresetEnvelope`) and is shared by the
+  editor's `validateDraft` and the runtime's `presetFromEnvelope` — the editor can no longer accept an
+  envelope the runtime would reject. `selectPromptOrder` moved there from `stPresetParser` (re-exported)
+  so all four consumers resolve order against one list.
 - **Unspecified by this ADR, decided in implementation:** `includePlayerResults` renders the owning
   floor's `variables.__rpt.agent_results` as ONE trailing system block, not a per-floor diff; entry
   filters match by `comment` and therefore match every entry sharing a title (documented in

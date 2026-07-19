@@ -131,6 +131,59 @@ describe('HarnessRunAdapter', () => {
     history: [{ floor: 6, response: 'Earlier.' }]
   })
 
+  // ADR 0021: a preset Agent whose assembly failed still runs and still bills a provider call, so the
+  // run MUST carry why — otherwise a degraded run is indistinguishable from a healthy one in the UI.
+  it('records degradation warnings on the run and keeps them through evidence and finalize', async () => {
+    const scripted = createScriptedProviderAdapter([
+      { events: [{ type: 'text-delta', delta: 'Done.' }, { type: 'finish', reason: 'stop' }] }
+    ])
+    const adapter = createHarnessRunAdapter({
+      runStore,
+      providerDispatch: providerDispatch(scripted),
+      toolRegistry: createToolRegistry()
+    })
+    const degraded = 'Preset assembly failed (boom) — its bundled preset did not run'
+
+    const execution = await adapter.execute({
+      ...request('degraded-1'),
+      warnings: [degraded]
+    })
+    expect(execution.ok).toBe(true)
+    // Present while running, i.e. survived the `update(evidence)` that defaults warnings to [].
+    expect(runStore.get('chat-1', 'degraded-1')?.warnings).toEqual([degraded])
+
+    adapter.commitSuccess(
+      'degraded-1',
+      execution as Extract<typeof execution, { ok: true }>,
+      { status: 'committed', operations: 0 }
+    )
+
+    const record = runStore.get('chat-1', 'degraded-1')
+    expect(record?.status).toBe('succeeded')
+    // Still there on the FINAL record — a succeeded run that is nonetheless marked degraded.
+    expect(record?.warnings).toEqual([degraded])
+  })
+
+  it('leaves a healthy run with no warnings at all', async () => {
+    const scripted = createScriptedProviderAdapter([
+      { events: [{ type: 'text-delta', delta: 'Done.' }, { type: 'finish', reason: 'stop' }] }
+    ])
+    const adapter = createHarnessRunAdapter({
+      runStore,
+      providerDispatch: providerDispatch(scripted),
+      toolRegistry: createToolRegistry()
+    })
+
+    const execution = await adapter.execute(request('healthy-1'))
+    adapter.commitSuccess(
+      'healthy-1',
+      execution as Extract<typeof execution, { ok: true }>,
+      { status: 'committed', operations: 0 }
+    )
+
+    expect(runStore.get('chat-1', 'healthy-1')?.warnings).toEqual([])
+  })
+
   it('keeps successful evidence running until incorporation commits the outcome', async () => {
     let observedRunning = false
     const scripted = createScriptedProviderAdapter([

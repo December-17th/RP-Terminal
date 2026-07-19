@@ -294,6 +294,22 @@ describe('preset Agent assembly', () => {
     })
   })
 
+  // THROWS rather than returning undefined: the planner catches it and puts the reason on the Run
+  // Record, so the author learns their envelope is the problem instead of just "assembly produced
+  // nothing". The invocation still proceeds (fail-open) — it is marked, not blocked.
+  it('throws a named reason when the bundled envelope cannot be read as a preset', () => {
+    for (const envelope of [{}, { prompts: [] }, { parsed: { nope: true } }]) {
+      expect(() =>
+        assembleAgentPresetPrompt({
+          profileId: 'p',
+          chatId: 'chat1',
+          floor: 2,
+          definition: agent({ preset: { preset: envelope } })
+        })
+      ).toThrow(/could not be read as a preset/)
+    }
+  })
+
   it('returns nothing for an Agent with no bundle, so it stays a messages Agent', () => {
     const parsed = parseAgentDefinition({
       format: 'rpt-agent',

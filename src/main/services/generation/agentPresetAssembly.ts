@@ -165,12 +165,13 @@ export const assembleAgentPresetPrompt = (
   const bundle = request.definition.preset
   if (!bundle) return undefined
   const preset = presetFromEnvelope(bundle.preset)
+  // THROWN, not returned as undefined: the planner catches, records the reason on the Run Record and
+  // falls open. Returning undefined would degrade the run just as much but name only "produced
+  // nothing", losing the one detail that tells the author their envelope is the problem.
   if (!preset) {
-    log(
-      'error',
-      `Agent "${request.definition.name}" bundles a preset that could not be read — falling back to its prompt messages`
+    throw new Error(
+      'the bundled preset envelope could not be read as a preset (no usable prompt blocks)'
     )
-    return undefined
   }
 
   const base = buildGenContext(request.profileId, request.chatId, '', 'quiet')

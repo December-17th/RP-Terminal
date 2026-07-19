@@ -66,6 +66,13 @@ export const agentPresetAssembler = (): AgentPresetAssembler | undefined => regi
 export interface InvocationPrompt {
   render?: (text: string) => string
   prompt?: PromptMessage[]
+  /**
+   * Degradation notices for the Run Record. Fail-open keeps the invocation alive, but a preset Agent
+   * that fell back to its bare `prompt` lost the card, persona, world info and history it was written
+   * against — and still bills a real provider call. Without this the resulting run is
+   * indistinguishable from a healthy one in the UI, which is the whole failure mode.
+   */
+  warnings?: string[]
 }
 
 export interface AgentPromptPlannerDeps {
@@ -105,6 +112,10 @@ export const createAgentPromptPlanner = (
     })
     const bundle = scope.agent.preset
     const assemble = bundle ? deps.assembler() : undefined
+    // Every path below that reaches the fallback records WHY, so the run is marked degraded rather
+    // than merely logged. The suffix is shared because the consequence is identical in every case.
+    const lost = `its bundled preset did not run, so the character card, persona, world info and history are missing from this prompt`
+    let degraded: string | undefined
     if (bundle && assemble) {
       // Resolved the same way `resolveInvocationOptions` resolves it, so the Policy an operator set on
       // the invocation wins over the Agent's declared default.
@@ -119,19 +130,18 @@ export const createAgentPromptPlanner = (
           ...(render ? { render } : {})
         })
         if (prompt?.length) return { prompt }
-        deps.warn(
-          `Agent "${scope.agent.name}" bundles a preset but assembly produced nothing — sending its prompt messages alone`
-        )
+        degraded = `Preset assembly produced no messages — ${lost}`
       } catch (cause) {
-        deps.warn(
-          `Agent "${scope.agent.name}" preset assembly failed — sending its prompt messages alone`,
+        degraded = `Preset assembly failed (${
           cause instanceof Error ? cause.message : String(cause)
-        )
+        }) — ${lost}`
       }
     } else if (bundle) {
-      deps.warn(
-        `Agent "${scope.agent.name}" bundles a preset but no assembler is registered — sending its prompt messages alone`
-      )
+      degraded = `No preset assembler is registered — ${lost}`
+    }
+    if (degraded) {
+      deps.warn(`Agent "${scope.agent.name}": ${degraded}`)
+      return { ...(render ? { render } : {}), warnings: [degraded] }
     }
     return render ? { render } : undefined
   }

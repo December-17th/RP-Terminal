@@ -6,6 +6,7 @@ import type {
   GenerationParameters,
   NotificationPolicy
 } from '../../../../shared/agentRuntime'
+import { inspectAgentPresetEnvelope } from '../../../../shared/agentPresetEnvelope'
 import { useT } from '../../i18n'
 
 type Draft = AgentDefinition
@@ -22,6 +23,22 @@ interface FieldError {
  * pre-flight check for the UI only — the authoritative parse still happens main-side in
  * `parseAgentDefinition`, and its errors are surfaced too.
  */
+/**
+ * The starting envelope for a newly added bundle. It was `{}` — which validates as unusable, so
+ * "add preset" landed the author on an error with nothing to fix it from. This is the smallest
+ * envelope that actually parses: one literal block plus the markers a preset needs to be worth
+ * bundling at all (card, persona, world info, history).
+ */
+const EMPTY_PRESET_ENVELOPE: AgentPresetBundle['preset'] = {
+  prompts: [
+    { identifier: 'main', name: 'Main Prompt', role: 'system', content: '' },
+    { identifier: 'charDescription', name: 'Character', role: 'system', content: '' },
+    { identifier: 'personaDescription', name: 'Persona', role: 'system', content: '' },
+    { identifier: 'worldInfoBefore', name: 'World Info', role: 'system', content: '' },
+    { identifier: 'chatHistory', name: 'Chat History', role: 'system', content: '' }
+  ]
+}
+
 export const validateDraft = (draft: Draft): FieldError[] => {
   const errors: FieldError[] = []
   if (!draft.name?.trim()) errors.push({ field: 'name', message: 'required' })
@@ -40,9 +57,21 @@ export const validateDraft = (draft: Draft): FieldError[] => {
   }
   const bundle = draft.preset
   if (bundle) {
-    const envelope: unknown = bundle.preset
-    if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
-      errors.push({ field: 'preset.envelope', message: 'envelopeObject' })
+    // The contract layer accepts ANY object as an envelope on purpose (it is opaque there), which
+    // meant a bundle like `{preset: {}}` saved clean and then fell open to plain rendering forever,
+    // silently. Gate on the SAME shape check the runtime parse uses so a guaranteed-inert bundle
+    // cannot be saved at all.
+    const inspection = inspectAgentPresetEnvelope(bundle.preset)
+    if (!inspection.usable) {
+      errors.push({
+        field: 'preset.envelope',
+        message:
+          inspection.problem === 'not-an-object'
+            ? 'envelopeObject'
+            : inspection.problem === 'no-prompts'
+              ? 'envelopeNoPrompts'
+              : 'envelopeNoUsablePrompts'
+      })
     }
     const selection = bundle.lorebooks
     if (selection && selection.mode === 'explicit') {
@@ -417,7 +446,11 @@ export function AgentEditor({
         {!bundle ? (
           <>
             <p className="agent-editor__note">{t('agents.editor.preset.none')}</p>
-            <button type="button" disabled={readOnly} onClick={() => setBundle({ preset: {} })}>
+            <button
+              type="button"
+              disabled={readOnly}
+              onClick={() => setBundle({ preset: EMPTY_PRESET_ENVELOPE })}
+            >
               {t('agents.editor.preset.add')}
             </button>
           </>
@@ -433,7 +466,9 @@ export function AgentEditor({
               onChange={(envelope) => setBundle({ ...bundle, preset: envelope as never })}
             />
             {errorFor('preset.envelope') ? (
-              <em className="agent-field__error">{t('agents.editor.err.envelopeObject')}</em>
+              <em className="agent-field__error">
+                {t(`agents.editor.err.${errorFor('preset.envelope')}`)}
+              </em>
             ) : null}
 
             <h5 className="agent-editor__subhead">{t('agents.editor.preset.parameters')}</h5>

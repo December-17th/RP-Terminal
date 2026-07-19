@@ -18,6 +18,7 @@ import {
 } from '../types/preset'
 import type { HostPresetView, HostPresetPrompt } from '../../shared/thRuntime/hostPrimitives'
 import { parseStPreset, selectPromptOrder } from '../parsers/stPresetParser'
+import { agentPresetRoot } from '../../shared/agentPresetEnvelope'
 import * as regexService from './regexService'
 import * as scriptService from './scriptService'
 import {
@@ -193,14 +194,19 @@ export const presetFromEnvelope = (envelope: unknown): Preset | null => {
       const view = PresetSchema.safeParse(wrapper.importedView)
       if (view.success) return view.data
     }
-    const raw = wrapper.parsed !== undefined ? wrapper.parsed : envelope
-    const root = presetRoot(raw)
-    if (root && typeof root === 'object' && root.parameters && typeof root.parameters === 'object') {
+    // Unwrapped through the SHARED helper the Agent editor's save-time gate uses, so the editor can
+    // never accept an envelope this function would then reject at runtime.
+    const root = agentPresetRoot(envelope)
+    if (root && root.parameters && typeof root.parameters === 'object') {
       const direct = PresetSchema.safeParse(root)
       if (direct.success) return direct.data
     }
-    const normalized = parseStPreset(raw, root?.name || 'Bundled Agent Preset')
-    return normalized ? PresetSchema.parse(normalized) : null
+    const normalized = parseStPreset(root, root?.name || 'Bundled Agent Preset')
+    const preset = normalized ? PresetSchema.parse(normalized) : null
+    // A preset that parsed but defines NO prompt blocks assembles an empty prompt — inert, exactly
+    // what the editor's `inspectAgentPresetEnvelope` gate refuses to save. Treat it as unreadable so
+    // the two agree and the run is marked degraded rather than quietly sending nothing.
+    return preset?.prompts.length ? preset : null
   } catch (error) {
     log('error', 'Failed to read a bundled Agent preset envelope:', error)
     return null

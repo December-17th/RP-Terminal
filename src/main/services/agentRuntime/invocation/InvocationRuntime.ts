@@ -102,6 +102,8 @@ export interface InvocationRunStorePort {
 export interface InvocationPromptResult {
   render?: (text: string) => string
   prompt?: AgentDefinition['prompt']
+  /** Degradation notices recorded on the Run Record when the port fell open (ADR 0021). */
+  warnings?: string[]
 }
 
 export type InvocationPromptRendererPort = (scope: {
@@ -478,6 +480,7 @@ export const createInvocationRuntime = ({
             ...(source.history !== undefined ? { history: source.history } : {}),
             ...(prompt?.render ? { render: prompt.render } : {}),
             ...(prompt?.prompt ? { prompt: prompt.prompt } : {}),
+            ...(prompt?.warnings?.length ? { warnings: prompt.warnings } : {}),
             signal: attemptController.signal,
             ...(corrective
               ? {

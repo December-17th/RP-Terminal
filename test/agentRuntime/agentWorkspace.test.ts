@@ -22,6 +22,9 @@ const base = (): AgentDefinition => ({
   }
 })
 
+/** The smallest envelope that actually parses into a preset — one identifiable prompt block. */
+const USABLE_ENVELOPE = { prompts: [{ identifier: 'main', content: 'You are a simulator.' }] }
+
 describe('Agent editor field validation', () => {
   it('accepts a well-formed definition', () => {
     expect(validateDraft(base())).toEqual([])
@@ -93,7 +96,7 @@ describe('Agent editor preset bundle validation', () => {
   it('accepts a bundle carrying an envelope, parameter overrides and a lorebook selection', () => {
     const draft = base()
     draft.preset = {
-      preset: { prompts: [], prompt_order: [] },
+      preset: USABLE_ENVELOPE,
       generationParameters: { temperature: 0.8, stop: ['</done>'] },
       lorebooks: { mode: 'explicit', lorebooks: ['World'], entries: { exclude: ['Spoilers'] } }
     }
@@ -103,7 +106,7 @@ describe('Agent editor preset bundle validation', () => {
 
   it('accepts a session-scoped lorebook selection with no explicit list', () => {
     const draft = base()
-    draft.preset = { preset: {}, lorebooks: { mode: 'session' } }
+    draft.preset = { preset: USABLE_ENVELOPE, lorebooks: { mode: 'session' } }
 
     expect(validateDraft(draft)).toEqual([])
   })
@@ -120,9 +123,60 @@ describe('Agent editor preset bundle validation', () => {
     }
   })
 
+  // The contract layer accepts any object as an envelope (it is opaque there). The editor must not:
+  // a bundle that cannot produce a preset saves clean and then falls open to plain rendering for the
+  // life of the Agent, with nothing in the UI to say so.
+  it('rejects an envelope with no prompts array — it could never produce a preset', () => {
+    for (const envelope of [{}, { parsed: {} }, { name: 'Preset', parameters: {} }]) {
+      const draft = base()
+      draft.preset = { preset: envelope as never }
+
+      expect(validateDraft(draft)).toContainEqual({
+        field: 'preset.envelope',
+        message: 'envelopeNoPrompts'
+      })
+    }
+  })
+
+  it('rejects an envelope whose prompts define nothing usable', () => {
+    for (const envelope of [
+      { prompts: [] },
+      { prompts: [{ content: 'no identifier' }] },
+      { prompts: [{ identifier: '   ' }] },
+      { prompts: [], prompt_order: [] }
+    ]) {
+      const draft = base()
+      draft.preset = { preset: envelope as never }
+
+      expect(validateDraft(draft)).toContainEqual({
+        field: 'preset.envelope',
+        message: 'envelopeNoUsablePrompts'
+      })
+    }
+  })
+
+  it('accepts the envelope shapes a real bundle arrives in', () => {
+    for (const envelope of [
+      USABLE_ENVELOPE,
+      // ADR 0018 wrapper around the nothing-dropped raw.
+      { parsed: USABLE_ENVELOPE, sha256: 'abc' },
+      // The normalized snapshot written at import.
+      { importedView: { name: 'P', parameters: {}, prompts: [{ identifier: 'main' }] } },
+      // Order-driven: blocks come from prompt_order even with an empty prompts array.
+      { prompts: [], prompt_order: [{ character_id: 100001, order: [{ identifier: 'main' }] }] },
+      // Top-level array wrapping a preset, seen in the wild.
+      [USABLE_ENVELOPE]
+    ]) {
+      const draft = base()
+      draft.preset = { preset: envelope as never }
+
+      expect(validateDraft(draft)).toEqual([])
+    }
+  })
+
   it('rejects an explicit selection with an empty lorebook list', () => {
     const draft = base()
-    draft.preset = { preset: {}, lorebooks: { mode: 'explicit', lorebooks: [] } }
+    draft.preset = { preset: USABLE_ENVELOPE, lorebooks: { mode: 'explicit', lorebooks: [] } }
 
     expect(validateDraft(draft)).toContainEqual({
       field: 'preset.lorebooks',
@@ -132,7 +186,10 @@ describe('Agent editor preset bundle validation', () => {
 
   it('lands a blank lorebook name on that row rather than on the list', () => {
     const draft = base()
-    draft.preset = { preset: {}, lorebooks: { mode: 'explicit', lorebooks: ['World', '  '] } }
+    draft.preset = {
+      preset: USABLE_ENVELOPE,
+      lorebooks: { mode: 'explicit', lorebooks: ['World', '  '] }
+    }
 
     expect(validateDraft(draft)).toEqual([{ field: 'preset.lorebooks.1', message: 'required' }])
   })
