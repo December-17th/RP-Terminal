@@ -78,6 +78,7 @@ map.
 | [Agent Runtime](agent-system/agent-runtime-design.md)            | Approved; Milestones 1–3, Sessions 0-7 are implemented/reviewed; working-tree commits pending. |
 | [Implementation plan](agent-system/implementation-plan.md)       | Active on `agent-system`; Sessions 0-7 are implemented. Sessions 8-12 remain planned.           |
 | [Classic Narrator first execution plan](agent-system/classic-narrator-first-execution-plan.md) | Active point-in-time plan; Session 8 validation precedes debloating and plot/memory conversion remains design-only. |
+| [Parser-backed built-in Agent design](agent-system/parser-backed-agent-design.md) | Design only and UNAPPROVED; Milestone 5 deliverable. Only memory maintenance is proposed for conversion; recall, notes, backfill, and refill are deferred. |
 | [Agentic mode](agentic-mode-design.md)                           | Partially superseded: manual FSM shipped; unshipped tool-loop design replaced by Agent Runtime.         |
 | [Card custom UI](card-custom-ui-design.md)                       | Partial predecessor design; inline/WCV/static-layout work shipped, native declarative view kit remains. |
 | [Grep notes memory](grep-notes-memory-design.md)                 | Planned prototype; partially superseded by Agentic Plot Recall.                                         |
