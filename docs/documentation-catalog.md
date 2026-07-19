@@ -79,7 +79,7 @@ map.
 | [Implementation plan](agent-system/implementation-plan.md)       | Active on `agent-system`; Sessions 0-7 are implemented. Sessions 8-12 remain planned.           |
 | [Classic Narrator first execution plan](agent-system/classic-narrator-first-execution-plan.md) | Active point-in-time plan; Session 8 validation precedes debloating and plot/memory conversion remains design-only. |
 | [Parser-backed built-in Agent design](agent-system/parser-backed-agent-design.md) | Design only and UNAPPROVED; Milestone 5 deliverable. Only memory maintenance is proposed for conversion; recall, notes, backfill, and refill are deferred. |
-| [Agent Runtime debloat audit](agent-system/debloat-audit.md) | Decision-support report only; Milestone 6 deliverable. No deletion is approved or performed. Classifies each runtime facility Keep/Collapse/Reduce/Defer/Remove against real Classic consumers. |
+| [Agent Runtime debloat audit](agent-system/debloat-audit.md) | Decision-support report only; Milestone 6 deliverable, corrected 2026-07-19. Nothing deleted. The harness collapse it first recommended did not compile and was withdrawn; the harness decision is now deferred behind the InvocationRuntime/card-API decision. |
 | [Agentic mode](agentic-mode-design.md)                           | Partially superseded: manual FSM shipped; unshipped tool-loop design replaced by Agent Runtime.         |
 | [Card custom UI](card-custom-ui-design.md)                       | Partial predecessor design; inline/WCV/static-layout work shipped, native declarative view kit remains. |
 | [Grep notes memory](grep-notes-memory-design.md)                 | Planned prototype; partially superseded by Agentic Plot Recall.                                         |
