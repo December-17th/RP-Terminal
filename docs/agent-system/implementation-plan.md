@@ -1005,6 +1005,70 @@ The Agent Runtime replacement is complete only when:
 
 ## 8. Implementation log
 
+### 2026-07-19 — Classic Narrator plan Milestone 2 implemented
+
+Status: Milestone 2 of the [Classic Narrator first execution plan](classic-narrator-first-execution-plan.md)
+is implemented on `agent-system` as characterization tests only. Nothing was removed and no production
+behavior changed. Its Milestones 3-6 remain planned.
+
+Two new suites pin what `runWorkflow` still contributes to a Classic turn, both running the real
+production doc through the real engine and the real builtin node registry, with only leaf I/O faked:
+`test/workflow/classicTurnInventory.test.ts` (the turn inventory) and
+`test/workflow/classicDocResolution.test.ts` (doc resolution and pack composition).
+
+The production doc holds 13 nodes. Exactly 8 run on a turn, all synchronous, all in the pre phase, in
+this order: `input.context` (ctx), `context.trimProcessed` (trim), `table.export` (export),
+`prompt.assemble` (assemble), `llm.sample` (llm), `parse.response` (parse), `apply.state` (apply),
+`output.writeFloor` (write, `isMainOutput`). `llm.sample` is the only provider call on a turn.
+`output.writeFloor` is the only durable-state writer: `saveGlobals`, `appendFloor`,
+`saveExecutionRecord`, plus `FloorState.setBaseline` on floor 0 only.
+
+Five nodes never run on a turn: `trigger.cadence` and `trigger.state` are `isTrigger` and removed by
+`computeExcluded`; `control.mode` has both signal edges dead and is pruned by `gatedOff`;
+`memory.maintain` — the doc's second model-backed node — takes its sole `when` from the pruned `mode`
+and is structurally unreachable, firing only via `evaluateDocTriggers`; `util.log` is fed only by
+`maintain.error`. Turn behavior is independent of the memory Mode setting.
+
+Four off-port channels are pinned because a port-only rewrite would silently drop them: one mutable
+`GenContext` object is threaded through every node; `prompt.assemble` stamps `gen.executionRecord`,
+which `persistFloor` alone persists; `apply.state` stamps `gen.floorStateBaseline` on floor 0, which
+`persistFloor` passes to `setBaseline`; and `gen.workingVars` is shared BY REFERENCE into the
+template context during assembly (`assemble.ts`'s documented "PARITY HAZARD"), so a build-time
+`{{setvar}}` mutates the same object `foldState` then folds this turn's events onto and `persistFloor`
+writes. The last is the subtlest: dropping it fails no turn and raises no error, it just silently
+omits the variable from the floor. Both recall nodes fail soft with no bound table
+template: `table.export` returns no entries, and `context.trimProcessed` returns its input object
+unchanged. The suites were mutation-checked rather than assumed to bite — dropping the
+`executionRecord` stamp, making `trim` return a copy, disabling trigger exclusion, building the
+template context from a copy of `workingVars`, folding onto a copy in `foldState`, and forcing gate
+resolution always-open each fail 3, 4, 7, 2, 2, and 3 tests respectively.
+
+Both previously inferred claims were traced, and both were more qualified than assumed.
+
+Pack composition adds no nodes to a default Classic turn, but not because the zero-fragments default
+provider is what runs. `agentPackService.ts` calls `setEnabledFragmentsProvider(enabledFragmentsFor)`
+as an import-time side effect, so production runs the real provider. Nothing composes for two
+independent reasons: `BUILTIN_PACKS` is empty (one-canvas rebuild WP6.2, ADR 0011 — the memory
+experiences ship as example workflow docs, not seeded packs), so a fresh library installs no pack at
+all; and an installed pack still contributes nothing until a gate is explicitly opened, since seeding
+writes no activation row and "no row" resolves closed. Opening one gate does splice nodes into the
+turn graph, so Milestone 3 cannot assume packs never contribute.
+
+"No detached work" is a property of the default doc's shape, not of Classic. Once a profile has
+opened any workflow UI, it no longer runs `BUILTIN_DEFAULT_DOC`: `seedDefaultMemoryWorkflow` writes
+an editable profile copy of `buildDefaultMemoryDocV2` and selects it globally, and
+`resolveWorkflowDoc` returns that saved file. The qualifier is load-bearing for Milestone 3's risk
+assessment — seeding is LAZY and deliberately hooked only to `listWorkflows`, never to
+`resolveWorkflowDoc` (a resolve-time seed would swap the doc under a running chat), so a profile that
+has never opened workflow UI still resolves the builtin and keeps today's behavior. Both states are
+reachable in production, and only the first is editable. The seeded copy has the same node and
+edge shape, so the inventory above holds for it, but it is user-editable and is resolved verbatim. A
+doc with a node downstream of `write` puts that node in the detached post phase, where it runs — so
+removing `runWorkflow` from the synchronous Classic path drops that capability for edited docs rather
+than being a no-op. On the default doc the post phase holds only already-excluded nodes; the genuinely
+detached turn work (trace summarize plus `notifyWorkflowTrace`, `appendRun`, `evaluateTriggers`,
+`evaluateDocTriggers`) lives outside `runWorkflow`, chained on `runPromise` in `generationService`.
+
 ### 2026-07-19 — Classic Narrator plan Milestone 1 implemented
 
 Status: Milestone 1 of the [Classic Narrator first execution plan](classic-narrator-first-execution-plan.md)

@@ -98,14 +98,26 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   the public card Agent API now provides scoped run/plan calls, live card tools, cancellation, and exact-once floor commit scheduling with inline/WCV parity. Player Generation cutover and workflow removal are not implemented, so
   Classic and Yuzu still use the workflow-backed product path.
   The [Classic Narrator first execution plan](agent-system/classic-narrator-first-execution-plan.md)
-  reorders Session 8 validation ahead of debloating. Its Milestone 1 is implemented and reviewed in the
-  current working tree, but is not yet committed: the assembled request from the `llm.sample` node
+  reorders Session 8 validation ahead of debloating. Its Milestone 1 is implemented, reviewed, and
+  committed as `b707a66`: the assembled request from the `llm.sample` node
   executes through a one-call, tool-less `AgentHarness.executePrepared`
   seam, with identical ordered messages and identical serialized OpenAI/Anthropic/Gemini body bytes.
   This covers Classic's default graph and, because they embed the same node type, the memory group
   template and the async-memory/table-memory packs; `agent.llm`, memory, notes, and recall nodes are
   unchanged. The workflow still owns assembly, parse, persistence, and secondary nodes, and no retry,
   concurrency, or provider-selection layer was duplicated.
+  Milestone 2 is implemented in the current working tree and not yet committed. It adds
+  characterization tests only; nothing was removed and no production behavior changed. A Classic turn
+  runs exactly 8 of the production doc's 13 nodes, all synchronous, with `llm.sample` the only
+  provider call and `output.writeFloor` the only durable-state writer; the other 5 nodes, including
+  the second model-backed `memory.maintain`, are structurally unreachable from a turn. Two claims
+  Milestone 3 depends on were traced rather than inferred: pack composition contributes nothing to a
+  default install because no built-in pack is seeded and gates are closed until explicitly opened,
+  not because the zero-fragments provider is installed; and a profile that has opened any workflow UI
+  resolves an editable profile-saved copy of the default doc rather than `BUILTIN_DEFAULT_DOC`, since
+  seeding is lazy and hooked only to `listWorkflows` — a profile that never opens that UI still
+  resolves the builtin. Both states are reachable, so the empty detached post phase is a property of
+  the default doc's shape and does not survive user edits.
   The original [implementation plan](agent-system/implementation-plan.md) remains the broader
   session record. Plot/memory node conversion is design-only until separately approved.
   The planned cutover replaces every model-backed operation with one provider-neutral Harness,
