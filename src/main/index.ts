@@ -20,7 +20,10 @@ import './services/cardAgentCatalogBridge'
 import { registerIpc } from './ipc'
 import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
-import { agentRunStore } from './services/agentRuntime/runs/AgentRunStore'
+import {
+  initializeInvocationRuntime,
+  shutdownInvocationRuntime
+} from './services/agentRuntime/InvocationRuntimeService'
 
 // A packaged Windows ZIP is self-contained: RP Terminal records, Electron preferences, browser
 // storage, and caches all live below rp-terminal-data beside the executable. macOS retains Electron's
@@ -178,6 +181,7 @@ app.whenReady().then(() => {
     app.quit()
     return
   }
+  initializeInvocationRuntime()
 
   // Initialize the sandboxed template engine (non-blocking for the rest of startup).
   templateService.initTemplates().then(() => logService.log('info', 'Template engine ready'))
@@ -220,7 +224,7 @@ app.on('window-all-closed', () => {
 // clean shutdown checkpoints each WAL (plan §B4 / review C3).
 app.on('will-quit', () => {
   try {
-    agentRunStore.shutdown()
+    shutdownInvocationRuntime()
   } catch (err: any) {
     logService.log(
       'error',

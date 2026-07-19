@@ -46,6 +46,10 @@ export interface AgentRunHandle {
 
 export interface AgentRunStore {
   create(start: AgentRunStart): AgentRunHandle
+  replaceSource(
+    invocationId: string,
+    source: Pick<AgentRunStart, 'input' | 'renderedPrompt' | 'history'>
+  ): AgentRunRecord | null
   update(
     invocationId: string,
     evidence: HarnessEvidence,
@@ -55,9 +59,16 @@ export interface AgentRunStore {
   get(chatId: string, invocationId: string): AgentRunRecord | null
   list(chatId: string): AgentRunRecord[]
   cancel(invocationId: string): AgentRunCancelResult
+  cancelFromFloor(chatId: string, fromFloor: number): void
   deleteFromFloor(chatId: string, fromFloor: number): void
+  deleteFromFloorInTransaction(
+    chatId: string,
+    fromFloor: number,
+    db: Database.Database
+  ): () => void
   deleteChat(chatId: string): void
   deleteChatForProfile(profileId: string, chatId: string): void
+  onBeforeDeleteFromFloor(listener: (chatId: string, fromFloor: number) => void): () => void
   shutdown(): void
   subscribe(listener: (event: AgentRunEvent) => void): () => void
 }
@@ -279,7 +290,7 @@ const attemptRecord = (attempt: HarnessAttemptEvidence): AgentRunAttempt => {
 
 const aggregateMetrics = (attempts: HarnessAttemptEvidence[]): AgentRunMetrics => {
   const metrics = emptyMetrics()
-  metrics.retries = Math.max(0, attempts.length - 1)
+  metrics.retries = attempts.filter((attempt) => attempt.outcome === 'retry').length
   for (const attempt of attempts) {
     for (const usage of attempt.usage) {
       metrics.inputTokens += usage.inputTokens
@@ -320,6 +331,7 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
     { chatId: string; floor: number; controller: AbortController }
   >()
   const listeners = new Set<(event: AgentRunEvent) => void>()
+  const beforeFloorDeleteListeners = new Set<(chatId: string, fromFloor: number) => void>()
   const emit = (event: AgentRunEvent): void => {
     for (const listener of listeners) {
       try {
@@ -428,22 +440,29 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
     chatId: string,
     fromFloor: number,
     db: Database.Database | null
-  ): void => {
-    for (const [invocationId, live] of controllers) {
-      if (live.chatId === chatId && live.floor >= fromFloor)
-        markCancelled(invocationId, 'CANCELLED', db)
-    }
+  ): (() => void) => {
     const rows = (db
       ?.prepare('SELECT invocation_id, floor FROM agent_runs WHERE chat_id = ? AND floor >= ?')
       .all(chatId, fromFloor) ?? []) as Array<{ invocation_id: string; floor: number }>
     db?.prepare('DELETE FROM agent_runs WHERE chat_id = ? AND floor >= ?').run(chatId, fromFloor)
-    for (const row of rows) {
-      emit({
-        type: 'deleted',
-        invocationId: row.invocation_id,
-        chatId,
-        floor: row.floor
-      })
+    return () => {
+      for (const row of rows) {
+        emit({
+          type: 'deleted',
+          invocationId: row.invocation_id,
+          chatId,
+          floor: row.floor
+        })
+      }
+    }
+  }
+
+  const cancelFromFloor = (chatId: string, fromFloor: number): void => {
+    for (const listener of beforeFloorDeleteListeners) listener(chatId, fromFloor)
+    for (const [invocationId, live] of controllers) {
+      if (live.chatId === chatId && live.floor >= fromFloor) {
+        markCancelled(invocationId, 'CANCELLED')
+      }
     }
   }
 
@@ -488,6 +507,21 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
       })
       emit({ type: 'started', run: summary(record) })
       return { record: publicRecord(record), signal: controller.signal }
+    },
+    replaceSource(invocationId, source) {
+      const live = controllers.get(invocationId)
+      if (!live) return null
+      const record = read(live.chatId, invocationId)
+      if (!record || record.status !== 'running') return record ? publicRecord(record) : null
+      const updated = sanitize({
+        ...record,
+        input: clone(source.input),
+        renderedPrompt: clone(source.renderedPrompt),
+        history: clone(source.history)
+      }) as unknown as AgentRunRecord
+      persist(updated)
+      emit({ type: 'updated', run: summary(updated) })
+      return publicRecord(updated)
     },
     update(invocationId, evidence, warnings = []) {
       const live = controllers.get(invocationId)
@@ -541,14 +575,32 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
       const cancelled = markCancelled(invocationId, 'CANCELLED')
       return { invocationId, cancelled: cancelled?.status === 'cancelled' }
     },
+    cancelFromFloor,
     deleteFromFloor(chatId, fromFloor) {
-      deleteFromFloor(chatId, fromFloor, dbFor(chatId))
+      cancelFromFloor(chatId, fromFloor)
+      const db = dbFor(chatId)
+      if (!db) return
+      const notify = db.transaction(() => deleteFromFloor(chatId, fromFloor, db))()
+      notify()
+    },
+    deleteFromFloorInTransaction(chatId, fromFloor, db) {
+      return deleteFromFloor(chatId, fromFloor, db)
     },
     deleteChat(chatId) {
       this.deleteFromFloor(chatId, Number.MIN_SAFE_INTEGER)
     },
     deleteChatForProfile(profileId, chatId) {
-      deleteFromFloor(chatId, Number.MIN_SAFE_INTEGER, dbForProfile(profileId, chatId))
+      cancelFromFloor(chatId, Number.MIN_SAFE_INTEGER)
+      const db = dbForProfile(profileId, chatId)
+      if (!db) return
+      const notify = db.transaction(() =>
+        deleteFromFloor(chatId, Number.MIN_SAFE_INTEGER, db)
+      )()
+      notify()
+    },
+    onBeforeDeleteFromFloor(listener) {
+      beforeFloorDeleteListeners.add(listener)
+      return () => beforeFloorDeleteListeners.delete(listener)
     },
     shutdown() {
       for (const invocationId of [...controllers.keys()]) {

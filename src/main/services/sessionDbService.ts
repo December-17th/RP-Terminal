@@ -4,6 +4,7 @@ import Database from 'better-sqlite3'
 import { getAppDir, ensureDir } from './storageService'
 import { getDb } from './db'
 import { log } from './logService'
+import { FLOOR_OPERATIONS_SCHEMA } from './agentRuntime/floorState/FloorState'
 
 /**
  * Per-CHAT session SQLite — the "decentralized save" store (decentralize-save-system plan §B2).
@@ -89,6 +90,9 @@ CREATE TABLE IF NOT EXISTS vars_ops (
   PRIMARY KEY (chat_id, floor, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_vars_ops_chat_floor ON vars_ops(chat_id, floor);
+
+-- General floor-owned state journal. Legacy vars_ops remains intact and is imported lazily.
+${FLOOR_OPERATIONS_SCHEMA}
 
 CREATE TABLE IF NOT EXISTS table_progress (
   chat_id TEXT NOT NULL,

@@ -131,7 +131,7 @@ describe('HarnessRunAdapter', () => {
     history: [{ floor: 6, response: 'Earlier.' }]
   })
 
-  it('persists running before scripted dispatch, then projects evidence and success', async () => {
+  it('keeps successful evidence running until incorporation commits the outcome', async () => {
     let observedRunning = false
     const scripted = createScriptedProviderAdapter([
       {
@@ -166,10 +166,9 @@ describe('HarnessRunAdapter', () => {
     expect(result).toMatchObject({ ok: true, result: 'Done.' })
     expect(observedRunning).toBe(true)
     expect(runStore.get('chat-1', 'success')).toMatchObject({
-      status: 'succeeded',
+      status: 'running',
       agentVersion: 'catalog-v3',
       agentHash: 'sha256:catalog-v3',
-      result: 'Done.',
       attempts: [{ outcome: 'success', providerCalls: 1 }],
       metrics: {
         inputTokens: 11,
@@ -178,7 +177,64 @@ describe('HarnessRunAdapter', () => {
         cacheWriteTokens: 1
       }
     })
+    expect(events.map((event) => event.type)).toEqual(['started', 'updated'])
+
+    runtime.commitSuccess('success', result as Extract<typeof result, { ok: true }>, {
+      status: 'committed',
+      operations: 0
+    })
+
+    expect(runStore.get('chat-1', 'success')).toMatchObject({
+      status: 'succeeded',
+      result: 'Done.',
+      replay: { status: 'committed', operations: 0 }
+    })
     expect(events.map((event) => event.type)).toEqual(['started', 'updated', 'finished'])
+  })
+
+  it('reuses one open Run Record across a stale transactional source restart', async () => {
+    const runtime = createHarnessRunAdapter({
+      runStore,
+      providerDispatch: providerDispatch(
+        createScriptedProviderAdapter([
+          {
+            events: [
+              { type: 'text-delta', delta: 'Stale.' },
+              { type: 'finish', reason: 'stop' }
+            ]
+          },
+          {
+            events: [
+              { type: 'text-delta', delta: 'Current.' },
+              { type: 'finish', reason: 'stop' }
+            ]
+          }
+        ])
+      ),
+      toolRegistry: createToolRegistry()
+    })
+
+    const first = await runtime.execute(request('restart'))
+    const second = await runtime.execute({
+      ...request('restart'),
+      input: { request: 'current-source' }
+    })
+
+    expect(first).toMatchObject({ ok: true, result: 'Stale.' })
+    expect(second).toMatchObject({ ok: true, result: 'Current.' })
+    expect(events.filter((event) => event.type === 'started')).toHaveLength(1)
+    expect(runStore.get('chat-1', 'restart')).toMatchObject({
+      status: 'running',
+      input: { request: 'current-source' }
+    })
+    runtime.commitSuccess('restart', second as Extract<typeof second, { ok: true }>, {
+      status: 'committed',
+      operations: 0
+    })
+    expect(runStore.get('chat-1', 'restart')).toMatchObject({
+      status: 'succeeded',
+      result: 'Current.'
+    })
   })
 
   it('persists a scripted provider failure', async () => {
@@ -229,8 +285,12 @@ describe('HarnessRunAdapter', () => {
       ok: false,
       failure: { code: 'CANCELLED' }
     })
-    await expect(second).resolves.toMatchObject({ ok: true, result: 'Second completed.' })
+    const secondResult = await second
+    expect(secondResult).toMatchObject({ ok: true, result: 'Second completed.' })
     expect(runStore.get('chat-1', 'first')?.status).toBe('cancelled')
+    expect(runStore.get('chat-1', 'second')?.status).toBe('running')
+    if (!secondResult.ok) throw new Error('expected successful fixture')
+    runtime.commitSuccess('second', secondResult, { status: 'committed', operations: 0 })
     expect(runStore.get('chat-1', 'second')?.status).toBe('succeeded')
   })
 

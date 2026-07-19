@@ -4,6 +4,7 @@ const hoisted = vi.hoisted(() => ({
   records: [] as any[],
   listeners: [] as Array<(event: unknown) => void>,
   cancel: vi.fn((invocationId: string) => ({ invocationId, cancelled: true })),
+  runtimeCancel: vi.fn(() => true),
   sent: [] as Array<{ channel: string; event: unknown }>,
   profilesByChat: new Map<string, string>()
 }))
@@ -19,6 +20,10 @@ vi.mock('../../src/main/services/agentRuntime/runs/AgentRunStore', () => ({
       return () => undefined
     }
   }
+}))
+
+vi.mock('../../src/main/services/agentRuntime/InvocationRuntimeService', () => ({
+  invocationRuntime: () => ({ cancelInvocation: hoisted.runtimeCancel })
 }))
 
 vi.mock('../../src/main/services/sessionDbService', () => ({
@@ -63,6 +68,7 @@ describe('Agent Run IPC', () => {
       ['c3', 'p2']
     ])
     hoisted.cancel.mockClear()
+    hoisted.runtimeCancel.mockClear()
     hoisted.sent.length = 0
     setGuardMainWindow({ webContents: mainWc, on: () => undefined } as never)
     registerAgentRunIpc({
@@ -92,7 +98,7 @@ describe('Agent Run IPC', () => {
       invocationId: 'one',
       cancelled: true
     })
-    expect(hoisted.cancel).toHaveBeenCalledTimes(1)
+    expect(hoisted.runtimeCancel).toHaveBeenCalledWith('one')
   })
 
   it.each([
@@ -107,7 +113,7 @@ describe('Agent Run IPC', () => {
       const output = handlers.get(channel)?.(event, request)
       await expect(output as Promise<unknown>).rejects.toBeInstanceOf(IpcSenderRejectedError)
     }
-    expect(hoisted.cancel).not.toHaveBeenCalled()
+    expect(hoisted.runtimeCancel).not.toHaveBeenCalled()
   })
 
   it('rejects spoofed profile and unknown chat scopes without returning records', async () => {
@@ -137,7 +143,7 @@ describe('Agent Run IPC', () => {
         invocationId: 'other-chat'
       })
     ).toEqual({ invocationId: 'other-chat', cancelled: false })
-    expect(hoisted.cancel).not.toHaveBeenCalled()
+    expect(hoisted.runtimeCancel).not.toHaveBeenCalled()
   })
 
   it('broadcasts typed activity independently of notification policy', () => {

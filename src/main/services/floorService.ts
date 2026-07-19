@@ -5,6 +5,7 @@ import { normalizeSwipes, selectSwipe, appendSwipe } from './swipeHelpers'
 import { withLock } from './asyncLock'
 import { cleanForHistory } from '../../shared/responseView'
 import { agentRunStore } from './agentRuntime/runs/AgentRunStore'
+import { createFloorState } from './agentRuntime/floorState/FloorState'
 
 /** Per-chat floor-variable write lock key (agent-packs WP1.5; ADR 0003). Floors are keyed by
  *  `chat_id` in SQLite (PRIMARY KEY (chat_id, floor)), so a chat is the write-serialization scope —
@@ -310,7 +311,13 @@ export const setActiveSwipe = (
   floor.swipes = state.swipes
   floor.swipe_id = swipe_id
   floor.response.content = content
-  saveFloor(profileId, chatId, floor)
+  const db = getSessionDbByChat(chatId)
+  if (db)
+    createFloorState({ db }).updateTranscript(chatId, [
+      { floor: floorIndex, responseContent: content, swipes: floor.swipes, swipeId: swipe_id }
+    ])
+  else saveFloor(profileId, chatId, floor)
+  refreshChatSummary(chatId)
   bumpTranscriptEpoch(chatId) // active response text changed
   fireTranscriptEdited(profileId, chatId, floorIndex)
   return floor
@@ -332,7 +339,18 @@ export const addSwipe = (
   floor.swipes = state.swipes
   floor.swipe_id = state.swipe_id
   floor.response.content = content
-  saveFloor(profileId, chatId, floor)
+  const db = getSessionDbByChat(chatId)
+  if (db)
+    createFloorState({ db }).updateTranscript(chatId, [
+      {
+        floor: floorIndex,
+        responseContent: content,
+        swipes: floor.swipes,
+        swipeId: state.swipe_id
+      }
+    ])
+  else saveFloor(profileId, chatId, floor)
+  refreshChatSummary(chatId)
   bumpTranscriptEpoch(chatId) // active response text changed
   fireTranscriptEdited(profileId, chatId, floorIndex)
   return floor
@@ -347,20 +365,14 @@ export const updateFloorFields = (
   responseContent: string | null
 ): void => {
   const db = getSessionDbByChat(chatId)
-  if (db && userContent !== null) {
-    db.prepare('UPDATE floors SET user_content = ? WHERE chat_id = ? AND floor = ?').run(
-      userContent,
-      chatId,
-      floorIndex
-    )
-  }
-  if (db && responseContent !== null) {
-    db.prepare('UPDATE floors SET response_content = ? WHERE chat_id = ? AND floor = ?').run(
-      responseContent,
-      chatId,
-      floorIndex
-    )
-  }
+  if (db && (userContent !== null || responseContent !== null))
+    createFloorState({ db }).updateTranscript(chatId, [
+      {
+        floor: floorIndex,
+        ...(userContent !== null ? { userContent } : {}),
+        ...(responseContent !== null ? { responseContent } : {})
+      }
+    ])
   if (userContent !== null || responseContent !== null) {
     refreshChatSummary(chatId) // last-floor text may have changed (B3)
     bumpTranscriptEpoch(chatId)
@@ -375,10 +387,20 @@ export const deleteFloorAndSubsequent = (
 ): void => {
   // Invocation Floors own their Run Records. Cancel first so no late provider completion can
   // finalize a record after the transcript cut, then erase completed and in-flight evidence.
-  agentRunStore.deleteFromFloor(chatId, fromFloorIndex)
-  getSessionDbByChat(chatId)
-    ?.prepare('DELETE FROM floors WHERE chat_id = ? AND floor >= ?')
-    .run(chatId, fromFloorIndex)
+  agentRunStore.cancelFromFloor(chatId, fromFloorIndex)
+  const sessionDb = getSessionDbByChat(chatId)
+  let notifyEvidenceDeleted = (): void => undefined
+  if (sessionDb) {
+    sessionDb.transaction(() => {
+      notifyEvidenceDeleted = agentRunStore.deleteFromFloorInTransaction(
+        chatId,
+        fromFloorIndex,
+        sessionDb
+      )
+      createFloorState({ db: sessionDb }).deleteFromFloor(chatId, fromFloorIndex)
+    })()
+  }
+  notifyEvidenceDeleted()
   refreshChatSummary(chatId) // floor_count + last-floor changed (B3)
   bumpTranscriptEpoch(chatId) // truncation (regenerate / floor delete)
   for (const fn of transcriptCutListeners) {

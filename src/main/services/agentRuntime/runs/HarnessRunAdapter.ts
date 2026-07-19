@@ -2,6 +2,7 @@ import {
   resolveInvocationOptions,
   type AgentDefinition,
   type AgentRunMessage,
+  type AgentRunReplayOutcome,
   type InvocationOptions,
   type JsonObject,
   type JsonValue
@@ -36,10 +37,25 @@ export interface HarnessRunRequest {
   history?: JsonValue
   signal?: AbortSignal
   yssVocabulary?: SceneVocabulary
+  /** Narrow fresh-context input used only after transactional incorporation/replay rejection. */
+  corrective?: {
+    rejectedOutput: string
+    failure: HarnessFailure
+  }
 }
 
 export interface HarnessRunAdapter {
   execute(request: HarnessRunRequest): Promise<HarnessExecutionResult>
+  commitSuccess(
+    invocationId: string,
+    execution: Extract<HarnessExecutionResult, { ok: true }>,
+    replay: AgentRunReplayOutcome
+  ): void
+  commitFailure(
+    invocationId: string,
+    failure: HarnessFailure,
+    replay?: AgentRunReplayOutcome
+  ): void
   stop(invocationId: string): boolean
   shutdown(): void
 }
@@ -106,6 +122,24 @@ export const createHarnessRunAdapter = ({
   ...harnessOptions
 }: CreateHarnessRunAdapterOptions): HarnessRunAdapter => {
   const harness: AgentHarness = createAgentHarness({ ...harnessOptions, harnessPolicy })
+  const handles = new Map<string, { signal: AbortSignal }>()
+  const evidenceByInvocation = new Map<string, HarnessExecutionResult['evidence']>()
+
+  const combinedEvidence = (
+    invocationId: string,
+    evidence: HarnessExecutionResult['evidence']
+  ): HarnessExecutionResult['evidence'] => {
+    const previous = evidenceByInvocation.get(invocationId)
+    const combined = previous
+      ? {
+          ...previous,
+          ...evidence,
+          attempts: [...previous.attempts, ...evidence.attempts]
+        }
+      : evidence
+    evidenceByInvocation.set(invocationId, combined)
+    return combined
+  }
 
   return {
     async execute(request) {
@@ -120,7 +154,8 @@ export const createHarnessRunAdapter = ({
         options: resolved.value,
         ...(request.promptValues ? { promptValues: request.promptValues } : {}),
         ...(request.history !== undefined ? { history: request.history } : {}),
-        ...(request.yssVocabulary ? { yssVocabulary: request.yssVocabulary } : {})
+        ...(request.yssVocabulary ? { yssVocabulary: request.yssVocabulary } : {}),
+        ...(request.corrective ? { corrective: request.corrective } : {})
       }
       const prompt = buildAttemptLog(
         request.agent.definition,
@@ -131,44 +166,48 @@ export const createHarnessRunAdapter = ({
       const renderedPrompt = prompt.ok
         ? recordMessages([...prompt.immutablePrefix, ...prompt.attemptLog])
         : []
-      const handle = runStore.create({
-        invocationId: request.invocationId,
-        profileId: request.profileId,
-        chatId: request.chatId,
-        floor: request.floor,
-        agentVersion: request.agent.version,
-        agentHash: request.agent.hash,
-        definition: request.agent.definition,
-        config: resolved.value,
-        input: request.input,
-        renderedPrompt,
-        history: request.history ?? null
-      })
+      let handle = handles.get(request.invocationId)
+      if (!handle) {
+        handle = runStore.create({
+          invocationId: request.invocationId,
+          profileId: request.profileId,
+          chatId: request.chatId,
+          floor: request.floor,
+          agentVersion: request.agent.version,
+          agentHash: request.agent.hash,
+          definition: request.agent.definition,
+          config: resolved.value,
+          input: request.input,
+          renderedPrompt,
+          history: request.history ?? null
+        })
+        handles.set(request.invocationId, handle)
+      } else {
+        runStore.replaceSource(request.invocationId, {
+          input: request.input,
+          renderedPrompt,
+          history: request.history ?? null
+        })
+      }
       const linked = linkSignals([handle.signal, request.signal])
       try {
         const execution = await harness.execute({ ...harnessRequest, signal: linked.signal })
-        runStore.update(request.invocationId, execution.evidence)
-        if (execution.ok) {
-          runStore.finalize(request.invocationId, {
-            status: 'succeeded',
-            result: execution.result,
-            evidence: execution.evidence,
-            replay: {
-              status: 'not-applicable',
-              operations: execution.stagedOperations.length
-            }
-          })
-        } else {
+        const evidence = combinedEvidence(request.invocationId, execution.evidence)
+        runStore.update(request.invocationId, evidence)
+        if (!execution.ok && linked.signal.reason !== 'STALE_SOURCE') {
           const cancelled = linked.signal.aborted || execution.failure.code === 'CANCELLED'
           runStore.finalize(request.invocationId, {
             status: cancelled ? 'cancelled' : 'failed',
             failure: execution.failure,
-            evidence: execution.evidence,
+            evidence,
             replay: { status: 'discarded', operations: 0 }
           })
+          handles.delete(request.invocationId)
+          evidenceByInvocation.delete(request.invocationId)
         }
         return execution
       } catch (cause) {
+        if (linked.signal.reason === 'STALE_SOURCE') throw cause
         runStore.finalize(request.invocationId, {
           status: linked.signal.aborted ? 'cancelled' : 'failed',
           failure: linked.signal.aborted
@@ -181,16 +220,45 @@ export const createHarnessRunAdapter = ({
           evidence: { attempts: [] },
           replay: { status: 'discarded', operations: 0 }
         })
+        handles.delete(request.invocationId)
+        evidenceByInvocation.delete(request.invocationId)
         throw cause
       } finally {
         linked.dispose()
       }
     },
+    commitSuccess(invocationId, execution, replay) {
+      runStore.finalize(invocationId, {
+        status: 'succeeded',
+        result: execution.result,
+        evidence: evidenceByInvocation.get(invocationId) ?? execution.evidence,
+        replay
+      })
+      handles.delete(invocationId)
+      evidenceByInvocation.delete(invocationId)
+    },
+    commitFailure(invocationId, failure, replay = { status: 'failed', operations: 0 }) {
+      runStore.finalize(invocationId, {
+        status: failure.code === 'CANCELLED' ? 'cancelled' : 'failed',
+        failure,
+        evidence: evidenceByInvocation.get(invocationId) ?? { attempts: [] },
+        replay
+      })
+      handles.delete(invocationId)
+      evidenceByInvocation.delete(invocationId)
+    },
     stop(invocationId) {
-      return runStore.cancel(invocationId).cancelled
+      const stopped = runStore.cancel(invocationId).cancelled
+      if (stopped) {
+        handles.delete(invocationId)
+        evidenceByInvocation.delete(invocationId)
+      }
+      return stopped
     },
     shutdown() {
       runStore.shutdown()
+      handles.clear()
+      evidenceByInvocation.clear()
     }
   }
 }

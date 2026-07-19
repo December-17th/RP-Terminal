@@ -1,7 +1,7 @@
 # RP Terminal — Current Status
 
 **Status:** Living implementation and release-status summary. Update in place.
-**As of:** 2026-07-18
+**As of:** 2026-07-19
 **Grounded revision:** `33b9080bef1f` (`main`). The current `feat/persona-presets` branch (PR 99) is
 described separately below and is not yet merged.
 
@@ -83,14 +83,19 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   manual pass.
 - The [Agent Runtime design](agent-system/agent-runtime-design.md) and
   [ADR 0019](adr/0019-agent-runtime-replaces-workflow-system.md) are approved. Implementation has
-  started on `agent-system`; Milestones 1–2, Sessions 0–4, are implemented and reviewed, with commits
-  pending in the current working tree. Session 0 baseline evidence is complete and reviewed. The
-  current foundation is internal only: Agent contracts, provider normalization/selection, the
-  Harness, scripted characterization fixtures, the profile-wide Agent Catalog, floor-owned immutable
-  Run Records, and the typed Agent Activity read/cancel surface. Built-in/card/user sources,
-  deterministic customization hashes, collision-safe package import, explicit upgrade conflicts,
-  role bindings, strict World Card `agents[]`, Run Record persistence, and activity cancellation are
-  covered by tests. Sessions 5–12 remain unimplemented;
+  started on `agent-system`; Milestones 1–3, Sessions 0–6, are implemented, reviewed, and accepted,
+  with commits pending in the current working tree. Session 0 baseline evidence is complete and
+  reviewed. The current foundation is internal only: Agent contracts, provider
+  normalization/selection, the Harness, scripted characterization fixtures, the profile-wide Agent
+  Catalog, floor-owned immutable Run Records, the typed Agent Activity read/cancel surface, general
+  `floor_operations` with persisted pre-floor baselines and non-destructive `vars_ops` compatibility,
+  atomic suffix replay across model/card/user/Agent state paths, and the production
+  `InvocationRuntime`. The runtime provides floor-ordered per-Agent lanes, sequence and flat-parallel
+  plan semantics, duplicate coalescing, deletion/cancellation, stale-source restarts, one shared
+  corrective retry budget, atomic `RunStore`/result/FloorState incorporation, Next-turn Barriers, and
+  activity stop/shutdown. Unified floor deletion removes floors, state journals, and Run Records in
+  one transaction while cancelling affected work. Sessions 7–12 remain planned and unimplemented;
+  the card public Agent API, Player Generation cutover, and workflow removal are not implemented, so
   Classic and Yuzu still use the workflow-backed product path.
   The code-informed [implementation plan](agent-system/implementation-plan.md) sequences the remaining
   work into independently gated sessions.

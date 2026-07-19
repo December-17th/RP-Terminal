@@ -758,7 +758,9 @@ export const createAgentHarness = ({
       return { ok: false, failure: tools.failure, stagedOperations: [], evidence }
     }
 
-    let correction: string | undefined
+    let correction = request.corrective
+      ? correctiveMessage(request.corrective.rejectedOutput, request.corrective.failure)
+      : undefined
     let transportRetry: TransportRetry | undefined
     const maximumAttempts = 1 + resolved.value.maxRetryAttempts
     for (let attempt = 1; attempt <= maximumAttempts; attempt++) {

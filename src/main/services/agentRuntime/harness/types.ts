@@ -26,6 +26,10 @@ export interface HarnessExecuteRequest {
   history?: JsonValue
   signal?: AbortSignal
   yssVocabulary?: SceneVocabulary
+  corrective?: {
+    rejectedOutput: string
+    failure: HarnessFailure
+  }
 }
 
 export interface ContextBudgetAttribution {

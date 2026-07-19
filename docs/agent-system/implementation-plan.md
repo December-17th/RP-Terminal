@@ -1,8 +1,8 @@
 # Agent Runtime implementation plan
 
-Status: Milestones 1–2, Sessions 0–4, are implemented and reviewed on `agent-system`, with commits
-pending in the current working tree. Session 0 evidence is complete and reviewed; Sessions 5–12
-remain unimplemented.
+Status: Milestones 1–3, Sessions 0–6, are implemented, reviewed, and accepted on `agent-system`, with
+commits pending in the current working tree. Session 0 evidence is complete and reviewed; Sessions
+7–12 remain planned and unimplemented.
 
 This plan turns the approved [Agent Runtime design](agent-runtime-design.md) and
 [ADR 0019](../adr/0019-agent-runtime-replaces-workflow-system.md) into a sequence of independently
@@ -1002,6 +1002,30 @@ The Agent Runtime replacement is complete only when:
 - the full automated and manual cutover gates pass.
 
 ## 8. Implementation log
+
+### 2026-07-19 — Milestone 3 accepted
+
+Status: Milestone 3 Sessions 5–6 are implemented, reviewed, and accepted on `agent-system`.
+Sessions 7–12 remain planned and unimplemented.
+
+Session 5 introduced the general `floor_operations` journal and persisted pre-floor baselines while
+retaining existing `vars_ops` rows as non-destructive compatibility data. Model folds plus card,
+user, and Agent operations now use the FloorState path to compute and validate a complete suffix
+before atomically committing transcript updates, operation rows, and reconstructed floor snapshots.
+The generation, variable-edit, replay, and floor-deletion paths share that state foundation, and
+unified deletion removes affected floors, floor operations, legacy variable operations, baselines,
+and Run Records in one transaction.
+
+Session 6 added the production `InvocationRuntime` composition over the Agent Harness, Run Store, and
+FloorState. It provides floor-ordered per-chat/per-Agent lanes, top-level sequence and flat-parallel
+plan semantics, duplicate invocation coalescing, invocation/plan/floor cancellation, deletion of
+in-flight work and evidence, stale transactional source restarts, and one corrective retry budget
+shared by Harness and Result Incorporation failures. Successful incorporation commits `RunStore`
+evidence, the Agent result/Result Slot, staged operations, and FloorState suffix replay atomically.
+Next-turn Barriers, activity Stop, and idempotent app shutdown are implemented.
+
+This milestone does not expose the card public Agent API or move Classic/Yuzu Player Generation onto
+the Harness, and it does not remove the workflow product surface; those remain Sessions 7–12.
 
 ### 2026-07-18 — Milestone 1 baseline
 

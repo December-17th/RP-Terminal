@@ -35,6 +35,7 @@ const SESSION_TABLES = [
   'table_refill_progress',
   'workflow_trigger_state'
 ] as const
+const OPTIONAL_SESSION_TABLES = ['floor_state_baselines', 'floor_operations'] as const
 
 interface WorldRef {
   characterId: string
@@ -269,6 +270,9 @@ const validateAndRemapSession = (dbPath: string, newChatId: string): void => {
     db.transaction(() => {
       for (const table of SESSION_TABLES) {
         db.prepare(`UPDATE ${table} SET chat_id = ?`).run(newChatId)
+      }
+      for (const table of OPTIONAL_SESSION_TABLES) {
+        if (tables.has(table)) db.prepare(`UPDATE ${table} SET chat_id = ?`).run(newChatId)
       }
     })()
     db.pragma('wal_checkpoint(TRUNCATE)')

@@ -5,6 +5,7 @@ import type {
   AgentRunInvocationRequest
 } from '../../shared/agentRuntime'
 import { agentRunStore } from '../services/agentRuntime/runs/AgentRunStore'
+import { invocationRuntime } from '../services/agentRuntime/InvocationRuntimeService'
 import { resolveProfileId } from '../services/sessionDbService'
 import { gate } from './ipcGuards'
 
@@ -72,7 +73,10 @@ export const registerAgentRunIpc = (ipcMain: IpcMain): void => {
       if (record?.chatId !== scope.chatId || record.profileId !== scope.profileId) {
         return { invocationId: scope.invocationId, cancelled: false }
       }
-      return agentRunStore.cancel(scope.invocationId)
+      return {
+        invocationId: scope.invocationId,
+        cancelled: invocationRuntime().cancelInvocation(scope.invocationId)
+      }
     })
   )
 

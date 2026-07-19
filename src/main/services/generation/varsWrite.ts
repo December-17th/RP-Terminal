@@ -3,6 +3,7 @@ import { applyJsonPatch, JsonPatchOp } from '../../parsers/mvuParser'
 import { log } from '../logService'
 import { appendVarsOp } from '../varsOpsService'
 import { FloorFile } from '../../types/chat'
+import { floorStateForChat } from '../agentRuntime/floorState'
 
 // Runaway write-back loop breaker (TIMING-INDEPENDENT). NOTE (2026-07-02): this is now a BACKSTOP, not the
 // primary defense. The self-feedback loop is fixed at the source — the card runtime (shared/thRuntime
@@ -104,17 +105,21 @@ export const applyVariableOps = (
       )
     return null
   }
-  f.variables = { ...f.variables, stat_data: sd, delta_data: deltas }
-  saveFloor(profileId, chatId, f)
-  // Journal the FULL applied ops so re-evaluation can replay this write after the model fold. The
-  // as-authored ops fold identically against the replayed base state (no-op members are harmless).
-  appendVarsOp(chatId, floor, 'patch', ops)
+  const floorState = floorStateForChat(chatId)
+  if (floorState) {
+    floorState.appendPatch(chatId, floor, 'card', ops)
+  } else {
+    f.variables = { ...f.variables, stat_data: sd, delta_data: deltas }
+    saveFloor(profileId, chatId, f)
+    // Compatibility fallback for database-free unit seams.
+    appendVarsOp(chatId, floor, 'patch', ops)
+  }
   log(
     'info',
     `variable write-back — floor ${floor}: ${changed.map((d) => d.path).join(', ')}` +
       (changed.length < ops.length ? ` (${ops.length - changed.length} no-op)` : '')
   )
-  return f
+  return getFloor(profileId, chatId, floor)
 }
 
 /** Card whole-replace of the latest floor's stat_data (TH replaceVariables fast path / Mvu.replaceMvuData
@@ -127,8 +132,15 @@ export const replaceVariablesFromCard = (
 ): FloorFile | null => {
   const f = getFloor(profileId, chatId, floor)
   if (!f) return null
-  f.variables = { ...f.variables, stat_data: statData }
-  saveFloor(profileId, chatId, f)
-  appendVarsOp(chatId, floor, 'replace', statData)
-  return f
+  const floorState = floorStateForChat(chatId)
+  if (floorState) {
+    floorState.append(chatId, floor, 'card', [
+      { kind: 'set', path: 'variables.stat_data', value: statData }
+    ])
+  } else {
+    f.variables = { ...f.variables, stat_data: statData }
+    saveFloor(profileId, chatId, f)
+    appendVarsOp(chatId, floor, 'replace', statData)
+  }
+  return getFloor(profileId, chatId, floor)
 }

@@ -13,6 +13,7 @@ import { Lorebook } from '../types/character'
 import { applyEvent } from './generation/foldState'
 import { resetWriteLoopGuard } from './generation/varsWrite'
 import { listVarsOps, VarsOpRow } from './varsOpsService'
+import { floorStateForChat } from './agentRuntime/floorState'
 import { buildTurnContext } from './nodes/turnContext'
 import { builtinRegistry } from './nodes/builtin'
 import { runWorkflow } from './workflowEngine'
@@ -273,11 +274,9 @@ export const getRenderMarkers = (
  * the suffix instead of rewriting the whole transcript. Default 0 = the full from-scratch replay
  * (the Re-evaluate button / parser-change path).
  *
- * INTENDED divergence on manual edits (review 2026-07-15): `setFloorStatData` (the Variables-view
- * debug editor) is deliberately un-journaled, so a FULL replay recomputes over it — that is the
- * editor's documented contract. A SUFFIX replay seeds from stored state and therefore PRESERVES a
- * manual edit made below `fromFloor`: a card mutating floor K must not silently revert the user's
- * debug edits on untouched earlier floors. Pinned in test/reevaluateSuffix.test.ts.
+ * Real session databases delegate replay to FloorState, which includes general floor-scoped
+ * model/card/user/Agent operations and publishes the whole suffix atomically. The legacy fold below
+ * remains only for no-database unit seams.
  */
 export const reevaluateVariables = (
   profileId: string,
@@ -286,6 +285,11 @@ export const reevaluateVariables = (
 ): FloorFile[] => {
   const floors = getAllFloors(profileId, chatId)
   const start = Math.min(Math.max(0, fromFloor), floors.length)
+  const floorState = floorStateForChat(chatId)
+  if (floorState && start < floors.length) {
+    floorState.replay(chatId, floors[start].floor)
+    return getAllFloors(profileId, chatId)
+  }
   const stat: Record<string, unknown> =
     start > 0
       ? JSON.parse(
@@ -345,9 +349,9 @@ export const withStatData = (floor: FloorFile, statData: unknown): FloorFile => 
   variables: { ...floor.variables, stat_data: statData, delta_data: [] }
 })
 
-/** Replace a floor's stat_data wholesale (the Variables-view editor's write path) and persist.
- *  Deliberately NOT journaled to `vars_ops` (unlike card writes): the debug editor's contract is
- *  re-derive-from-scratch, so a subsequent re-evaluate is expected to overwrite it. */
+/** Replace a floor's stat_data wholesale (the Variables-view editor's write path). Real sessions
+ * journal the edit as a user operation and replay later floors atomically; the direct save is the
+ * no-database unit-seam fallback. */
 export const setFloorStatData = (
   profileId: string,
   chatId: string,
@@ -356,6 +360,13 @@ export const setFloorStatData = (
 ): FloorFile | null => {
   const f = getFloor(profileId, chatId, floor)
   if (!f) return null
+  const floorState = floorStateForChat(chatId)
+  if (floorState) {
+    floorState.append(chatId, floor, 'user', [
+      { kind: 'set', path: 'variables.stat_data', value: statData }
+    ])
+    return getFloor(profileId, chatId, floor)
+  }
   const updated = withStatData(f, statData)
   saveFloor(profileId, chatId, updated)
   return updated
