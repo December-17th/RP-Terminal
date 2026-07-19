@@ -1,10 +1,26 @@
 # Agent Runtime implementation plan
 
 Status: Milestones 1–4, Sessions 0–7, are implemented, reviewed, accepted, and committed on
-`agent-system`. Session 0 evidence is complete and reviewed; Sessions 8–12 remain planned and
-unimplemented. Session 8 is superseded in ordering by the
-[Classic Narrator first execution plan](classic-narrator-first-execution-plan.md), whose Milestone 1
-has landed.
+`agent-system`. Session 0 evidence is complete and reviewed.
+
+Session 8 was superseded in ordering by the
+[Classic Narrator first execution plan](classic-narrator-first-execution-plan.md), and **all six of
+that plan's milestones have now landed** — including M3 (direct Classic player-generation
+orchestration), which delivers the substance of Session 8's objective, and M6, whose
+[debloat audit](debloat-audit.md) is decision-support only with no deletion approved or performed.
+Session 8 is therefore not re-run as written; its remaining scope is the Pending Floor cutover.
+
+Session 10 is **in progress**: the Agent Workspace is being implemented ahead of Session 9, with a
+Settings-rail quick-adjustment panel plus a full editor popup. Sessions 9, 11, and 12 remain planned
+and unimplemented.
+
+Two facilities are built but deliberately NOT wired, and must not be assumed live:
+
+- `blocksNextTurn` — the barrier exists (`InvocationRuntime.startBarrier` /
+  `waitForNextTurnBarriers`) but has no production caller, and `src/main/services/generation/`
+  references no part of `InvocationRuntime`. Wiring it is a separate, approval-gated decision.
+- The card Agent API has never shipped in any tagged build; card-owned scheduling is the designed
+  trigger path (design §11) but has no released consumer.
 
 This plan turns the approved [Agent Runtime design](agent-runtime-design.md) and
 [ADR 0020](../adr/0020-agent-runtime-replaces-workflow-system.md) into a sequence of independently
