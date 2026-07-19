@@ -50,6 +50,14 @@ export interface AgentRunStore {
     invocationId: string,
     source: Pick<AgentRunStart, 'input' | 'renderedPrompt' | 'history'>
   ): AgentRunRecord | null
+  /**
+   * Store the prompt exactly as the Harness built it, once it exists. A run is created BEFORE its
+   * prompt is rendered (rendering happens inside `execute`, and rendering twice would let the record
+   * drift from what was dispatched — ADR 0021), so this back-fills the one field that could not be
+   * known at `create` time. Deliberately does NOT emit: `summary()` carries no prompt, so the event
+   * would be indistinguishable noise for every subscriber.
+   */
+  attachRenderedPrompt(invocationId: string, renderedPrompt: AgentRunMessage[]): void
   update(
     invocationId: string,
     evidence: HarnessEvidence,
@@ -507,6 +515,15 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
       })
       emit({ type: 'started', run: summary(record) })
       return { record: publicRecord(record), signal: controller.signal }
+    },
+    attachRenderedPrompt(invocationId, renderedPrompt) {
+      const live = controllers.get(invocationId)
+      if (!live) return
+      const record = read(live.chatId, invocationId)
+      if (!record || record.status !== 'running') return
+      persist(
+        sanitize({ ...record, renderedPrompt: clone(renderedPrompt) }) as unknown as AgentRunRecord
+      )
     },
     replaceSource(invocationId, source) {
       const live = controllers.get(invocationId)

@@ -36,6 +36,14 @@ export interface HarnessExecuteRequest {
    * fails is expected to return its input, and `buildAttemptLog` guards that contract anyway.
    */
   render?: (text: string) => string
+  /**
+   * Fired ONCE, synchronously, with the exact messages the attempt log was built from — before any
+   * provider call. This is the ONLY way an observer can obtain the rendered prompt: templates read
+   * mutable state (`getvar`/`getMessageVar`), so a second `buildAttemptLog` by the caller would
+   * produce a prompt that merely RESEMBLES the dispatched one. Run Records are exact evidence, so
+   * they subscribe here instead of re-rendering.
+   */
+  onPromptBuilt?: (messages: ProviderMessage[]) => void
   signal?: AbortSignal
   yssVocabulary?: SceneVocabulary
   corrective?: {

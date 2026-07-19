@@ -768,6 +768,9 @@ export const createAgentHarness = ({
     if (!context.ok) {
       return { ok: false, failure: context.failure, stagedOperations: [], evidence }
     }
+    // Publish THESE bytes — the ones every attempt below is built from — to whoever records the run.
+    // Rendering happens exactly once per execution; nobody downstream re-renders (see `onPromptBuilt`).
+    request.onPromptBuilt?.([...context.immutablePrefix, ...context.attemptLog])
     const tools = preflightTools(
       request.definition,
       toolRegistry,

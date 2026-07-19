@@ -315,6 +315,41 @@ describe('HarnessRunAdapter', () => {
     expect(runStore.get('chat-1', 'caller-cancel')?.status).toBe('cancelled')
   })
 
+  /**
+   * ADR 0021 follow-up: prompt templates read MUTABLE state, so rendering twice — once for the run
+   * record, once for dispatch — can record a prompt that only resembles what was sent. The renderer
+   * below returns a different string on every call, which is exactly what a variable changing
+   * between two render points looks like. It fails on any structure that renders more than once.
+   */
+  it('records the exact bytes dispatched, even when rendering is not idempotent', async () => {
+    let renders = 0
+    const scripted = createScriptedProviderAdapter([
+      {
+        events: [
+          { type: 'text-delta', delta: 'Done.' },
+          { type: 'finish', reason: 'stop' }
+        ]
+      }
+    ])
+    const runtime = createHarnessRunAdapter({
+      runStore,
+      providerDispatch: providerDispatch(scripted),
+      toolRegistry: createToolRegistry()
+    })
+
+    const result = await runtime.execute({
+      ...request('single-render'),
+      render: (text) => `${text} [render#${++renders}]`
+    })
+
+    expect(result.ok).toBe(true)
+    // Rendering happened once, and the record is the dispatched message list verbatim.
+    expect(renders).toBe(1)
+    const dispatched = scripted.requests[0].messages.map(({ role, content }) => ({ role, content }))
+    expect(runStore.get('chat-1', 'single-render')?.renderedPrompt).toEqual(dispatched)
+    expect(dispatched.some((message) => message.content.includes('[render#1]'))).toBe(true)
+  })
+
   it('shutdown aborts and finalizes every active provider call', async () => {
     const provider = controlledAdapter()
     const runtime = createHarnessRunAdapter({

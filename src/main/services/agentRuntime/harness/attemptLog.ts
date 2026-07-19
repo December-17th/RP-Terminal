@@ -76,6 +76,13 @@ export const buildAttemptLog = (
         }
       }
     }
+    // VOLATILITY TRAP (ADR 0021): only a `binding` segment marks a message volatile. A rendered TEXT
+    // segment also reads mutable state (`getvar`/`getMessageVar`) yet lands in the immutable prefix.
+    // Harmless today — nothing reuses the prefix across calls, the split is flattened at dispatch, and
+    // Anthropic cache_control is placed positionally (provider/shaping.ts). But the design's
+    // "the Harness does not rebuild earlier bytes" prefix reuse (docs/agent-system/agent-runtime-design.md
+    // §229-236) is UNIMPLEMENTED; whoever implements it must first treat templated text as volatile,
+    // or a stale prefix will be replayed. Do not reclassify here casually — it reorders messages.
     volatile ||= prompt.content.some((segment) => segment.type === 'binding')
     ;(volatile ? attemptLog : immutablePrefix).push({
       role: prompt.role,

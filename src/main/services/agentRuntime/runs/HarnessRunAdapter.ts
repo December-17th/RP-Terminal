@@ -16,7 +16,6 @@ import {
   type HarnessExecutionResult,
   type HarnessFailure
 } from '../harness'
-import { buildAttemptLog } from '../harness/attemptLog'
 import type { AgentRunStore } from './AgentRunStore'
 import type { ToolExecutionScope } from '../tools'
 
@@ -164,15 +163,11 @@ export const createHarnessRunAdapter = ({
         ...(request.yssVocabulary ? { yssVocabulary: request.yssVocabulary } : {}),
         ...(request.corrective ? { corrective: request.corrective } : {})
       }
-      const prompt = buildAttemptLog(
-        request.agent.definition,
-        harnessRequest,
-        resolved.value,
-        harnessPolicy
-      )
-      const renderedPrompt = prompt.ok
-        ? recordMessages([...prompt.immutablePrefix, ...prompt.attemptLog])
-        : []
+      // The record opens with an EMPTY prompt and is filled by `onPromptBuilt` below, synchronously,
+      // before the first provider call. The adapter deliberately has no way to render a prompt
+      // itself: recorded-equals-dispatched is then structural, not a convention two call sites must
+      // keep agreeing on.
+      const renderedPrompt: AgentRunMessage[] = []
       let handle = handles.get(request.invocationId)
       if (!handle) {
         handle = runStore.create({
@@ -198,7 +193,12 @@ export const createHarnessRunAdapter = ({
       }
       const linked = linkSignals([handle.signal, request.signal])
       try {
-        const execution = await harness.execute({ ...harnessRequest, signal: linked.signal })
+        const execution = await harness.execute({
+          ...harnessRequest,
+          signal: linked.signal,
+          onPromptBuilt: (messages) =>
+            runStore.attachRenderedPrompt(request.invocationId, recordMessages(messages))
+        })
         const evidence = combinedEvidence(request.invocationId, execution.evidence)
         runStore.update(request.invocationId, evidence)
         if (!execution.ok && linked.signal.reason !== 'STALE_SOURCE') {
