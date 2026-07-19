@@ -82,9 +82,14 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   refactor is implemented and gate-green in the working tree, pending owner review/commit and an in-app
   manual pass.
 - The [Agent Runtime design](agent-system/agent-runtime-design.md) and
-  [ADR 0019](adr/0019-agent-runtime-replaces-workflow-system.md) are approved but not implemented.
-  The code-informed [implementation plan](agent-system/implementation-plan.md) sequences the work
-  into independently gated sessions on `agent-system`.
+  [ADR 0019](adr/0019-agent-runtime-replaces-workflow-system.md) are approved. Implementation has
+  started on `agent-system`; Milestone 1 Sessions 0–2 are implemented and reviewed, with commits
+  pending in the current working tree. Session 0 baseline evidence is complete and reviewed. The
+  current foundation is internal only: Agent contracts, provider normalization/selection, the
+  Harness, scripted characterization fixtures, and tests. Sessions 3–12 remain unimplemented;
+  Classic and Yuzu still use the workflow-backed product path.
+  The code-informed [implementation plan](agent-system/implementation-plan.md) sequences the remaining
+  work into independently gated sessions.
   The planned cutover replaces every model-backed operation with one provider-neutral Harness,
   moves variable/time scheduling to card-side logic, and removes the workflow runtime, canvas, node
   formats, examples, and compatibility surface before merge. There is no migration or dual-runtime

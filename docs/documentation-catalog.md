@@ -2,7 +2,7 @@
 
 **Status:** Living catalogue. Update in place whenever documentation is added, removed, renamed, or changes
 lifecycle state.
-**As of:** 2026-07-16
+**As of:** 2026-07-18
 
 This catalogue answers two questions: which document is authoritative for a subject, and whether a file is
 living, implemented history, planned work, deferred work, superseded, or a point-in-time snapshot.
@@ -75,8 +75,8 @@ map.
 
 | Document                                                         | Status                                                                                                  |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [Agent Runtime](agent-system/agent-runtime-design.md)            | Approved design; not implemented. Hard-replaces the workflow system at an atomic cutover.               |
-| [Implementation plan](agent-system/implementation-plan.md)       | Ready on `agent-system`; phased, code-informed cutover plan.                                            |
+| [Agent Runtime](agent-system/agent-runtime-design.md)            | Approved; Milestone 1 Sessions 0–2 are implemented/reviewed, with working-tree commits pending.         |
+| [Implementation plan](agent-system/implementation-plan.md)       | Active on `agent-system`; Session 0 evidence is complete/reviewed. Sessions 3–12 are unimplemented.     |
 | [Agentic mode](agentic-mode-design.md)                           | Partially superseded: manual FSM shipped; unshipped tool-loop design replaced by Agent Runtime.         |
 | [Card custom UI](card-custom-ui-design.md)                       | Partial predecessor design; inline/WCV/static-layout work shipped, native declarative view kit remains. |
 | [Grep notes memory](grep-notes-memory-design.md)                 | Planned prototype; partially superseded by Agentic Plot Recall.                                         |

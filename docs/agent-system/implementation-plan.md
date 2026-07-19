@@ -1,6 +1,8 @@
 # Agent Runtime implementation plan
 
-Status: Ready for implementation on `agent-system`
+Status: Milestone 1 Sessions 0–2 are implemented and reviewed on `agent-system`, with commits
+pending in the current working tree. Session 0 evidence is complete and reviewed; Sessions 3–12
+remain unimplemented.
 
 This plan turns the approved [Agent Runtime design](agent-runtime-design.md) and
 [ADR 0019](../adr/0019-agent-runtime-replaces-workflow-system.md) into a sequence of independently
@@ -998,3 +1000,60 @@ The Agent Runtime replacement is complete only when:
   are absent from the product;
 - Legacy Workflow Data remains inert and untouched; and
 - the full automated and manual cutover gates pass.
+
+## 8. Implementation log
+
+### 2026-07-18 — Milestone 1 baseline
+
+Status: Milestone 1 Sessions 0–2 are implemented and reviewed on `agent-system`, with commits
+pending in the current working tree. The Session 0 baseline evidence recorded below is complete and
+reviewed. Sessions 3–12 remain unimplemented.
+
+Scripted provider fixtures now cover visible text, volatile reasoning, fragmented tool calls, usage,
+rate limits, malformed arguments, and truncation under `test/agentRuntime/fixtures/`. Agent-facing
+tests consume the fixtures without persisting raw reasoning.
+
+Focused characterization coverage pins Classic `sendMessages` bytes and written floors, provider
+shaping, floor-variable journal replay, regeneration and swipe orchestration, swipe selection/events,
+and lenient YSS parsing/validation. Regeneration and generated swipes now exercise the public
+`generationService` seam: both preserve the last user action and forward the correct generation type,
+while generated swipes retain prior alternates and activate the appended response.
+
+The focused baseline command was:
+
+```text
+npx.cmd vitest run test/generation/generateParity.test.ts test/generation/providerShape.test.ts test/varsOpsReplay.test.ts test/swipeHelpers.test.ts test/thEvents.test.ts test/yuzu/scene-validate.test.ts --configLoader runner
+```
+
+Result on 2026-07-18: PASS — 6 test files, 107 tests.
+
+The 49 node types registered by `src/main/services/nodes/builtin/index.ts` have these cutover
+dispositions:
+
+| Disposition                                                                          | Registered node types                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Extract or re-express behind an Agent/tool Interface                                 | `llm.sample`, `agent.llm`, `history.recent`, `memory.recall`, `memory.maintain`, `notes.maintain`                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Direct capability already exists; retain that capability and delete only the wrapper | `input.context`, `context.refresh`, `prompt.assemble`, `parse.response`, `apply.state`, `output.writeFloor`, `text.template`, `prompt.messages`, `merge.messages`, `messages.trim`, `mvu.set`, `tool.startCombat`, `tool.startDuel`, `tool.lorebookSearch`, `lorebook.select`, `lorebook.entries`, `prompt.preset`, `vars.get`, `vars.save`, `parse.extract`, `table.apply`, `table.export`, `table.read`, `table.query`, `context.history`, `context.card`, `context.persona`, `context.action`, `context.params`, `context.trimProcessed` |
+| Workflow-only authoring/control glue; delete at atomic cutover                       | `control.if`, `control.switch`, `control.when`, `control.mode`, `util.log`, `table.gate`, `subgraph.input`, `subgraph.output`, `subgraph.call`, `subgraph.loop`, `trigger.state`, `trigger.cadence`, `trigger.manual`                                                                                                                                                                                                                                                                                                                       |
+
+The Session 11 removal searches were run before deletion work. Baseline results:
+
+| Search                                                                                          | Matching files |
+| ----------------------------------------------------------------------------------------------- | -------------: |
+| `rg -l "shared/workflow\|workflowEngine\|runWorkflow\|workflowService\|workflowStore" src test` |            129 |
+| `rg -l "WorkflowEditor\|workflow-trace\|workflow-activity\|agent-pack-" src`                    |             25 |
+| `rg -l "\\.rptflow\|\\.rptmodule\|effective graph\|checkpoint attachment" src resources`        |             21 |
+| `rg -l "@xyflow/react" src package.json package-lock.json`                                      |              7 |
+
+These matches are the removal baseline, not permission to delete early. They span the shared workflow
+model, main services and IPC, preload types, renderer stores/editor, workflow and agent-pack tests,
+seed/template references, plus the `@xyflow/react` dependency and its five source consumers.
+
+The documentation gate was also run:
+
+```text
+npm.cmd run check:docs
+```
+
+Result on 2026-07-18: expected baseline failure — 61 broken local documentation links. The count
+matches the pre-existing 61-link baseline; this Session 0 work introduced no additional broken link.

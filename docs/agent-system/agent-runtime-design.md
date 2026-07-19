@@ -1,6 +1,8 @@
 # Agent Runtime design
 
-**Status:** Approved design, not implemented.
+**Status:** Approved design; Milestone 1 Sessions 0–2 are implemented and reviewed on
+`agent-system`, with commits pending in the current working tree. Later milestones are not
+implemented.
 **Decision date:** 2026-07-18.
 **Supersedes:** the workflow/node authoring and execution model, ADR 0011, the unshipped
 tool-loop portions of `docs/agentic-mode-design.md`, and the future-facing contract in
