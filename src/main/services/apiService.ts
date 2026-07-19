@@ -8,7 +8,10 @@ import {
   providerEndpointKey,
   providerTransportFamilyFor,
   ProviderDispatchError,
-  type ProviderConnection
+  type ProviderCallRequest,
+  type ProviderConnection,
+  type ProviderResult,
+  type ResolvedProviderDispatch
 } from './agentRuntime/provider'
 import {
   buildAnthropicCacheLayout as buildProviderAnthropicCacheLayout,
@@ -38,6 +41,17 @@ export const rpmEndpointKey = (api: Settings['api']): string =>
   })
 
 /**
+ * Performs the resolved dispatch. The default runs it directly; the Classic Narrator path injects
+ * the AgentHarness prepared-request executor here so ONE provider call is owned by the Harness while
+ * this wrapper keeps sole ownership of `<think>` assembly, error mapping, usage, and no-text checks.
+ * The connection is always the one this wrapper resolved — the executor never re-resolves it.
+ */
+export type ProviderDispatchVia = (
+  provider: ResolvedProviderDispatch,
+  request: ProviderCallRequest
+) => Promise<ProviderResult>
+
+/**
  * Temporary ordinary-generation compatibility wrapper over ProviderDispatch.
  * Normalized reasoning is volatile; this legacy caller explicitly opts into its historical
  * `<think>...</think>` presentation and raw-usage callback.
@@ -48,29 +62,31 @@ export const streamProvider = async (
   params: PresetParameters,
   onDelta: DeltaCallback,
   signal?: AbortSignal,
-  onUsage?: UsageCallback
+  onUsage?: UsageCallback,
+  dispatchVia?: ProviderDispatchVia
 ): Promise<string> => {
   const assembler = thinkAssembler(onDelta)
   let sawReasoning = false
   let sawText = false
   const provider = createCompatibilityProviderDispatch(providerConnection(settings), params)
   const transport = providerTransportFamilyFor(settings.api.provider)
+  const call: ProviderCallRequest = {
+    messages,
+    signal,
+    onEvent: (event) => {
+      if (event.type === 'reasoning') {
+        sawReasoning = true
+        assembler.reasoning(event.delta)
+      }
+      if (event.type === 'text') {
+        sawText = true
+        assembler.content(event.delta)
+      }
+    }
+  }
   let result
   try {
-    result = await provider.dispatch({
-      messages,
-      signal,
-      onEvent: (event) => {
-        if (event.type === 'reasoning') {
-          sawReasoning = true
-          assembler.reasoning(event.delta)
-        }
-        if (event.type === 'text') {
-          sawText = true
-          assembler.content(event.delta)
-        }
-      }
-    })
+    result = dispatchVia ? await dispatchVia(provider, call) : await provider.dispatch(call)
   } catch (cause) {
     if (
       signal?.aborted &&

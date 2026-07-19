@@ -1,4 +1,9 @@
-import { streamProvider, DeltaCallback, UsageCallback } from '../apiService'
+import {
+  streamProvider,
+  DeltaCallback,
+  UsageCallback,
+  type ProviderDispatchVia
+} from '../apiService'
 import { ChatMessage } from '../promptBuilder'
 import { PresetParameters } from '../../types/preset'
 import { log } from '../logService'
@@ -17,7 +22,10 @@ export const callModel = async (
   sendMessages: ChatMessage[],
   params: PresetParameters,
   onDelta: DeltaCallback,
-  signal: AbortSignal
+  signal: AbortSignal,
+  /** Optional executor for the ONE provider call (Classic routes it through AgentHarness). Abort
+   *  classification and the exact `response` log below stay owned here either way. */
+  dispatchVia?: ProviderDispatchVia
 ): Promise<{ raw: string; rawUsage: unknown; stopped: boolean } | null> => {
   let rawUsage: unknown = null
   const onUsage: UsageCallback = (u) => {
@@ -26,7 +34,15 @@ export const callModel = async (
 
   let raw: string
   try {
-    raw = await streamProvider(ctx.settings, sendMessages, params, onDelta, signal, onUsage)
+    raw = await streamProvider(
+      ctx.settings,
+      sendMessages,
+      params,
+      onDelta,
+      signal,
+      onUsage,
+      dispatchVia
+    )
   } catch (err: any) {
     if (signal.aborted) {
       log('info', '⏹ generation stopped by user')

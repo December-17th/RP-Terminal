@@ -41,6 +41,7 @@ import type {
   HarnessExecuteRequest,
   HarnessExecutionResult,
   HarnessFailure,
+  HarnessPreparedRequest,
   IrreversibleBoundaryEvidence,
   ToolEvidence
 } from './types'
@@ -688,6 +689,22 @@ export const createAgentHarness = ({
   sleep = sleepWithSignal,
   contextWindowTokensForTest
 }: CreateAgentHarnessOptions): AgentHarness => ({
+  /**
+   * One text step from an already-final request. Deliberately NOT `execute`: nothing here renders a
+   * prompt, prepends the harness policy, appends the serialized input, binds tools, or retries. The
+   * message array reaches `provider.dispatch` in the caller's exact order, byte for byte. Provider
+   * errors and cancellation propagate unchanged so the caller keeps its own classification.
+   */
+  async executePrepared(request: HarnessPreparedRequest): Promise<ProviderResult> {
+    return request.provider.dispatch({
+      messages: request.messages,
+      tools: [],
+      // Zero tools: every shaper omits tool_choice entirely, so this cannot reach the wire.
+      toolChoice: 'none',
+      ...(request.signal ? { signal: request.signal } : {}),
+      ...(request.onEvent ? { onEvent: request.onEvent } : {})
+    })
+  },
   async execute(request: HarnessExecuteRequest): Promise<HarnessExecutionResult> {
     const evidence: HarnessEvidence = { attempts: [] }
     const resolved = resolveInvocationOptions(request.definition, request.options)

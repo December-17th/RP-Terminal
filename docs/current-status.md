@@ -83,8 +83,8 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   manual pass.
 - The [Agent Runtime design](agent-system/agent-runtime-design.md) and
   [ADR 0019](adr/0019-agent-runtime-replaces-workflow-system.md) are approved. Implementation has
-  started on `agent-system`; Milestones 1-4, Sessions 0-7, are implemented, reviewed, and accepted,
-  with commits pending in the current working tree. Session 0 baseline evidence is complete and
+  started on `agent-system`; Milestones 1-4, Sessions 0-7, are implemented, reviewed, accepted, and
+  committed. Session 0 baseline evidence is complete and
   reviewed. The current foundation is internal only: Agent contracts, provider
   normalization/selection, the Harness, scripted characterization fixtures, the profile-wide Agent
   Catalog, floor-owned immutable Run Records, the typed Agent Activity read/cancel surface, general
@@ -98,9 +98,15 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   the public card Agent API now provides scoped run/plan calls, live card tools, cancellation, and exact-once floor commit scheduling with inline/WCV parity. Player Generation cutover and workflow removal are not implemented, so
   Classic and Yuzu still use the workflow-backed product path.
   The [Classic Narrator first execution plan](agent-system/classic-narrator-first-execution-plan.md)
-  reorders Session 8 validation ahead of debloating. Its first runtime patch passes the existing
-  assembled Classic request through a one-call, tool-less Harness seam without changing provider-visible
-  messages. The original [implementation plan](agent-system/implementation-plan.md) remains the broader
+  reorders Session 8 validation ahead of debloating. Its Milestone 1 is implemented and reviewed in the
+  current working tree, but is not yet committed: the assembled request from the `llm.sample` node
+  executes through a one-call, tool-less `AgentHarness.executePrepared`
+  seam, with identical ordered messages and identical serialized OpenAI/Anthropic/Gemini body bytes.
+  This covers Classic's default graph and, because they embed the same node type, the memory group
+  template and the async-memory/table-memory packs; `agent.llm`, memory, notes, and recall nodes are
+  unchanged. The workflow still owns assembly, parse, persistence, and secondary nodes, and no retry,
+  concurrency, or provider-selection layer was duplicated.
+  The original [implementation plan](agent-system/implementation-plan.md) remains the broader
   session record. Plot/memory node conversion is design-only until separately approved.
   The planned cutover replaces every model-backed operation with one provider-neutral Harness,
   moves variable/time scheduling to card-side logic, and removes the workflow runtime, canvas, node

@@ -2,7 +2,7 @@ import { callModel } from './callModel'
 import { GenContext } from './types'
 import { ChatMessage } from '../promptBuilder'
 import { PresetParameters } from '../../types/preset'
-import { DeltaCallback } from '../apiService'
+import { DeltaCallback, type ProviderDispatchVia } from '../apiService'
 import { NodeRunFailure } from '../nodes/types'
 import { log } from '../logService'
 
@@ -145,7 +145,10 @@ export const callModelResilient = async (
   params: PresetParameters,
   onDelta: DeltaCallback,
   signal: AbortSignal,
-  cfg: ResilienceConfig = {}
+  cfg: ResilienceConfig = {},
+  /** Opt-in executor for each single provider call. Retry, fallback, validator, corrective turns,
+   *  and the preset swap stay owned HERE — the executor only performs one call. */
+  dispatchVia?: ProviderDispatchVia
 ): Promise<CallResult | null> => {
   const maxA = 1 + Math.max(0, cfg.retries ?? 0)
   const vBudget = Math.max(0, cfg.validator_retries ?? 1)
@@ -178,7 +181,7 @@ export const callModelResilient = async (
       attempts++
       let result: CallResult | null
       try {
-        result = await callModel(conn, sendMessages, params, deltaSink(), signal)
+        result = await callModel(conn, sendMessages, params, deltaSink(), signal, dispatchVia)
       } catch (err) {
         lastError = err // class A — retry (this connection, then the fallback)
         continue
@@ -196,7 +199,8 @@ export const callModelResilient = async (
             correctiveMessages(sendMessages, result.raw, verdict.reason, cfg),
             params,
             silent, // full text already produced once; corrections never re-stream
-            signal
+            signal,
+            dispatchVia
           )
           if (again === null) return null
           result = again

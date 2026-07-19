@@ -23,6 +23,8 @@ import {
   isPromptArtifact
 } from '../promptArtifact'
 import { getDispatchHooks } from '../dispatchHooks'
+import { harnessDispatchVia } from '../../generation/harnessDispatch'
+import type { ProviderDispatchVia } from '../../apiService'
 
 /**
  * Pre-model built-in nodes (Phase 2b-1b task 2): thin `run()` delegations to the 2b-1a
@@ -218,7 +220,11 @@ export const runLlmCall = async (
   gen: GenContext,
   sendMessages: ChatMessage[],
   params: PresetParameters,
-  cfg: LlmCallConfig
+  cfg: LlmCallConfig,
+  /** Opt-in single-call executor. ONLY the `llm.sample` node passes one — `agent.llm`, memory,
+   *  notes, and recall call this directly and keep the plain provider call. Note that `llm.sample`
+   *  covers Classic's default graph AND the memory/table templates that embed the same node type. */
+  dispatchVia?: ProviderDispatchVia
 ): Promise<{ raw: string; rawUsage: unknown } | null> => {
   const streamToChat = cfg.stream !== false
   let g = gen
@@ -234,7 +240,8 @@ export const runLlmCall = async (
     params,
     streamToChat ? ctx.streamMain : () => {},
     ctx.modelSignal ?? ctx.signal,
-    cfg
+    cfg,
+    dispatchVia
   )
   return r === null ? null : { raw: r.raw, rawUsage: r.rawUsage }
 }
@@ -291,7 +298,12 @@ export const llmSample: NodeImpl = {
       gen,
       sendMessages,
       resolveParams(inputs.params, inputs.prompt) as PresetParameters,
-      cfg
+      cfg,
+      // Milestone 1: this node's ONE sampling call executes through AgentHarness. `sendMessages` is
+      // already final here (shaped, then late-transformed above), so the Harness forwards it verbatim.
+      // Classic's default graph is the target; the memory/table templates embed this same node type
+      // and therefore also route here — accepted, since the seam is byte-identical either way.
+      harnessDispatchVia
     )
     // Abort-with-empty (callModel returned null): nothing to persist — abort the GRAPH so the engine
     // skips parse/apply/write and generate() returns null. Abort-with-text returns {raw,...} here, so

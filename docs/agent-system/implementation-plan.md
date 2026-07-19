@@ -1,8 +1,10 @@
 # Agent Runtime implementation plan
 
-Status: Milestones 1–3, Sessions 0–6, are implemented, reviewed, and accepted on `agent-system`, with
-commits pending in the current working tree. Session 0 evidence is complete and reviewed; Sessions
-7–12 remain planned and unimplemented.
+Status: Milestones 1–4, Sessions 0–7, are implemented, reviewed, accepted, and committed on
+`agent-system`. Session 0 evidence is complete and reviewed; Sessions 8–12 remain planned and
+unimplemented. Session 8 is superseded in ordering by the
+[Classic Narrator first execution plan](classic-narrator-first-execution-plan.md), whose Milestone 1
+has landed.
 
 This plan turns the approved [Agent Runtime design](agent-runtime-design.md) and
 [ADR 0019](../adr/0019-agent-runtime-replaces-workflow-system.md) into a sequence of independently
@@ -1003,9 +1005,39 @@ The Agent Runtime replacement is complete only when:
 
 ## 8. Implementation log
 
+### 2026-07-19 — Classic Narrator plan Milestone 1 implemented
+
+Status: Milestone 1 of the [Classic Narrator first execution plan](classic-narrator-first-execution-plan.md)
+is implemented and reviewed on `agent-system`. Its Milestones 2-6 remain planned.
+
+`AgentHarness` gained an internal prepared-request entry point, `executePrepared`, that takes an
+already-final ordered message array plus a caller-resolved connection and performs exactly one
+tool-less text step. It adds no harness policy, serialized input, history, addendum, corrective, or
+tool message, never re-resolves a provider from settings, and owns no retry. The seam sits inside
+`callModelResilient`'s retry loop as an opt-in executor threaded from the `llm.sample` node through
+`runLlmCall`, `callModel`, and `streamProvider`, so provider shaping, late dispatch transforms,
+preset substitution, RPM/concurrency, abort classification, usage, and retry each keep exactly one
+existing owner. The `log('request', …)` at prompt assembly and `log('response', …, raw)` in
+`callModel` remain the byte-accurate evidence; no `HarnessEvidence` record is built on this path.
+
+Blast radius: every `llm.sample` node, not Classic Narrator alone. Classic's default graph is the
+target, but the memory group template, the async memory pack, and the table memory pack instantiate
+the same node type, so their background sampling also routes through `executePrepared`. This is
+accepted rather than gated, because the seam is provider-invisible and byte-identical and
+discriminating the two would add runtime machinery for no observable difference. `agent.llm`,
+`memory.recall`, `notes.maintain`, and the recall nodes call `runLlmCall` directly and are unchanged,
+as is `tableMaintainerLoop`'s direct `callModelResilient` use.
+
+The workflow still owns prompt assembly, parse, floor persistence, and every secondary node; no
+`InvocationRuntime`, Result Incorporation, run record, floor write, scheduling, `runPlan`, card
+Agent, tool, or Workspace surface was added. Tests assert identical ordered messages and identical
+serialized OpenAI, Anthropic, and Gemini body bytes with and without a registered dispatch transform,
+streaming and final-text parity, real mid-stream and pre-output abort classification distinct from
+provider error, and that no other `runLlmCall` consumer receives the executor.
+
 ### 2026-07-19 - Milestone 4 Session 7 implemented
 
-Status: Session 7 is implemented in the current working tree; owner review and commit remain pending. Sessions 8-12 remain planned.
+Status: Session 7 is implemented, reviewed, and committed as `836143f`. Sessions 8-12 remain planned.
 
 The shared card runtime now exposes `rpt.agents.run`, `runPlan`, `registerTool`, and `onFloorCommitted` through null, inline, and WCV Hosts. Main binds every invocation and card tool to authoritative profile/chat/card scope, preserves direct JSON, correlates and aborts bounded tool callbacks, unregisters implementations on teardown, and rejects missing or incompatible tools before provider dispatch. New-floor commits emit current and previous variables once; FloorState replay does not emit the scheduling event. Existing Invocation Runtime identity coalesces repeated same-Agent/same-floor handlers. Classic remains on the workflow path and no scheduler was added.
 ### 2026-07-19 — Milestone 3 accepted

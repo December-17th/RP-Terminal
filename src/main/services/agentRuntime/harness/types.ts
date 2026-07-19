@@ -8,12 +8,15 @@ import type { SceneVocabulary } from '../../../../shared/yuzu/sceneSchema'
 import type {
   ProviderDispatch,
   ProviderCacheUsage,
+  ProviderEvent,
   ProviderMessage,
   ProviderPresetSnapshot,
   ProviderRateLimit,
+  ProviderResult,
   ProviderToolCall,
   ProviderToolDefinition,
-  ProviderUsage
+  ProviderUsage,
+  ResolvedProviderDispatch
 } from '../provider'
 import type { StagedToolOperation, ToolExecutionScope, ToolRegistry } from '../tools'
 
@@ -115,8 +118,33 @@ export type HarnessExecutionResult =
       evidence: HarnessEvidence
     }
 
+/**
+ * Internal prepared-request Interface (Classic Narrator first slice).
+ *
+ * The caller has ALREADY produced the final ordered provider messages (assembly, provider shaping,
+ * and late dispatch transforms all ran exactly once upstream) and has ALREADY resolved its own
+ * connection/preset. The Harness therefore adds nothing to the wire: no harness-policy message, no
+ * serialized-input message, no prompt rendering, no history, no addendum, no corrective turn, and no
+ * tools. It executes exactly ONE text step and owns no retry — the caller's resilient-call policy
+ * keeps that role.
+ */
+export interface HarnessPreparedRequest {
+  /** Caller-resolved dispatch. The Harness never re-resolves a provider on this path. */
+  provider: ResolvedProviderDispatch
+  /** The final, ordered, provider-bound messages. Sent through untouched. */
+  messages: ProviderMessage[]
+  signal?: AbortSignal
+  onEvent?: (event: ProviderEvent) => void
+}
+
 export interface AgentHarness {
   execute(request: HarnessExecuteRequest): Promise<HarnessExecutionResult>
+  /**
+   * Returns the provider result directly. No `HarnessEvidence` is assembled: the byte-accurate
+   * evidence for this path is already the caller's `log('request', …)` at prompt assembly and
+   * `log('response', …, raw)` in `callModel`, so a second record would only be allocated and dropped.
+   */
+  executePrepared(request: HarnessPreparedRequest): Promise<ProviderResult>
 }
 
 export interface CreateAgentHarnessOptions {
