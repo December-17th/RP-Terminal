@@ -627,6 +627,13 @@ export const runManual = async (
  *  handled by calling evaluateDocPass directly, exactly as the pack path does. */
 const evaluatingDocChats = new Set<string>()
 
+/** READ-ONLY: is a trigger-evaluation pass (pack path OR doc path) in flight for any chat? (Classic
+ *  Narrator plan, Milestone 4 — one of the three sources unioned into `hasActiveBackgroundWork()`.)
+ *  Synchronous, no mutation exposed. Covers a pass only once it has ENTERED its guard — see the
+ *  known gap recorded in the Milestone 4 implementation-log entry. */
+export const hasActiveTriggerEvaluation = (): boolean =>
+  evaluatingChats.size > 0 || evaluatingDocChats.size > 0
+
 /** The nodes a fired trigger's chain executes headlessly (WP6.1). Computed in two steps:
  *   1. FORWARD reachability from the trigger — the chain's body (the nodes the trigger's signal drives).
  *   2. Pull in the INPUT PROVIDERS of that body: the ancestors of the forward set, so a chain node that

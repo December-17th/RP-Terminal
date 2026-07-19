@@ -158,6 +158,10 @@ export interface InvocationRuntime {
   invalidateSources(chatId: string, throughFloor: number): void
   getNextTurnBarrier(chatId: string): NextTurnBarrierState
   waitForNextTurnBarriers(chatId: string): Promise<NextTurnBarrierState>
+  /** READ-ONLY liveness probe (Classic Narrator plan, Milestone 4): is any Agent invocation queued,
+   *  running, or is any plan still stepping? Synchronous and side-effect free — one of the three
+   *  sources unioned into `hasActiveBackgroundWork()`. */
+  hasActiveWork(): boolean
   shutdown(): void
 }
 
@@ -873,6 +877,15 @@ export const createInvocationRuntime = ({
       }
     },
     getNextTurnBarrier,
+    hasActiveWork() {
+      // Union of every live-work container. `lanes` holds the queued + currently-running items per
+      // lane (an entry is shifted out and the lane dropped when it completes); `plans` holds plans
+      // still stepping between invocations. `invocations` is NOT pruned on normal completion — it
+      // is the identity/dedupe ledger — so it is scanned by the `finished` flag, never by size.
+      if (plans.size > 0 || lanes.size > 0) return true
+      for (const item of invocations.values()) if (!item.finished) return true
+      return false
+    },
     async waitForNextTurnBarriers(chatId) {
       const current = [...(barriers.get(chatId)?.values() ?? [])]
       await Promise.all(current.map((barrier) => barrier.settled))

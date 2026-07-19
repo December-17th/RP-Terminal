@@ -431,6 +431,19 @@ const abortTranscriptActiveRuns = (chatId: string): boolean => {
   return aborted
 }
 
+/** READ-ONLY: is a manual table refill mid-job? (Classic Narrator plan, Milestone 4 — one of the
+ *  sources unioned into `hasActiveBackgroundWork()`.) Refill is backfill's sibling: a long-running
+ *  multi-batch LLM job over `callModelResilient`, invisible to `activeControllers`. Covers BOTH run
+ *  registries — the production map and the transcript-scoped runs — and reads `state.running`, not
+ *  map size, since a settled entry stays readable for a re-mounting view. */
+export const hasActiveRefill = (): boolean => {
+  for (const entry of productionRuns.values()) if (entry.state.running) return true
+  for (const entries of transcriptActiveRuns.values()) {
+    for (const entry of entries) if (entry.state.running) return true
+  }
+  return false
+}
+
 const refillStateFor = (
   runs: RefillRunMap,
   chatId: string

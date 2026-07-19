@@ -74,6 +74,10 @@ export type TurnSource = 'player' | 'script'
 // reverse) and exposes a `settled` promise the preemptor awaits before taking the slot.
 const activeTurns = new Map<string, { source: TurnSource; settled: Promise<void> }>()
 
+/** READ-ONLY: is a MAIN turn in flight for any chat? (Classic Narrator plan, Milestone 4 — one of
+ *  the three sources unioned into `hasActiveBackgroundWork()`.) Synchronous, no mutation exposed. */
+export const hasActiveTurns = (): boolean => activeTurns.size > 0
+
 export const generate = async (
   profileId: string,
   chatId: string,

@@ -251,6 +251,10 @@ export const initializeInvocationRuntime = (): InvocationRuntime => {
 
 export const invocationRuntime = (): InvocationRuntime => initializeInvocationRuntime()
 
+/** READ-ONLY: is any Agent invocation queued/running (or a plan stepping)? Deliberately does NOT
+ *  construct the runtime — asking whether work exists must never be the thing that creates it. */
+export const hasActiveAgentWork = (): boolean => runtime?.hasActiveWork() ?? false
+
 export const shutdownInvocationRuntime = (): void => {
   runtime?.shutdown()
   disposeBeforeDelete?.()

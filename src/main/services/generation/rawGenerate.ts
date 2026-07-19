@@ -18,6 +18,17 @@ import { log } from '../logService'
 // burning provider tokens. Shared by generate() and generateRaw().
 export const activeControllers = new Map<string, AbortController>()
 
+/** READ-ONLY: is a call that registers in `activeControllers` in flight — a full turn, or a bare
+ *  `generateRaw` (combat adjudication, enemy turns, duel narration, a card script's TH generateRaw)?
+ *  (Classic Narrator plan, Milestone 4 — one of the sources unioned into `hasActiveBackgroundWork()`.)
+ *  NOT "any provider call": `callModel` deliberately leaves the controller lifecycle to `generate()`
+ *  and never registers here, so `callModelResilient` callers (table backfill/refill, workflow nodes)
+ *  are invisible to this accessor and are covered by their own sources. This map is also keyed per
+ *  chat and SHARED with generate(), so it cannot replace the turn guard either: a raw call starting
+ *  mid-turn overwrites the turn's entry and its `finally` then deletes the shared key. Both are
+ *  unioned. Synchronous, no mutation exposed. */
+export const hasActiveRawGeneration = (): boolean => activeControllers.size > 0
+
 /** Abort the in-flight generation for a chat (if any). */
 export const abortGeneration = (chatId: string): void => {
   activeControllers.get(chatId)?.abort()

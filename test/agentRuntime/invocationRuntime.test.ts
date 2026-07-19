@@ -533,4 +533,35 @@ describe('InvocationRuntime', () => {
     expect(stop).not.toHaveBeenCalled()
     pending.resolve(success('discarded'))
   })
+
+  // Classic Narrator plan, Milestone 4 — the Agent-side input to the ONE `hasActiveBackgroundWork`
+  // signal. Must cover QUEUED as well as RUNNING work, and must go false once the lane drains (the
+  // `invocations` map is the identity ledger and is NOT pruned on success, so a size check would
+  // latch true forever).
+  it('reports active work while an invocation is running or queued, and idle once it drains', async () => {
+    const first = deferred<HarnessExecutionResult>()
+    const second = deferred<HarnessExecutionResult>()
+    const { runtime, execute } = setup(['A'])
+    execute
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+
+    expect(runtime.hasActiveWork()).toBe(false)
+
+    const running = runtime.run({ profileId: 'p', chatId: 'c', floor: 1, agent: 'A' })
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(1))
+    expect(runtime.hasActiveWork()).toBe(true)
+
+    // Same lane, later floor: queued behind the running one — still active work.
+    const queued = runtime.run({ profileId: 'p', chatId: 'c', floor: 2, agent: 'A' })
+    expect(runtime.hasActiveWork()).toBe(true)
+
+    first.resolve(success('first'))
+    await running
+    expect(runtime.hasActiveWork()).toBe(true)
+
+    second.resolve(success('second'))
+    await queued
+    await vi.waitFor(() => expect(runtime.hasActiveWork()).toBe(false))
+  })
 })

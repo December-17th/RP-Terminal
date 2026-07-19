@@ -74,7 +74,8 @@ import {
   buildBatchTranscript,
   startBackfill,
   getBackfillState,
-  cancelBackfill
+  cancelBackfill,
+  hasActiveBackfill
 } from '../src/main/services/tableBackfillService'
 
 describe('planBatches', () => {
@@ -129,8 +130,30 @@ describe('buildBatchTranscript', () => {
 
 const template = {
   tables: [
-    { sqlName: 'chronicle', displayName: '纪要', ddl: 'CREATE TABLE chronicle (row_id INTEGER, s TEXT)', headers: ['row_id', 's'], updateFrequency: 1, note: '', initNode: '', insertNode: '', updateNode: '', deleteNode: '' },
-    { sqlName: 'world', displayName: '世界', ddl: 'CREATE TABLE world (row_id INTEGER, f TEXT)', headers: ['row_id', 'f'], updateFrequency: 3, note: '', initNode: '', insertNode: '', updateNode: '', deleteNode: '' }
+    {
+      sqlName: 'chronicle',
+      displayName: '纪要',
+      ddl: 'CREATE TABLE chronicle (row_id INTEGER, s TEXT)',
+      headers: ['row_id', 's'],
+      updateFrequency: 1,
+      note: '',
+      initNode: '',
+      insertNode: '',
+      updateNode: '',
+      deleteNode: ''
+    },
+    {
+      sqlName: 'world',
+      displayName: '世界',
+      ddl: 'CREATE TABLE world (row_id INTEGER, f TEXT)',
+      headers: ['row_id', 'f'],
+      updateFrequency: 3,
+      note: '',
+      initNode: '',
+      insertNode: '',
+      updateNode: '',
+      deleteNode: ''
+    }
   ]
 }
 
@@ -149,20 +172,74 @@ describe('backfill orchestration', () => {
     genSvc.buildGenContext.mockReturnValue({ preset: { parameters: {} } })
     resilientSvc.withPreset.mockImplementation((gen: unknown) => gen)
     opsSvc.tryBeginTableWrite.mockReturnValue(true)
-    sqlSvc.applySqlBatch.mockReturnValue({ applied: 1, changes: 1, statements: ['INSERT INTO chronicle VALUES (1)'] })
+    sqlSvc.applySqlBatch.mockReturnValue({
+      applied: 1,
+      changes: 1,
+      statements: ['INSERT INTO chronicle VALUES (1)']
+    })
   })
 
   it('applies each batch at its LAST floor and advances progress for ALL tables', async () => {
-    resilientSvc.callModelResilient.mockResolvedValue({ raw: '<TableEdit>INSERT INTO chronicle VALUES (1)</TableEdit>' })
+    resilientSvc.callModelResilient.mockResolvedValue({
+      raw: '<TableEdit>INSERT INTO chronicle VALUES (1)</TableEdit>'
+    })
     // 4 floors, all, batch 2 → [0-1], [2-3].
     await startBackfill('p1', 'c1', { lastFloors: 'all', batchSize: 2, retries: 0 })
     await flush()
     // 6th arg = the batch SPAN START: [0-1] → from 0, [2-3] → from 2.
-    expect(opsSvc.appendOps).toHaveBeenNthCalledWith(1, 'p1', 'c1', 1, ['INSERT INTO chronicle VALUES (1)'], 'backfill', 0)
-    expect(opsSvc.appendOps).toHaveBeenNthCalledWith(2, 'p1', 'c1', 3, ['INSERT INTO chronicle VALUES (1)'], 'backfill', 2)
+    expect(opsSvc.appendOps).toHaveBeenNthCalledWith(
+      1,
+      'p1',
+      'c1',
+      1,
+      ['INSERT INTO chronicle VALUES (1)'],
+      'backfill',
+      0
+    )
+    expect(opsSvc.appendOps).toHaveBeenNthCalledWith(
+      2,
+      'p1',
+      'c1',
+      3,
+      ['INSERT INTO chronicle VALUES (1)'],
+      'backfill',
+      2
+    )
     expect(progressSvc.advanceProgress).toHaveBeenCalledWith('p1', 'c1', ['chronicle', 'world'], 1)
     expect(progressSvc.advanceProgress).toHaveBeenCalledWith('p1', 'c1', ['chronicle', 'world'], 3)
     expect(getBackfillState('c1')?.running).toBe(false)
+  })
+
+  // Classic Narrator plan, Milestone 4 — a backfill reaches the provider via callModelResilient,
+  // which never registers in `activeControllers`, so it is invisible to every other source of the
+  // exit signal. Without its own accessor the app quits silently mid-job.
+  it('reports active work while a backfill is mid-job, and idle once it finishes', async () => {
+    expect(hasActiveBackfill()).toBe(false)
+
+    let releaseBatch!: () => void
+    const batchInFlight = new Promise<void>((resolve) => {
+      releaseBatch = resolve
+    })
+    let sawActiveMidJob: boolean | null = null
+    resilientSvc.callModelResilient.mockImplementation(async () => {
+      sawActiveMidJob = hasActiveBackfill()
+      await batchInFlight
+      return { raw: '<TableEdit>INSERT INTO chronicle VALUES (1)</TableEdit>' }
+    })
+
+    const run = startBackfill('p1', 'c1', { lastFloors: 'all', batchSize: 4, retries: 0 })
+    await flush()
+
+    expect(sawActiveMidJob).toBe(true)
+    expect(hasActiveBackfill()).toBe(true)
+
+    releaseBatch()
+    await run
+    await flush()
+
+    // The run entry SURVIVES for a re-mounting view, so this must read state.running, not map size.
+    expect(getBackfillState('c1')).not.toBeNull()
+    expect(hasActiveBackfill()).toBe(false)
   })
 
   it('empty <TableEdit> → no-op apply but progress still advances (span counts as processed)', async () => {
@@ -182,16 +259,32 @@ describe('backfill orchestration', () => {
       .mockImplementationOnce(() => {
         throw new sqlSvc.TableSqlError('syntax error')
       })
-      .mockReturnValueOnce({ applied: 1, changes: 1, statements: ['INSERT INTO chronicle VALUES (1)'] })
+      .mockReturnValueOnce({
+        applied: 1,
+        changes: 1,
+        statements: ['INSERT INTO chronicle VALUES (1)']
+      })
     await startBackfill('p1', 'c1', { lastFloors: 'all', batchSize: 4, retries: 1 })
     await flush()
     // Two model calls (first + corrective); the corrective one carries the error text.
     expect(resilientSvc.callModelResilient).toHaveBeenCalledTimes(2)
-    const correctiveMessages = resilientSvc.callModelResilient.mock.calls[1][1] as Array<{ role: string; content: string }>
-    expect(correctiveMessages.some((m) => m.role === 'assistant' && m.content.includes('BAD'))).toBe(true)
+    const correctiveMessages = resilientSvc.callModelResilient.mock.calls[1][1] as Array<{
+      role: string
+      content: string
+    }>
+    expect(
+      correctiveMessages.some((m) => m.role === 'assistant' && m.content.includes('BAD'))
+    ).toBe(true)
     expect(correctiveMessages.some((m) => m.content.includes('syntax error'))).toBe(true)
     // 6th arg = the batch SPAN START (span.from = 0 for the single [0,3] batch).
-    expect(opsSvc.appendOps).toHaveBeenCalledWith('p1', 'c1', 3, ['INSERT INTO chronicle VALUES (1)'], 'backfill', 0)
+    expect(opsSvc.appendOps).toHaveBeenCalledWith(
+      'p1',
+      'c1',
+      3,
+      ['INSERT INTO chronicle VALUES (1)'],
+      'backfill',
+      0
+    )
   })
 
   it('exhausted SQL retries mark the batch failed and the run CONTINUES', async () => {
@@ -211,7 +304,9 @@ describe('backfill orchestration', () => {
   })
 
   it('a busy write lock is a retryable failure (never a second write surface)', async () => {
-    resilientSvc.callModelResilient.mockResolvedValue({ raw: '<TableEdit>INSERT INTO chronicle VALUES (1)</TableEdit>' })
+    resilientSvc.callModelResilient.mockResolvedValue({
+      raw: '<TableEdit>INSERT INTO chronicle VALUES (1)</TableEdit>'
+    })
     opsSvc.tryBeginTableWrite.mockReturnValue(false) // lock always busy
     await startBackfill('p1', 'c1', { lastFloors: 'all', batchSize: 4, retries: 0 })
     await flush()
@@ -225,16 +320,18 @@ describe('backfill orchestration', () => {
     let resolveCall: (v: unknown) => void = () => {}
     resilientSvc.callModelResilient.mockReturnValue(new Promise((r) => (resolveCall = r)))
     await startBackfill('p1', 'c1', { lastFloors: 'all', batchSize: 4, retries: 0 })
-    await expect(startBackfill('p1', 'c1', { lastFloors: 'all', batchSize: 4, retries: 0 })).rejects.toThrow(
-      'tables.backfillAlreadyRunning'
-    )
+    await expect(
+      startBackfill('p1', 'c1', { lastFloors: 'all', batchSize: 4, retries: 0 })
+    ).rejects.toThrow('tables.backfillAlreadyRunning')
     resolveCall({ raw: '<TableEdit></TableEdit>' })
     await flush()
   })
 
   it('cancel between batches: applied batches stay applied, later batches are skipped', async () => {
     // Batch 1 resolves immediately; we cancel after it, before batch 2.
-    resilientSvc.callModelResilient.mockResolvedValue({ raw: '<TableEdit>INSERT INTO chronicle VALUES (1)</TableEdit>' })
+    resilientSvc.callModelResilient.mockResolvedValue({
+      raw: '<TableEdit>INSERT INTO chronicle VALUES (1)</TableEdit>'
+    })
     await startBackfill('p1', 'c1', { lastFloors: 'all', batchSize: 2, retries: 0 })
     // Cancel immediately — the first batch may already be in flight; assert the run ends and at most
     // the batches that ran applied.
@@ -247,8 +344,8 @@ describe('backfill orchestration', () => {
 
   it('no template → rejects with the localized key', async () => {
     chatSvc.getChatTableTemplateId.mockReturnValue(null)
-    await expect(startBackfill('p1', 'c1', { lastFloors: 'all', batchSize: 2, retries: 0 })).rejects.toThrow(
-      'tables.backfillNoTemplate'
-    )
+    await expect(
+      startBackfill('p1', 'c1', { lastFloors: 'all', batchSize: 2, retries: 0 })
+    ).rejects.toThrow('tables.backfillNoTemplate')
   })
 })

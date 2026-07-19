@@ -118,7 +118,7 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   seeding is lazy and hooked only to `listWorkflows` — a profile that never opens that UI still
   resolves the builtin. Both states are reachable, so the empty detached post phase is a property of
   the default doc's shape and does not survive user edits.
-  Milestone 3 is implemented in the current working tree and not yet committed. Classic now has TWO
+  Milestone 3 is implemented and committed as `f9ba3bc`. Classic now has TWO
   synchronous paths. When the resolved effective doc is structurally the seeded default and no agent
   pack composed into it, a turn runs a direct orchestration — eight service calls, no engine — through
   the same assembly, Harness sampling, parse, fold, and persist-floor services; every other doc keeps
@@ -133,6 +133,27 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   maintenance cadence keeps the direct path while any edit to the turn phase falls back. Provider bytes
   and persisted floor state are proven equal across both paths, the four off-port `GenContext` channels
   survive, and Classic run history is still recorded on the direct path.
+  Milestone 4 is implemented in the current working tree and not yet committed. Quitting now warns
+  before discarding in-flight work. One `hasActiveBackgroundWork()` signal unions six read-only
+  accessors — Agent invocations queued/running plus stepping plans, a Classic turn in flight, a
+  `generateRaw` call in flight (combat adjudication, enemy turns, duel narration, which run outside the
+  turn guard and write to the chat), a manual table backfill or refill mid-job (long multi-batch LLM
+  jobs that reach the provider by a path that registers no abort controller at all), and a pack- or
+  doc-path trigger evaluation — because no single registry sees them all. Every direct provider caller
+  outside a turn was enumerated rather than patched one at a time; the workflow `llm.sample` node is
+  covered transitively through the turn and headless sources, and the prompt-preview path stubs the
+  model out entirely. The app previously had no close handler at all; `before-quit` (Cmd-Q,
+  dock Quit, programmatic quit), the window close button outside macOS, and the `restart-app` channel
+  (which calls `app.exit(0)` and so fires neither quit event) now share one electron-free guard that
+  prompts only when work is active. With nothing running, exit behavior is byte-for-byte what it was:
+  one synchronous boolean, no dialog, no delay. Confirming quits once and lets the cascading close and
+  quit events through; a second close while the dialog is open neither stacks a dialog nor
+  double-quits. The guard only gates the existing `will-quit` shutdown, which already cancels
+  invocations idempotently — that cleanup now also runs on the restart path, which previously skipped
+  it. No recovery, resumption, or lifecycle framework was added. One accepted gap: the window between
+  a turn releasing its slot and the detached trigger pass entering its guard (trace summarization,
+  run-history persistence) is tracked by nothing and is not warned about.
+  Milestone 5 is design-only and committed as `ee84f3f`. Milestone 6 remains planned.
   The original [implementation plan](agent-system/implementation-plan.md) remains the broader
   session record. Plot/memory node conversion is design-only until separately approved.
   The planned cutover replaces every model-backed operation with one provider-neutral Harness,

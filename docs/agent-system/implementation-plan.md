@@ -1005,6 +1005,143 @@ The Agent Runtime replacement is complete only when:
 
 ## 8. Implementation log
 
+### 2026-07-19 — Classic Narrator plan Milestone 4 implemented
+
+Status: Milestone 4 of the [Classic Narrator first execution plan](classic-narrator-first-execution-plan.md)
+is implemented on `agent-system` **in the working tree, uncommitted**. Milestones 1 (`b707a66`),
+2 (`ab87f3f`), 3 (`f9ba3bc`), and 5 (`ee84f3f`) are committed and were not modified. Milestone 6
+remains planned. Nothing was removed.
+
+**One signal, six sources.** The plan says "the authoritative live-run registry"; there is no single
+one. `hasActiveBackgroundWork()` (`src/main/services/activeWork.ts`) is therefore the union of six
+read-only accessors, each added to the owner of the state rather than reaching into its internals:
+
+| Source                 | Accessor                       | Covers                                                            |
+| ---------------------- | ------------------------------ | ----------------------------------------------------------------- |
+| `InvocationRuntime`    | `hasActiveWork()`              | Agent invocations queued or running; stepping plans                |
+| `generationService`    | `hasActiveTurns()`             | a MAIN Classic turn in flight (pre phase)                          |
+| `rawGenerate`          | `hasActiveRawGeneration()`     | the `activeControllers` map only — a turn or a bare `generateRaw`  |
+| `tableBackfillService` | `hasActiveBackfill()`          | a manual multi-batch table backfill mid-job                        |
+| `tableRefillService`   | `hasActiveRefill()`            | a manual multi-batch table refill mid-job                          |
+| `headlessRunService`   | `hasActiveTriggerEvaluation()` | a pack-path or doc-path trigger evaluation in flight               |
+
+Each accessor is synchronous and returns a boolean; none exposes mutation. The backfill and refill
+accessors read each run's `state.running` rather than their map size: a settled run's entry is kept so
+a re-mounting view can read its final state, so a size check would latch true after the first job.
+
+**The direct-provider sweep.** The class of bug is: anything reaching the provider outside `generate()`
+is invisible to the signal by construction, because `callModel` deliberately leaves the controller
+lifecycle to `generate()` and never registers in `activeControllers`. Every caller was enumerated:
+
+| Caller                                             | Disposition                                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------------ |
+| `rawGenerate.generateRaw` (combat, duel, TH script) | covered — `hasActiveRawGeneration()`                                     |
+| `tableBackfillService` (`table-backfill-start`)     | covered — `hasActiveBackfill()`                                          |
+| `tableRefillService` (`chat-tables-refill`)         | covered — `hasActiveRefill()`                                            |
+| agentRuntime Harness dispatch                       | covered — `InvocationRuntime.hasActiveWork()`                            |
+| the five `runLlmCall` nodes — `llm.sample`, `agent.llm`, `memory.recall`, `memory.maintain`, `notes.maintain` | covered transitively — they run under `runWorkflow`/`runSubgraph` (entered from a turn or from headless trigger evaluation) or under Milestone 3's direct Classic path, which reaches `runLlmCall` without the engine; all three entries are already sources |
+| `tableMaintainerLoop.runMaintainerBatch`            | not an entry point — its only callers are backfill and refill above      |
+| `previewService`                                    | reaches the provider, left uncovered deliberately — see below            |
+
+**Why preview is uncovered.** Preview does *not* avoid the provider, and an earlier draft of this
+entry claimed it did. `buildPreviewRegistry` stubs only `llm.sample` plus the eight
+`SIDE_EFFECT_TYPES`; none of the other four `runLlmCall` node types appears in either set, so they run
+their real implementations. `memory.recall` feeds `prompt.assemble`'s `block` input, so it executes
+*before* the `llm.sample` stub's `abortGraph()` fires — previewing any chat whose effective doc carries
+a recall node makes a real, untracked provider call.
+
+It is still left uncovered, as a judgement rather than an oversight: quitting mid-preview discards
+nothing durable. Recall writes no state, and the post-phase writers (`memory.maintain`,
+`notes.maintain`) genuinely are skipped by the abort, so the cost is a wasted API call — categorically
+unlike the backfill/refill hole, which lost memory-table writes. This should be re-evaluated if
+preview ever gains a durable writer upstream of the stub.
+
+The `rawGenerate` source's coverage was briefly overstated in this entry and in two source comments as
+"any provider call in flight". It is not: it covers the `activeControllers` map only, which is exactly
+why backfill and refill needed their own accessors. Corrected in all three places.
+`InvocationRuntime.hasActiveWork()` reads `lanes` and `plans` for queued/running work and scans
+`invocations` by its `finished` flag: that map is the identity/dedupe ledger and is not pruned on
+success, so a size check would latch true forever.
+
+The raw-provider source is not optional and is **not** a subset of the turn guard — an earlier draft of
+this entry claimed it was, which was factually wrong. It is retained here as the corrected record.
+
+`combatService` (adjudication, enemy turns) and
+`duelService` (narration) call `generateRaw` directly from their own IPC handlers, entirely outside
+`activeTurns`, and that work writes to the chat via `writeNarrationToChat`; without this source the
+signal read false while it was in flight and the app quit and discarded it silently. The two maps
+overlap rather than nest and both are required: `activeControllers` is keyed per chat and shared with
+`generate()`, so a raw call starting mid-turn overwrites the turn's entry and then deletes the shared
+key in its `finally` — it can go empty while a turn still runs, and is non-empty for raw work the turn
+map never sees.
+
+The one genuinely excluded source is `AgentRunStore`'s persisted `status = 'running'` rows. Those are
+durable records that outlive the process, so after a crash they still read "running" for work that is
+long dead; they answer "what was interrupted", not "what is in flight now".
+
+**Interception.** The app had no close handler at all; this milestone adds the first. `before-quit`
+covers macOS Cmd-Q, the dock's Quit, and every programmatic `app.quit()`. The window's `close` event
+is guarded only outside macOS: `window-all-closed` is already wrapped in `if (process.platform !==
+'darwin')`, so off macOS the close button really does cascade into `app.quit()` and discard work,
+while on macOS it leaves the app and its background work running — prompting there would be a false
+alarm and would change what the close button means. `will-quit` is too late to stop an exit.
+
+The third terminating surface is the `restart-app` IPC channel (`storageIpc.ts`, reachable from
+Storage settings), which calls `app.relaunch()` + `app.exit(0)`. `app.exit` emits neither
+`before-quit` nor `will-quit` by design, so it bypassed the guard *and* skipped shutdown cleanup
+(the cleanup skip was pre-existing). It now awaits the same guard and, once cleared, calls the same
+cleanup explicitly before terminating. The `will-quit` body moved verbatim into
+`runShutdownCleanup()` (`src/main/appExit.ts`) so both paths run one implementation; it is idempotent
+and each half is individually try/caught, so running it twice is harmless.
+
+If `app.relaunch()` throws, the restart handler's `finally` calls `releaseConfirmation()`: the process
+is then still alive, already cleaned up, with the latch armed, and the next quit would otherwise skip
+its confirmation. `app.exit(0)` does not return, so that `finally` runs only on the failure path.
+
+The decision logic lives in `src/main/exitGuard.ts`, free of electron, so it is testable;
+`src/main/appExit.ts` holds the single guard instance wired to the real signal,
+`dialog.showMessageBox`, and `app.quit`, shared by `index.ts` and `storageIpc.ts` so all three
+surfaces share one `confirmed` latch and one `prompting` flag. Because `showMessageBox` is async and
+`preventDefault()` cannot await, the event-driven entry point always prevents, then re-issues the quit
+after the answer: the `confirmed` latch lets the re-issued quit and its cascading events pass straight
+through, and `prompting` makes a second close action while the dialog is open prevent-and-drop rather
+than stack a dialog or double-quit. `restart-app` can await, so it uses a sibling `confirmExit()` that
+shares the same two flags — a restart requested while a quit dialog is open declines rather than
+stacking. Both entry points keep the same idle short-circuit: one synchronous boolean, no dialog.
+
+This only GATES the existing shutdown path. `will-quit` → `shutdownInvocationRuntime()` already aborts
+plans and invocations with `APP_SHUTDOWN` and finalizes live run controllers as cancelled, idempotently;
+no cancellation was duplicated and its idempotence was not weakened. No recovery, resumption,
+negotiation, or lifecycle framework was added — those stay out of scope.
+
+**Known, accepted gap.** The detached post-turn chain in `generationService`
+(`summarizeRun`/`notifyWorkflowTrace` → `appendRun` → `evaluateTriggers`/`evaluateDocTriggers`) runs
+*after* `activeTurns.delete` in the turn's `finally`. Only the trigger phase is covered, and only once
+it has entered its per-chat guard. The window between turn release and trigger-guard entry — run-trace
+summarization and run-history persistence — is tracked by nothing, so a quit landing exactly there is
+not warned about. Closing it would mean adding the lifecycle machinery this milestone forbids, so it
+is recorded here rather than fixed.
+
+Exit surfaces reviewed and deliberately NOT guarded: the renderer reload at `SettingsPanel.tsx` resets
+UI only and drops nothing in main; chat switching already aborts per-chat and gets no confirmation.
+Process-level termination that no handler can intercept (SIGKILL, a main-process crash, OS shutdown)
+is out of reach by definition.
+
+Tests: `test/exitGuard.test.ts` (no-work path is fully unchanged, prompt on active work, cancel keeps
+the app open and still prompts next time, confirm quits exactly once and lets the cascade through, a
+second close while the dialog is open neither stacks nor double-quits, a failing dialog stays open,
+plus the six-source union); `test/rawGenerationSignal.test.ts` (a combat/duel-style `generateRaw` in
+flight flips the signal and clears when it settles); `test/tableBackfill.test.ts` and
+`test/tableRefillLifecycle.test.ts` (a real mid-job backfill / refill reads active and goes idle when
+it finishes, with the settled run entry still present — pinning `state.running` over map size);
+`test/restartAppExitGuard.test.ts` (restart with no work is unchanged, cancelling does not restart or
+tear anything down, confirming runs the full cleanup in order before relaunch, and a throwing relaunch
+disarms the latch so the next exit still prompts); and a queued/running/drained signal case in
+`test/agentRuntime/invocationRuntime.test.ts`. Gates:
+`npm run typecheck` PASS; `npm run test` PASS (359 files, 4153 tests); `npm run check:docs` at the
+unchanged 72-broken-link baseline, no new breakage. `npm run check:deps` was not run — it aborts on a
+Node 25.9.0 version gate before reading source.
+
 ### 2026-07-19 — Classic Narrator plan Milestone 3 implemented
 
 Status: Milestone 3 of the [Classic Narrator first execution plan](classic-narrator-first-execution-plan.md)
