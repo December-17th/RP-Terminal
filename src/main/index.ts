@@ -22,6 +22,7 @@ import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
 import { appExitGuard, runShutdownCleanup, setExitDialogWindow } from './appExit'
 import { initializeInvocationRuntime } from './services/agentRuntime/InvocationRuntimeService'
+import { initializeFloorCommitTriggers } from './services/agentRuntime/triggerRuntime'
 
 // A packaged Windows ZIP is self-contained: RP Terminal records, Electron preferences, browser
 // storage, and caches all live below rp-terminal-data beside the executable. macOS retains Electron's
@@ -190,6 +191,8 @@ app.whenReady().then(() => {
     return
   }
   initializeInvocationRuntime()
+  // Evaluate declarative cadence triggers at the new-floor commit boundary (execution-plan M3).
+  initializeFloorCommitTriggers()
 
   // Initialize the sandboxed template engine (non-blocking for the rest of startup).
   templateService.initTemplates().then(() => logService.log('info', 'Template engine ready'))

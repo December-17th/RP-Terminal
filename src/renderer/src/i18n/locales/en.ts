@@ -209,8 +209,13 @@ const en: Record<string, string> = {
   'agents.editor.toolResultMaxTokens': 'Tool result max tokens',
   'agents.editor.required': 'Required (a failure is not silently ignored)',
   'agents.editor.blocksNextTurn': 'Gate the next turn until this finishes',
-  'agents.editor.blocksNextTurnInert':
-    'Not yet enforced: the turn barrier exists but nothing in the generation path awaits it, so this flag is recorded but does not currently gate a turn.',
+  'agents.editor.blocksNextTurnNote':
+    'While this Agent is running, the next Classic turn waits for it to finish so the turn reads its writes. Fail-open: if it fails or is cancelled, the turn proceeds.',
+  'agents.editor.trigger.section': 'Trigger',
+  'agents.editor.trigger.hint':
+    'Optionally run this Agent automatically. The only trigger is a floor-commit cadence: fire every N committed floors.',
+  'agents.editor.trigger.enable': 'Run automatically every N floors',
+  'agents.editor.trigger.everyNFloors': 'Every N floors',
   'agents.editor.notification': 'Notify on',
   'agents.editor.save': 'Save',
   'agents.editor.saving': 'Saving…',

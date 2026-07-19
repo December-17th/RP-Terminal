@@ -14,7 +14,8 @@ import {
   createInvocationRuntime,
   type InvocationFloorPort,
   type InvocationRuntime,
-  type InvocationSourceSnapshot
+  type InvocationSourceSnapshot,
+  type NextTurnBarrierState
 } from './invocation'
 import { createAgentPromptPlanner } from './prompt'
 import { createProviderDispatch } from './provider'
@@ -259,6 +260,17 @@ export const invocationRuntime = (): InvocationRuntime => initializeInvocationRu
 /** READ-ONLY: is any Agent invocation queued/running (or a plan stepping)? Deliberately does NOT
  *  construct the runtime — asking whether work exists must never be the thing that creates it. */
 export const hasActiveAgentWork = (): boolean => runtime?.hasActiveWork() ?? false
+
+/**
+ * Await this chat's `blocksNextTurn` barriers (execution-plan M3). Like {@link hasActiveAgentWork},
+ * this deliberately does NOT construct the runtime: when nothing has ever run in the process (e.g. a
+ * mocked generation test that never called `initializeInvocationRuntime`) there is nothing to gate, so
+ * it resolves `clear` immediately without touching the DB-backed service graph. In production the
+ * runtime is initialized at startup, so this returns the live barrier state.
+ */
+export const waitForNextTurnBarriers = (chatId: string): Promise<NextTurnBarrierState> =>
+  runtime?.waitForNextTurnBarriers(chatId) ??
+  Promise.resolve({ status: 'clear', pending: 0, failures: [] })
 
 export const shutdownInvocationRuntime = (): void => {
   runtime?.shutdown()

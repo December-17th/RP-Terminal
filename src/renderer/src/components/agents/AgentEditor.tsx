@@ -83,6 +83,12 @@ export const validateDraft = (draft: Draft): FieldError[] => {
       })
     }
   }
+  if (draft.trigger) {
+    const n = draft.trigger.onFloorCommitted.everyNFloors
+    if (!Number.isInteger(n) || n < 1) {
+      errors.push({ field: 'trigger.everyNFloors', message: 'atLeastOne' })
+    }
+  }
   const d = draft.defaults
   if (d.maxSteps < 1) errors.push({ field: 'defaults.maxSteps', message: 'atLeastOne' })
   if (d.maxRetryAttempts < 0) errors.push({ field: 'defaults.maxRetryAttempts', message: 'nonNegative' })
@@ -225,6 +231,15 @@ export function AgentEditor({
   const patch = (next: Partial<Draft>): void => setDraft({ ...draft, ...next })
   const patchDefaults = (next: Partial<Draft['defaults']>): void =>
     setDraft({ ...draft, defaults: { ...draft.defaults, ...next } })
+
+  /** Toggle/set the declarative cadence trigger (M3). `undefined` drops the optional key entirely
+   *  rather than storing `trigger: undefined`, so a saved definition serialises without it. */
+  const setTrigger = (everyNFloors: number | undefined): void => {
+    const copy: Draft = { ...draft }
+    if (everyNFloors === undefined) delete copy.trigger
+    else copy.trigger = { onFloorCommitted: { everyNFloors } }
+    setDraft(copy)
+  }
 
   const bundle = draft.preset
 
@@ -701,6 +716,37 @@ export function AgentEditor({
       </section>
 
       <section className="agent-editor__section">
+        <h4>{t('agents.editor.trigger.section')}</h4>
+        <p className="agent-editor__note">{t('agents.editor.trigger.hint')}</p>
+        <label className="agent-field agent-field--check">
+          <input
+            type="checkbox"
+            disabled={readOnly}
+            checked={!!draft.trigger}
+            onChange={(event) => setTrigger(event.target.checked ? 3 : undefined)}
+          />
+          <span>{t('agents.editor.trigger.enable')}</span>
+        </label>
+        {draft.trigger ? (
+          <label className="agent-field agent-field--inline">
+            <span>{t('agents.editor.trigger.everyNFloors')}</span>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              disabled={readOnly}
+              className={errorFor('trigger.everyNFloors') ? 'agent-input--invalid' : ''}
+              value={draft.trigger.onFloorCommitted.everyNFloors}
+              onChange={(event) => setTrigger(Math.trunc(Number(event.target.value)))}
+            />
+            {errorFor('trigger.everyNFloors') ? (
+              <em className="agent-field__error">{t('agents.editor.err.atLeastOne')}</em>
+            ) : null}
+          </label>
+        ) : null}
+      </section>
+
+      <section className="agent-editor__section">
         <h4>{t('agents.editor.defaults')}</h4>
         <div className="agent-field-grid">
           {num('defaults.maxSteps', t('agents.editor.maxSteps'), draft.defaults.maxSteps, (n) =>
@@ -744,7 +790,7 @@ export function AgentEditor({
           <span>{t('agents.editor.blocksNextTurn')}</span>
         </label>
         {draft.defaults.blocksNextTurn ? (
-          <p className="agent-editor__note">{t('agents.editor.blocksNextTurnInert')}</p>
+          <p className="agent-editor__note">{t('agents.editor.blocksNextTurnNote')}</p>
         ) : null}
         <label className="agent-field agent-field--inline">
           <span>{t('agents.editor.notification')}</span>

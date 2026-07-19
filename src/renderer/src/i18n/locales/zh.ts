@@ -206,8 +206,13 @@ const zh: Record<string, string> = {
   'agents.editor.toolResultMaxTokens': '工具结果最大 token',
   'agents.editor.required': '必需（失败不会被静默忽略）',
   'agents.editor.blocksNextTurn': '在完成前阻塞下一回合',
-  'agents.editor.blocksNextTurnInert':
-    '尚未生效：回合屏障已存在，但生成路径中没有任何代码等待它，因此该标记会被记录但目前不会真正阻塞回合。',
+  'agents.editor.blocksNextTurnNote':
+    '当该智能体正在运行时，下一个经典回合会等待它完成，以便回合读取它写入的内容。失败开放：若它失败或被取消，回合将继续。',
+  'agents.editor.trigger.section': '触发器',
+  'agents.editor.trigger.hint':
+    '可选：自动运行该智能体。唯一的触发方式是楼层提交节奏——每提交 N 个楼层触发一次。',
+  'agents.editor.trigger.enable': '每 N 层自动运行',
+  'agents.editor.trigger.everyNFloors': '每 N 层',
   'agents.editor.notification': '通知时机',
   'agents.editor.save': '保存',
   'agents.editor.saving': '保存中…',

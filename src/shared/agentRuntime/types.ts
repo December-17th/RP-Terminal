@@ -108,6 +108,16 @@ export interface AgentPresetBundle {
 
 export type NotificationPolicy = 'none' | 'failure' | 'completion'
 
+/**
+ * The ONLY declarative trigger kind (execution-plan M3, decision D1(a)): re-evaluate the Agent at
+ * each new-floor commit and fire when at least `everyNFloors` floors have elapsed since it last ran.
+ * There is deliberately no other kind — no timers, no cron, no variable-watching. The schema rejects
+ * any other trigger shape at parse time, so the runtime never has to defend against one.
+ */
+export interface AgentTrigger {
+  onFloorCommitted: { everyNFloors: number }
+}
+
 /** The player-facing roles an Agent can be bound to. Re-exported by the main-side AgentCatalog. */
 export type AgentRole = 'classic.narrator' | 'yuzu.sceneDirector'
 
@@ -135,6 +145,8 @@ export interface AgentDefinition {
   result: ResultContract
   tools: AgentToolDefinition[]
   modelHint?: string
+  /** Optional declarative cadence trigger (M3). Absent for an Agent that only runs on demand. */
+  trigger?: AgentTrigger
   defaults: InvocationDefaults
 }
 

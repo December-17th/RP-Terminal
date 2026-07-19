@@ -30,19 +30,34 @@ export type {
   TemplateContextOpts
 } from '../../shared/templateEngine'
 
+let readyPromise: Promise<void> | null = null
+
 export const initTemplates = async (): Promise<void> => {
-  // Wire the deps the shared engine can't import from src/main, then load quickjs.
-  // `log`'s first param is a LogLevel union (not `string`), so adapt it to the engine's LogFn.
-  setEngineDeps({
-    log: (level, msg, detail) => log(level as Parameters<typeof log>[0], msg, detail),
-    applyJsonPatch,
-    // Faithful block-style YAML for the `YAML` sandbox global (status/MVU world-info entries).
-    yamlStringify: (val, opts) => yamlStringify(val, opts),
-    yamlParse: (text) => yamlParse(text)
-  })
-  // Main runs in Node — the default wasmfile variant loads from node_modules.
-  await initEngine(() => getQuickJS())
+  // Memoized so `whenTemplatesReady()` can hand back the SAME promise a triggered Agent awaits before
+  // its first dispatch (M3 startup race, plan §6 risk 5), without re-running init.
+  readyPromise ??= (async () => {
+    // Wire the deps the shared engine can't import from src/main, then load quickjs.
+    // `log`'s first param is a LogLevel union (not `string`), so adapt it to the engine's LogFn.
+    setEngineDeps({
+      log: (level, msg, detail) => log(level as Parameters<typeof log>[0], msg, detail),
+      applyJsonPatch,
+      // Faithful block-style YAML for the `YAML` sandbox global (status/MVU world-info entries).
+      yamlStringify: (val, opts) => yamlStringify(val, opts),
+      yamlParse: (text) => yamlParse(text)
+    })
+    // Main runs in Node — the default wasmfile variant loads from node_modules.
+    await initEngine(() => getQuickJS())
+  })()
+  return readyPromise
 }
+
+/**
+ * The template-engine readiness promise (M3 startup race). Resolves once `initTemplates()` has loaded
+ * the sandbox. A floor-commit-triggered Agent awaits this before its FIRST dispatch so it assembles
+ * against a live engine instead of falling open to raw prompt text. Before `initTemplates()` is ever
+ * called (only true in isolated tests) this resolves immediately.
+ */
+export const whenTemplatesReady = (): Promise<void> => readyPromise ?? Promise.resolve()
 
 // --- per-profile global variable persistence (JSON file) ---
 const globalsPath = (profileId: string): string =>

@@ -286,6 +286,34 @@ commit, not silently ignored.
 
 ## 7. Implementation log
 
+### 2026-07-19 — M3 implemented
+
+`trigger: { onFloorCommitted: { everyNFloors } }` on the Agent contract (strict schema, any other
+kind rejected at parse); commit-boundary evaluation subscribes to the existing single
+`onCardFloorCommitted` emit and dispatches through `invocationRuntime().run` so coalescing, lanes,
+and floor ownership apply unchanged. Cadence is **derived** from `AgentRunStore.latestRunFloor` —
+due when `committedFloor − latestRunFloor ≥ everyNFloors` — which matches workflow `trigger.cadence`
+first-fire/advance semantics verbatim and is rewind-correct for free (deleting floors deletes runs,
+so the Agent refires). `blocksNextTurn` is live: `run()` already started barriers; the Classic
+direct path now awaits `waitForNextTurnBarriers` before assembly (generate/regenerate/swipe),
+fail-open per D5. The workflow fallback path is deliberately not gated (dies in M5). Failure
+visibility: the failed run shows in the Runs activity UI; the fail-open release itself surfaces as
+a structured main log line — the existing failure banner is workflow-trace-specific and was not
+extended (noted for M5/M6). Template readiness (`whenTemplatesReady`) gates the first trigger
+dispatch, closing §6 risk 5. Editor gained the Trigger section; both locales updated; `.rptagent`
+docs updated. Gate: typecheck / check:deps (581 modules) / test 4337 passed, 373 files.
+
+### 2026-07-19 — M0 and M2 implemented
+
+M0 (`c7df7f9`): design doc §3.1/§10 reconciled with ADR 0021; `rpt.agents` marked held (D2) in
+`docs/sdk/component-inventory.md` and `docs/rpt-api.md`; `.rptagent` scan-folder import documented;
+link baseline unchanged at 61 (this plan's earlier "72" citation corrected — 61 is the baseline).
+M2 (`8bf1ad6`): renderer smoke-mount seam `test/renderer/agentSurfacesSmoke.test.tsx` (ChatView +
+AgentRunActivity + Workspace popup + AgentsPanel under real stores, Proxy-stubbed `window.api`);
+acceptance proven by reverting the `2ce4277` guard and watching the seam fail. Session 10 checklist
+swept: everything shipped except one reported gap — folder-scan name-collision rename has no UI
+(upgrade conflicts do). i18n sweep clean (142 keys, both locales).
+
 ### 2026-07-19 — M1: owner decisions recorded
 
 The owner directed implementation to proceed "in accordance to the plan" after reviewing the §3

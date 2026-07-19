@@ -25,6 +25,7 @@ import { CompositionMeta } from '../../shared/workflow/compose'
 import { notifyWorkflowTrace } from './workflowEvents'
 import { appendRun } from './runHistoryStore'
 import { evaluateTriggers, evaluateDocTriggers } from './headlessRunService'
+import { waitForNextTurnBarriers } from './agentRuntime/InvocationRuntimeService'
 import { randomUUID } from 'crypto'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
@@ -193,7 +194,26 @@ export const generate = async (
     // Both resolve the SAME RunResult shape, so everything below this line — the detached trace /
     // run-history / trigger chain, the responseReady race, and the failure classification — is shared,
     // not duplicated, and Classic run history is recorded on both paths.
-    const runPromise = isClassicDirectShape(doc)
+    const direct = isClassicDirectShape(doc)
+    // blocksNextTurn barrier (execution-plan M3, decision D5 = fail-open, warned). A required Agent
+    // that declared blocksNextTurn holds the NEXT turn until it settles, so the turn's prompt reads the
+    // Agent's committed writes. Awaited HERE — before the direct path's `buildGenContext`/assembly
+    // reads variables, and on the seam that covers normal generate, regenerate, and swipe (all funnel
+    // through generate()). Policy is fail-open: a failed/cancelled required Agent releases the barrier
+    // and the turn proceeds; a Stop cancels the invocation, which also releases it. The workflow
+    // fallback path is DELIBERATELY not gated — it predates the feature and is removed in M5.
+    if (direct) {
+      const barrier = await waitForNextTurnBarriers(chatId)
+      if (barrier.status === 'failed') {
+        for (const failure of barrier.failures) {
+          log(
+            'error',
+            `blocksNextTurn Agent failed for chat ${chatId} — proceeding fail-open (D5): ${failure.code}: ${failure.message}`
+          )
+        }
+      }
+    }
+    const runPromise = direct
       ? runClassicTurnDirect(doc, ctx)
       : runWorkflow(doc, builtinRegistry, ctx)
     // Broadcast the run trace when the FULL run settles (post phase included) — ok, aborted,

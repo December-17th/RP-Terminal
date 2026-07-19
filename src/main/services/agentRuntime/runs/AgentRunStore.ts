@@ -73,6 +73,14 @@ export interface AgentRunStore {
   finalize(invocationId: string, final: AgentRunFinal): AgentRunRecord | null
   get(chatId: string, invocationId: string): AgentRunRecord | null
   list(chatId: string): AgentRunRecord[]
+  /**
+   * The highest floor at which a Run Record exists for `agentName` in this chat, or null when the
+   * Agent has never run here. This is the DERIVED cadence state the floor-commit trigger reads: an
+   * Agent is "due" when the latest committed floor is ≥ `everyNFloors` beyond this. Deriving it from
+   * runs (rather than a separate pointer table) makes cadence automatically rewind-correct — deleting
+   * floors deletes their runs, so the pointer recedes and the Agent refires (M3).
+   */
+  latestRunFloor(chatId: string, agentName: string): number | null
   cancel(invocationId: string): AgentRunCancelResult
   cancelFromFloor(chatId: string, fromFloor: number): void
   deleteFromFloor(chatId: string, fromFloor: number): void
@@ -597,6 +605,18 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
           return []
         }
       })
+    },
+    latestRunFloor(chatId, agentName) {
+      // `agentName` lives at the top level of the persisted JSON record (never a redacted key), so a
+      // json_extract filter is exact and index-free. A run row is created the moment `run()` dispatches
+      // (status 'running'), so a still-running or failed run counts as a "fire" — matching the workflow
+      // cadence, which advances its baseline on fire regardless of outcome.
+      const row = dbFor(chatId)
+        ?.prepare(
+          "SELECT MAX(floor) AS floor FROM agent_runs WHERE chat_id = ? AND json_extract(record, '$.agentName') = ?"
+        )
+        .get(chatId, agentName) as { floor: number | null } | undefined
+      return row?.floor ?? null
     },
     cancel(invocationId) {
       const cancelled = markCancelled(invocationId, 'CANCELLED')

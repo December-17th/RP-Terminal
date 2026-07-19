@@ -216,6 +216,18 @@ const AgentToolDefinitionSchema = z.strictObject({
   resultMaxTokens: z.int().positive().optional()
 })
 
+/**
+ * The single declarative trigger kind (M3, D1(a)). `strictObject` at BOTH levels is the enforcement:
+ * any other trigger kind or extra field (a timer, cron, `onVariableChanged`, …) is rejected at parse
+ * time, so no other trigger shape can ever reach the runtime. `everyNFloors` must be a positive
+ * integer (≥ 1).
+ */
+const AgentTriggerSchema = z.strictObject({
+  onFloorCommitted: z.strictObject({
+    everyNFloors: z.int().positive()
+  })
+})
+
 const RawAgentDefinitionSchema = z.strictObject({
   format: z.literal('rpt-agent'),
   formatVersion: z.literal(1),
@@ -227,6 +239,7 @@ const RawAgentDefinitionSchema = z.strictObject({
   result: ResultContractSchema,
   tools: z.array(AgentToolDefinitionSchema).default([]),
   modelHint: NonEmptyStringSchema.optional(),
+  trigger: AgentTriggerSchema.optional(),
   defaults: AgentDefaultsSchema
 })
 

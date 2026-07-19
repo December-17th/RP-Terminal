@@ -376,8 +376,13 @@ edit-conflict prompt when the same field was changed in-app). Verify:
 `resolveAgentFolder`), [`AgentCatalog.ts`](../../src/main/services/agentRuntime/catalog/AgentCatalog.ts)
 (`inspectPackage` rejects a non-`rpt-agent` `format`), and the gated IPC in
 [`agentCatalogIpc.ts`](../../src/main/ipc/agentCatalogIpc.ts) (`registerAgentCatalogIpc`). User-facing
-walkthrough: [`test-agents/README.md`](../../test-agents/README.md). Installed Agents currently run only
-via manual **Run now** or a scan — the card `rpt.agents.*` trigger API is held (§2, Agent scheduling).
+walkthrough: [`test-agents/README.md`](../../test-agents/README.md). Installed Agents run via manual
+**Run now** or an optional declarative cadence trigger — the one supported trigger kind:
+`trigger: { onFloorCommitted: { everyNFloors: N } }` (positive integer; any other trigger kind or field
+is rejected at parse time). It fires when `N` committed floors have elapsed since the Agent last ran,
+dispatched at the new-floor commit boundary (`emitCardFloorCommitted`) through the same identity path as
+Run now, so replay/re-incorporation never fire it and it coalesces with a manual run on the same floor.
+The card `rpt.agents.*` trigger API remains held (§2, Agent scheduling).
 
 ---
 
