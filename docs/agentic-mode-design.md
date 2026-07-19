@@ -1,6 +1,6 @@
 # Agentic Mode — Design (Track 3)
 
-Status: **Partially superseded by ADR 0019 and the Agent Runtime design (2026-07-18).**
+Status: **Partially superseded by ADR 0020 and the Agent Runtime design (2026-07-18).**
 The shipped manual Explore/Dialogue/Combat FSM remains current implementation. The unshipped
 model-called tool-loop, provider-tool transport, and `sub_generate` design are superseded; preserve
 the historical body below.

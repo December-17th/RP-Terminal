@@ -1,6 +1,6 @@
 # Recipes bundle for transport, reference internally
 
-**Status: Superseded by ADR 0019 (2026-07-18).**
+**Status: Superseded by ADR 0020 (2026-07-18).**
 
 A `.rptrecipe` file embeds full copies of every agent pack it uses; internally the recipe is a list
 of pack references (id + version) plus an activation preset (enabled set, world-scope overrides,

@@ -1,6 +1,6 @@
 # Capability denial closes gates, not nodes
 
-**Status: Superseded by ADR 0019 (2026-07-18).**
+**Status: Superseded by ADR 0020 (2026-07-18).**
 
 When a user denies a derived capability (e.g. table writes), the runtime closes the entry edges of
 every sub-path that reaches a node requiring it — the same gate mechanism used for disabling a pack

@@ -1,6 +1,6 @@
 # The effective graph is an editable projection, not an artifact
 
-**Status: Superseded by ADR 0019 (2026-07-18).**
+**Status: Superseded by ADR 0020 (2026-07-18).**
 
 Users enabling packs expected to see them in the Workflow view; ADR 0001 keeps the effective
 graph un-stored, so the graph editor showed an unchanged narrator and pack activity was invisible

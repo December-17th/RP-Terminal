@@ -1,6 +1,6 @@
 # Fragments attach at narrator checkpoints; disabling gates the entry edge
 
-**Status: Superseded by ADR 0019 (2026-07-18).**
+**Status: Superseded by ADR 0020 (2026-07-18).**
 
 ADR 0001 left the attachment contract (the pack ABI) open. We decided the narrator's main path is
 punctuated by **named checkpoints**. A fragment enters at a checkpoint as its own sub-path — by

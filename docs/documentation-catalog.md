@@ -27,7 +27,7 @@ map.
 | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------ |
 | [README](../README.md)                                                                                                    | Product overview, architecture, setup, verification          | Living; early-development overview.                    |
 | [CLAUDE.md](../CLAUDE.md) and [AGENTS.md](../AGENTS.md)                                                                   | Contributor and agent rules                                  | Living.                                                |
-| [CONTEXT.md](../CONTEXT.md)                                                                                               | Current Agent Runtime vocabulary                             | Living; ADR 0019 terminology wins.                     |
+| [CONTEXT.md](../CONTEXT.md)                                                                                               | Current Agent Runtime vocabulary                             | Living; ADR 0020 terminology wins.                     |
 | [PRODUCT.md](../PRODUCT.md)                                                                                               | Product definition and direction                             | Living.                                                |
 | [Current Status](current-status.md)                                                                                       | Current implementation, gaps, and release state              | Living source of status truth.                         |
 | [Card SDK index](sdk/README.md)                                                                                           | Card-facing documentation maintenance map                    | Living.                                                |
@@ -36,7 +36,7 @@ map.
 | [Plugin API](plugin-api.md)                                                                                               | `rpt.v1` card-script and standalone-plugin API               | Living stable contract.                                |
 | [Compatibility comparison](compat-comparison.md)                                                                          | RPT vs TavernHelper vs ST-Prompt-Template                    | Living compatibility summary.                          |
 | [Table templates](sdk/table-templates.md)                                                                                 | SQL-table memory import/edit/write/export/backfill contract  | Living; implemented except documented deferred items.  |
-| [Workflow module format](sdk/workflow-module-format.md)                                                                   | Legacy creator-facing workflow/module format                 | Implemented and frozen; removal approved by ADR 0019.  |
+| [Workflow module format](sdk/workflow-module-format.md)                                                                   | Legacy creator-facing workflow/module format                 | Implemented and frozen; removal approved by ADR 0020.  |
 | [World Card design](world-card-design.md)                                                                                 | Bundle/container format and phase status                     | Partial; status header and phase table are living.     |
 | [Runtime theme API](runtime-theme-api-design.md)                                                                          | Card-callable play/message theming                           | Implemented contract; maintain with `rpt-api.md`.      |
 | [Agent issue tracker](agents/issue-tracker.md), [triage labels](agents/triage-labels.md), [domain docs](agents/domain.md) | Local project-process conventions                            | Living.                                                |
@@ -46,11 +46,11 @@ map.
 
 | Document                                            | Status                                                                                 |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `workflows/decomposed-default.rptflow`              | Implemented legacy example; removal approved by ADR 0019.                              |
-| `workflows/memory-fill.rptflow`                     | Implemented legacy example; removal approved by ADR 0019.                              |
-| `workflows/memory-fill-async.rptflow`               | Implemented legacy example; removal approved by ADR 0019.                              |
-| `workflows/memory-maintain.rptflow`                 | Implemented legacy example; removal approved by ADR 0019.                              |
-| `workflows/table-memory-default.rptflow`            | Implemented legacy example; removal approved by ADR 0019.                              |
+| `workflows/decomposed-default.rptflow`              | Implemented legacy example; removal approved by ADR 0020.                              |
+| `workflows/memory-fill.rptflow`                     | Implemented legacy example; removal approved by ADR 0020.                              |
+| `workflows/memory-fill-async.rptflow`               | Implemented legacy example; removal approved by ADR 0020.                              |
+| `workflows/memory-maintain.rptflow`                 | Implemented legacy example; removal approved by ADR 0020.                              |
+| `workflows/table-memory-default.rptflow`            | Implemented legacy example; removal approved by ADR 0020.                              |
 | [Seam-slice demo](design/seam-slice-demo/README.md) | Current manual WCV geometry/seam test; standalone artifact.                            |
 | [Workflow manual tests](workflow-manual-tests.md)   | Snapshot from 2026-07-02; partially outdated by the full-window editor and Default v2. |
 
@@ -94,24 +94,24 @@ map.
 | [Episodic memory design](episodic-memory-design.md)      | SQL-table memory and the table-memory SDK docs.                                     |
 | [Original health check](codebase-health-check.md)        | `codebase-health-check-2026-06-24.md`, then later dated reviews.                    |
 | [Original maintainability plan](maintainability-plan.md) | `maintainability-plan-2026-06-26.md` and its execution log.                         |
-| Workflow/agent ADRs 0001–0011                            | [ADR 0019](adr/0019-agent-runtime-replaces-workflow-system.md).                    |
+| Workflow/agent ADRs 0001–0011                            | [ADR 0020](adr/0020-agent-runtime-replaces-workflow-system.md).                    |
 | [Agent & memory UX design](superpowers/specs/2026-07-07-agent-memory-ux-design.md) | [Agent Runtime design](agent-system/agent-runtime-design.md).             |
 
 ### ADR register
 
 | ADR                                                                                                     | Status                                              |
 | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| [0001 — Agent packs compose](adr/0001-agent-packs-compose-into-one-effective-graph.md)                  | Superseded by 0019.                                 |
-| [0002 — Fragment checkpoints/gates](adr/0002-fragments-attach-at-checkpoints-disable-gates-the-edge.md) | Superseded by 0019.                                 |
-| [0003 — Headless runs](adr/0003-headless-runs-are-turn-decoupled-and-state-mediated.md)                 | Superseded by 0019.                                 |
-| [0004 — Trigger commit boundaries](adr/0004-triggers-evaluate-at-commit-boundaries-only.md)             | Superseded by 0019.                                 |
-| [0005 — Pack activation scopes](adr/0005-install-globally-activate-per-world-override-per-chat.md)      | Superseded by 0019.                                 |
-| [0006 — Copy-on-edit forks](adr/0006-forks-are-copy-on-edit.md)                                         | Superseded by 0019.                                 |
-| [0007 — Capability-denial gates](adr/0007-capability-denial-closes-gates.md)                            | Superseded by 0019.                                 |
-| [0008 — Recipes](adr/0008-recipes-bundle-for-transport-reference-internally.md)                         | Superseded by 0019.                                 |
-| [0009 — Pack attachments](adr/0009-one-pack-one-graph-many-attachments.md)                              | Superseded by 0019.                                 |
-| [0010 — Effective-graph projection](adr/0010-effective-graph-is-an-editable-projection.md)              | Superseded by 0019.                                 |
-| [0011 — One canvas](adr/0011-one-canvas-trigger-rooted-agents.md)                                       | Superseded by 0019.                                 |
+| [0001 — Agent packs compose](adr/0001-agent-packs-compose-into-one-effective-graph.md)                  | Superseded by 0020.                                 |
+| [0002 — Fragment checkpoints/gates](adr/0002-fragments-attach-at-checkpoints-disable-gates-the-edge.md) | Superseded by 0020.                                 |
+| [0003 — Headless runs](adr/0003-headless-runs-are-turn-decoupled-and-state-mediated.md)                 | Superseded by 0020.                                 |
+| [0004 — Trigger commit boundaries](adr/0004-triggers-evaluate-at-commit-boundaries-only.md)             | Superseded by 0020.                                 |
+| [0005 — Pack activation scopes](adr/0005-install-globally-activate-per-world-override-per-chat.md)      | Superseded by 0020.                                 |
+| [0006 — Copy-on-edit forks](adr/0006-forks-are-copy-on-edit.md)                                         | Superseded by 0020.                                 |
+| [0007 — Capability-denial gates](adr/0007-capability-denial-closes-gates.md)                            | Superseded by 0020.                                 |
+| [0008 — Recipes](adr/0008-recipes-bundle-for-transport-reference-internally.md)                         | Superseded by 0020.                                 |
+| [0009 — Pack attachments](adr/0009-one-pack-one-graph-many-attachments.md)                              | Superseded by 0020.                                 |
+| [0010 — Effective-graph projection](adr/0010-effective-graph-is-an-editable-projection.md)              | Superseded by 0020.                                 |
+| [0011 — One canvas](adr/0011-one-canvas-trigger-rooted-agents.md)                                       | Superseded by 0020.                                 |
 | [0012 — Unknown HTML tags](adr/0012-unknown-html-tags-are-stripped-globally-in-message-markdown.md)     | Accepted.                                           |
 | [0013 — WCV channel spec](adr/0013-wcv-transport-derives-from-a-channel-spec.md)                         | Accepted.                                           |
 | [0014 — Lenient YSS parse](adr/0014-yuzu-scene-language-lenient-yss-parse.md)                           | Accepted.                                           |
@@ -119,10 +119,10 @@ map.
 | [0016 — Frozen ST 1.18.0 parity](adr/0016-parity-is-frozen-st-1180-assembly-only.md)                    | Accepted.                                           |
 | [0017 — Import trust boundary](adr/0017-import-is-the-trust-act-remote-code-isolated-realm.md)          | Accepted.                                           |
 | [0018 — Lossless preset envelopes](adr/0018-presets-persist-as-lossless-envelopes-edited-in-place.md)  | Accepted.                                           |
-| [0019 — Agent Runtime cutover](adr/0019-agent-runtime-replaces-workflow-system.md)                       | Accepted; approved target architecture.             |
+| [0020 — Agent Runtime cutover](adr/0020-agent-runtime-replaces-workflow-system.md)                       | Accepted; approved target architecture.             |
 
 Implementation code may be reused behind the new runtime, but workflow concepts and formats do not
-survive the ADR 0019 cutover.
+survive the ADR 0020 cutover.
 
 ## Point-in-time records
 

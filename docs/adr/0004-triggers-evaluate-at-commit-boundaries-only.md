@@ -1,6 +1,6 @@
 # Triggers evaluate at commit boundaries only
 
-**Status: Superseded by ADR 0019 (2026-07-18).**
+**Status: Superseded by ADR 0020 (2026-07-18).**
 
 ADR 0003 left the trigger vocabulary and evaluation point open. We decided v1 triggers are a
 **state condition** (a predicate over floor variables / table state), a **cadence** (every N

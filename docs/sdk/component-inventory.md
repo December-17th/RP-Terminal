@@ -374,7 +374,7 @@ best-effort (arbitrary author JS reaching past the supported surface).
 
 The workflow rows below describe current implemented compatibility only. They are frozen pending the
 atomic Agent Runtime cutover approved by
-[ADR 0019](../adr/0019-agent-runtime-replaces-workflow-system.md); that cutover removes the
+[ADR 0020](../adr/0020-agent-runtime-replaces-workflow-system.md); that cutover removes the
 `workflows[]` contract rather than migrating it.
 
 | ST / TH card element                                              | Lives in (ST)                                            | RPT destination                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Status                                                                                                                              |

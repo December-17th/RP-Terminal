@@ -33,7 +33,7 @@ cards) reads them as the contract. They must track the code.
   `tableBackfillService`; the gate's per-workflow node-state pointer is retired).
 - **[workflow-module-format.md](workflow-module-format.md)** — the implemented legacy workflow
   **module / agent** format, frozen pending the atomic Agent Runtime cutover approved by
-  [ADR 0019](../adr/0019-agent-runtime-replaces-workflow-system.md). Until that cutover ships, it
+  [ADR 0020](../adr/0020-agent-runtime-replaces-workflow-system.md). Until that cutover ships, it
   remains the current contract for named-group/trigger UI, descriptor hints, and `.rptmodule`
   round-trips.
 - **[../card-script-wcv-surfaces-design.md](../card-script-wcv-surfaces-design.md)** — design (not built):

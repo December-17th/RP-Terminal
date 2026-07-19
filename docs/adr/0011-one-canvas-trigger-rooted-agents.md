@@ -1,6 +1,6 @@
 # One canvas: agents are trigger-rooted chains in the workflow doc
 
-**Status: Superseded by ADR 0019 (2026-07-18).**
+**Status: Superseded by ADR 0020 (2026-07-18).**
 
 After using the built phase-1–5 system, the owner rejected its user-facing model (2026-07-03):
 the trigger → action → result chain was scattered across a control center (settings, runs,

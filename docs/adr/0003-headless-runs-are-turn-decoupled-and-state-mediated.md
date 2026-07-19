@@ -1,6 +1,6 @@
 # Headless runs are turn-decoupled and state-mediated
 
-**Status: Superseded by ADR 0019 (2026-07-18).**
+**Status: Superseded by ADR 0020 (2026-07-18).**
 
 ADR 0001 composes reply-coupled fragments into one effective graph per turn and rejected
 independently scheduled workflows. Some agents don't fit that shape because no player action causes

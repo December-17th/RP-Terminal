@@ -1,6 +1,6 @@
 # Workflow module format — the agent UI contract
 
-**Status:** Implemented legacy contract, frozen on 2026-07-18. ADR 0019 and the
+**Status:** Implemented legacy contract, frozen on 2026-07-18. ADR 0020 and the
 [Agent Runtime design](../agent-system/agent-runtime-design.md) supersede this format for future
 development and schedule its complete removal at the atomic cutover. Current builds continue to
 support the behavior documented below until that cutover ships.

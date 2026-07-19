@@ -1,6 +1,6 @@
 # Forks are copy-on-edit, never in-place detach
 
-**Status: Superseded by ADR 0019 (2026-07-18).**
+**Status: Superseded by ADR 0020 (2026-07-18).**
 
 Editing an installed pack's fragment in Workflow Studio creates a **new library entry** (the fork)
 with upstream lineage recorded; the world where the edit happened repoints its activation to the

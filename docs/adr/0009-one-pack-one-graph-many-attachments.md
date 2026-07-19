@@ -1,6 +1,6 @@
 # One pack, one graph, many attachments
 
-**Status: Superseded by ADR 0019 (2026-07-18).**
+**Status: Superseded by ADR 0020 (2026-07-18).**
 
 A pack's fragment is a single graph that may declare **multiple attachments**: several checkpoint
 entries (branch or inline) and/or headless triggers. The motivating case is async memory: a

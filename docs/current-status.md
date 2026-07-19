@@ -82,7 +82,7 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   refactor is implemented and gate-green in the working tree, pending owner review/commit and an in-app
   manual pass.
 - The [Agent Runtime design](agent-system/agent-runtime-design.md) and
-  [ADR 0019](adr/0019-agent-runtime-replaces-workflow-system.md) are approved. Implementation has
+  [ADR 0020](adr/0020-agent-runtime-replaces-workflow-system.md) are approved. Implementation has
   started on `agent-system`; Milestones 1-4, Sessions 0-7, are implemented, reviewed, accepted, and
   committed. Session 0 baseline evidence is complete and
   reviewed. The current foundation is internal only: Agent contracts, provider
@@ -166,7 +166,7 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
 - The removed episodic/vector-memory engine is superseded by SQL-table memory.
 - The entire workflow/agent graph product model—packs, fragments, checkpoints, attachments,
   activation gates/scopes, recipes, effective graphs, one-canvas workflows, trigger-rooted chains,
-  nodes, and modules—is superseded by ADR 0019. The implementation remains present only until the
+  nodes, and modules—is superseded by ADR 0020. The implementation remains present only until the
   approved atomic Agent Runtime cutover; no new workflow features are planned.
 - The June maintainability plans and dated reviews are historical records, not current backlogs.
 

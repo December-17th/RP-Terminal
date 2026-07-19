@@ -1,6 +1,6 @@
 # Agent packs compose into one effective graph per turn
 
-**Status: Superseded by ADR 0019 (2026-07-18).**
+**Status: Superseded by ADR 0020 (2026-07-18).**
 
 The agent-pack design promises independently enable/disable-able agents (memory keeper, planner,
 editor...), but the workflow engine executes exactly one workflow doc per generation

@@ -38,7 +38,7 @@ test/yuzu/p0/results/
 !/docs/adr/
 !/docs/adr/000[1-9]-*.md
 !/docs/adr/001[01]-*.md
-!/docs/adr/0019-agent-runtime-replaces-workflow-system.md
+!/docs/adr/0020-agent-runtime-replaces-workflow-system.md
 !/docs/agentic-mode-design.md
 !/docs/documentation-catalog.md
 !/docs/sdk/

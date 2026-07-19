@@ -1,6 +1,6 @@
 # Install globally, activate per world, override per chat
 
-**Status: Superseded by ADR 0019 (2026-07-18).**
+**Status: Superseded by ADR 0020 (2026-07-18).**
 
 An agent pack import creates exactly one user-owned copy in a **global library**. Whether the pack
 runs — its gate state — is decided **per world**, with an optional **per-chat** exception; exposed-

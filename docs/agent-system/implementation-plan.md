@@ -7,7 +7,7 @@ unimplemented. Session 8 is superseded in ordering by the
 has landed.
 
 This plan turns the approved [Agent Runtime design](agent-runtime-design.md) and
-[ADR 0019](../adr/0019-agent-runtime-replaces-workflow-system.md) into a sequence of independently
+[ADR 0020](../adr/0020-agent-runtime-replaces-workflow-system.md) into a sequence of independently
 verifiable implementation sessions. It is based on the repository state at commit `ea42ec2`.
 
 The work happens only on the `agent-system` branch and its sub-branches until the complete runtime is
