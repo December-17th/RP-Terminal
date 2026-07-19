@@ -114,6 +114,61 @@ declare global {
       onAgentRunEvent: (
         cb: (event: import('../shared/agentRuntime').AgentRunEvent) => void
       ) => () => void
+      // Agent library management (Agent Workspace). Gated main-side: cards never reach these.
+      listAgentCatalog: (
+        profileId: string
+      ) => Promise<import('../shared/agentRuntime').AgentCatalogSummary[]>
+      getAgentDefinition: (
+        profileId: string,
+        id: string
+      ) => Promise<import('../shared/agentRuntime').AgentDefinition | null>
+      syncAgentFolder: (
+        profileId: string,
+        conflicts?: import('../shared/agentRuntime').AgentUpgradeResolution
+      ) => Promise<import('../shared/agentRuntime').AgentFolderSync>
+      setAgentEnabled: (
+        profileId: string,
+        id: string,
+        enabled: boolean
+      ) => Promise<{ ok: boolean; error?: string }>
+      deleteAgent: (profileId: string, id: string) => Promise<{ ok: boolean; error?: string }>
+      bindAgentRole: (
+        profileId: string,
+        role: string,
+        id: string
+      ) => Promise<{ ok: boolean; error?: string }>
+      getAgentRoleBindings: (
+        profileId: string
+      ) => Promise<Record<import('../shared/agentRuntime').AgentRole, string> | null>
+      createAgent: (
+        profileId: string,
+        definition: unknown
+      ) => Promise<import('../shared/agentRuntime').AgentMutationResult>
+      editAgent: (
+        profileId: string,
+        id: string,
+        definition: unknown
+      ) => Promise<import('../shared/agentRuntime').AgentMutationResult>
+      restoreAgent: (
+        profileId: string,
+        id: string
+      ) => Promise<import('../shared/agentRuntime').AgentMutationResult>
+      exportAgent: (profileId: string, id: string) => Promise<string | null>
+      inspectAgentUpgrade: (
+        profileId: string,
+        id: string
+      ) => Promise<import('../shared/agentRuntime').AgentUpgradePreview | null>
+      upgradeAgent: (
+        profileId: string,
+        id: string,
+        conflicts?: import('../shared/agentRuntime').AgentUpgradeResolution
+      ) => Promise<import('../shared/agentRuntime').AgentMutationResult>
+      runAgentManually: (
+        profileId: string,
+        chatId: string,
+        agent: string,
+        input?: unknown
+      ) => Promise<import('../shared/agentRuntime').AgentManualRunResult>
       onWorkflowPanel: (
         cb: (p: { chatId: string; nodeId: string; label?: string; delta: string }) => void
       ) => () => void

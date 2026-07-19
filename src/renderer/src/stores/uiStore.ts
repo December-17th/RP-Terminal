@@ -16,6 +16,7 @@ export type SettingsSection =
   | 'workflow'
   | 'memory'
   | 'variables'
+  | 'agents'
 
 /** The ephemeral runtime play-theme override (runtime-theme-api-design §3B). A card's running UI sets it
  *  via setPlayTheme/setMessageTheme; App.tsx layers these tokens OVER the static card theme on `.play-root`.
@@ -84,6 +85,16 @@ interface UiState {
   memoryManagerOpen: boolean
   openMemoryManager: () => void
   closeMemoryManager: () => void
+  /** The full-window Agent Workspace popup (AgentWorkspace) — Session 10's complete editor: library,
+   *  definition form, prompt/result/tool/history/model/retry sections, plan editor, run detail, and
+   *  Manual Invocation. Hosted as a centered full-window popup like the Duel/Assets/Memory popups so
+   *  it layers above both the reconfigurable Workspace and a card's static panel_ui. The Settings →
+   *  Agents rail panel remains the QUICK-adjustment surface (scan/enable/bind); this is the editor.
+   *  `agentWorkspaceAgentId` deep-links straight to one Agent. */
+  agentWorkspaceOpen: boolean
+  agentWorkspaceAgentId: string | null
+  openAgentWorkspace: (opts?: { agentId?: string | null }) => void
+  closeAgentWorkspace: () => void
   /** Import-time card-script TRUST consent (CardTrustPrompt). When a freshly imported world ships
    *  scripts, this carries the pending decision; the modal records trust/deny into the persisted
    *  grants (+ `decided`) so the run-time hosts never re-prompt. Null = no pending decision. */
@@ -114,6 +125,11 @@ export const useUiStore = create<UiState>((set) => ({
       workflowEditorOpen: false,
       workflowEditorFragmentPackId: null
     }),
+  agentWorkspaceOpen: false,
+  agentWorkspaceAgentId: null,
+  openAgentWorkspace: (opts) =>
+    set({ agentWorkspaceOpen: true, agentWorkspaceAgentId: opts?.agentId ?? null }),
+  closeAgentWorkspace: () => set({ agentWorkspaceOpen: false, agentWorkspaceAgentId: null }),
   launcherWorldId: null,
   setLauncherWorldId: (launcherWorldId) => set({ launcherWorldId }),
   duelPopupOpen: false,

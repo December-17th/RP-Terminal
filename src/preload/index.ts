@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { VarsOrigin } from '../shared/thRuntime/types'
-import { CARD_AGENT_CHANNELS } from '../shared/agentRuntime'
+import { AGENT_CATALOG_CHANNELS, CARD_AGENT_CHANNELS } from '../shared/agentRuntime'
 import type {
   AgentRunCancelResult,
   AgentRunEvent,
@@ -255,6 +255,34 @@ const api = {
     ipcRenderer.on('agent-run-event', listener)
     return () => ipcRenderer.removeListener('agent-run-event', listener)
   },
+  listAgentCatalog: (profileId: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.list, profileId),
+  getAgentDefinition: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.get, profileId, id),
+  syncAgentFolder: (profileId: string, conflicts?: 'keep-customization' | 'use-source') =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.syncFolder, profileId, conflicts),
+  setAgentEnabled: (profileId: string, id: string, enabled: boolean) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.setEnabled, profileId, id, enabled),
+  deleteAgent: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.remove, profileId, id),
+  bindAgentRole: (profileId: string, role: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.bindRole, profileId, role, id),
+  getAgentRoleBindings: (profileId: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.roleBindings, profileId),
+  createAgent: (profileId: string, definition: unknown) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.create, profileId, definition),
+  editAgent: (profileId: string, id: string, definition: unknown) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.edit, profileId, id, definition),
+  restoreAgent: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.restore, profileId, id),
+  exportAgent: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.exportOne, profileId, id),
+  inspectAgentUpgrade: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.inspectUpgrade, profileId, id),
+  upgradeAgent: (profileId: string, id: string, conflicts?: 'keep-customization' | 'use-source') =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.upgrade, profileId, id, conflicts),
+  runAgentManually: (profileId: string, chatId: string, agent: string, input?: unknown) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.run, profileId, chatId, agent, input),
   cardAgentRun: (request: unknown) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.run, request),
   cardAgentRunPlan: (request: unknown) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.runPlan, request),
   cardAgentCancel: (requestId: string) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.cancel, requestId),

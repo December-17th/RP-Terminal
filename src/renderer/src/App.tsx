@@ -62,6 +62,10 @@ const WorkflowEditorOverlay = lazyNamed(
 )
 const DuelPopup = lazyNamed(() => import('./components/DuelPopup'), 'DuelPopup')
 const AssetsPopup = lazyNamed(() => import('./components/AssetsPopup'), 'AssetsPopup')
+const AgentWorkspace = lazyNamed(
+  () => import('./components/agents/AgentWorkspace'),
+  'AgentWorkspace'
+)
 const MemoryManagerView = lazyNamed(
   () => import('./components/memory/MemoryManagerView'),
   'MemoryManagerView'
@@ -100,6 +104,7 @@ export default function App(): React.ReactElement {
   const workflowEditorOpen = useUiStore((s) => s.workflowEditorOpen)
   const duelPopupOpen = useUiStore((s) => s.duelPopupOpen)
   const assetsPopupOpen = useUiStore((s) => s.assetsPopupOpen)
+  const agentWorkspaceOpen = useUiStore((s) => s.agentWorkspaceOpen)
   const memoryManagerOpen = useUiStore((s) => s.memoryManagerOpen)
   const activeChatMode = useChatStore((s) => s.activeChatMode)
   const templateReminderOpen = useChatStore((s) => s.templateReminderOpen)
@@ -513,6 +518,7 @@ export default function App(): React.ReactElement {
         {workflowEditorOpen && <WorkflowEditorOverlay profileId={activeProfile.id} />}
         {(duelPopupOpen || activeChatMode === 'duel') && <DuelPopup profileId={activeProfile.id} />}
         {assetsPopupOpen && <AssetsPopup profileId={activeProfile.id} />}
+        {agentWorkspaceOpen && <AgentWorkspace profileId={activeProfile.id} />}
         {memoryManagerOpen && <MemoryManagerView profileId={activeProfile.id} />}
         {templateReminderOpen && <TableTemplateReminderModal profileId={activeProfile.id} />}
       </Suspense>

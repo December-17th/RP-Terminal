@@ -66,6 +66,23 @@ export const GATED_CHANNELS = [
   'agent-runs-list',
   'agent-run-get',
   'agent-run-cancel',
+  // Agent library management (agentCatalogIpc). Installing, disabling, deleting, and role-binding
+  // Agents decide what model work the app runs — a trusted card must still never reach these.
+  'agent-catalog-list',
+  'agent-catalog-get',
+  'agent-catalog-sync-folder',
+  'agent-catalog-set-enabled',
+  'agent-catalog-delete',
+  'agent-catalog-bind-role',
+  'agent-catalog-role-bindings',
+  'agent-catalog-create',
+  'agent-catalog-edit',
+  'agent-catalog-restore',
+  'agent-catalog-export',
+  'agent-catalog-inspect-upgrade',
+  'agent-catalog-upgrade',
+  // Manual Invocation from the Agent Workspace: starts real model work on the latest committed floor.
+  'agent-catalog-run',
   // Inline card Agent transport. Main validates its explicit card scope against the authoritative chat.
   'card-agent-run',
   'card-agent-run-plan',

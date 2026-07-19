@@ -9,6 +9,7 @@ import { PersonaPanel } from './PersonaPanel'
 import { PresetManager } from './PresetManager'
 import { LorebookManager } from './LorebookManager'
 import { WorldPanel } from './WorldPanel'
+import { AgentsPanel } from './AgentsPanel'
 import { useUiStore, type SettingsSection } from '../stores/uiStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { useChatStore } from '../stores/chatStore'
@@ -68,6 +69,8 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
         )
       case 'connection':
         return <ApiSettingsPanel profileId={profileId} />
+      case 'agents':
+        return <AgentsPanel profileId={profileId} />
       case 'worlds':
         return <WorldPanel profileId={profileId} onSelectPanel={() => {}} />
       case 'preset':
@@ -195,6 +198,7 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
           {railItem('workflow', t('settings.workflow'))}
           {railItem('memory', t('settings.memory'))}
           {railItem('variables', t('settings.variables'))}
+          {railItem('agents', t('settings.agents'))}
         </div>
         <div className="settings-content">
           {section === 'app' ? content() : <div className="world-settings">{content()}</div>}

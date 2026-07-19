@@ -171,10 +171,10 @@ export function TopStrip({
 
         <button
           className="tmenu-btn"
-          onClick={() => useUiStore.getState().openWorkflowEditor()}
-          title={t('nav.workflowTitle')}
+          onClick={() => useUiStore.getState().openAgentWorkspace()}
+          title={t('nav.agentsTitle')}
         >
-          {t('nav.workflow')}
+          {t('nav.agents')}
         </button>
 
         <MemoryChip profileId={profileId} />

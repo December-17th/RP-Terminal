@@ -10,7 +10,9 @@ import { getDb } from '../../db'
 import { BUILTIN_AGENTS } from './builtins'
 
 export type AgentSourceKind = 'builtin' | 'user-created' | 'user-imported' | 'card'
-export type AgentRole = 'classic.narrator' | 'yuzu.sceneDirector'
+/** Defined in the shared contracts so the renderer can name roles; re-exported for existing callers. */
+import type { AgentRole } from '../../../../shared/agentRuntime'
+export type { AgentRole }
 
 export interface AgentSource {
   kind: AgentSourceKind
