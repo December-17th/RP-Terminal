@@ -83,10 +83,14 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   manual pass.
 - The [Agent Runtime design](agent-system/agent-runtime-design.md) and
   [ADR 0019](adr/0019-agent-runtime-replaces-workflow-system.md) are approved. Implementation has
-  started on `agent-system`; Milestone 1 Sessions 0–2 are implemented and reviewed, with commits
+  started on `agent-system`; Milestones 1–2, Sessions 0–4, are implemented and reviewed, with commits
   pending in the current working tree. Session 0 baseline evidence is complete and reviewed. The
   current foundation is internal only: Agent contracts, provider normalization/selection, the
-  Harness, scripted characterization fixtures, and tests. Sessions 3–12 remain unimplemented;
+  Harness, scripted characterization fixtures, the profile-wide Agent Catalog, floor-owned immutable
+  Run Records, and the typed Agent Activity read/cancel surface. Built-in/card/user sources,
+  deterministic customization hashes, collision-safe package import, explicit upgrade conflicts,
+  role bindings, strict World Card `agents[]`, Run Record persistence, and activity cancellation are
+  covered by tests. Sessions 5–12 remain unimplemented;
   Classic and Yuzu still use the workflow-backed product path.
   The code-informed [implementation plan](agent-system/implementation-plan.md) sequences the remaining
   work into independently gated sessions.

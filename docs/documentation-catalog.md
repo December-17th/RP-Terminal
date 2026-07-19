@@ -75,8 +75,8 @@ map.
 
 | Document                                                         | Status                                                                                                  |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [Agent Runtime](agent-system/agent-runtime-design.md)            | Approved; Milestone 1 Sessions 0–2 are implemented/reviewed, with working-tree commits pending.         |
-| [Implementation plan](agent-system/implementation-plan.md)       | Active on `agent-system`; Session 0 evidence is complete/reviewed. Sessions 3–12 are unimplemented.     |
+| [Agent Runtime](agent-system/agent-runtime-design.md)            | Approved; Milestones 1–2, Sessions 0–4, are implemented/reviewed; working-tree commits are pending.      |
+| [Implementation plan](agent-system/implementation-plan.md)       | Active on `agent-system`; Sessions 0–4 are implemented/reviewed. Sessions 5–12 remain unimplemented.     |
 | [Agentic mode](agentic-mode-design.md)                           | Partially superseded: manual FSM shipped; unshipped tool-loop design replaced by Agent Runtime.         |
 | [Card custom UI](card-custom-ui-design.md)                       | Partial predecessor design; inline/WCV/static-layout work shipped, native declarative view kit remains. |
 | [Grep notes memory](grep-notes-memory-design.md)                 | Planned prototype; partially superseded by Agentic Plot Recall.                                         |

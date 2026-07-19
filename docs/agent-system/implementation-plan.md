@@ -1,7 +1,7 @@
 # Agent Runtime implementation plan
 
-Status: Milestone 1 Sessions 0–2 are implemented and reviewed on `agent-system`, with commits
-pending in the current working tree. Session 0 evidence is complete and reviewed; Sessions 3–12
+Status: Milestones 1–2, Sessions 0–4, are implemented and reviewed on `agent-system`, with commits
+pending in the current working tree. Session 0 evidence is complete and reviewed; Sessions 5–12
 remain unimplemented.
 
 This plan turns the approved [Agent Runtime design](agent-runtime-design.md) and
