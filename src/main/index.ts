@@ -20,6 +20,7 @@ import './services/cardAgentCatalogBridge'
 import { registerIpc } from './ipc'
 import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
+import { agentRunStore } from './services/agentRuntime/runs/AgentRunStore'
 
 // A packaged Windows ZIP is self-contained: RP Terminal records, Electron preferences, browser
 // storage, and caches all live below rp-terminal-data beside the executable. macOS retains Electron's
@@ -218,6 +219,15 @@ app.on('window-all-closed', () => {
 // Close every open per-chat session DB handle before quitting so Windows file locks don't linger and a
 // clean shutdown checkpoints each WAL (plan §B4 / review C3).
 app.on('will-quit', () => {
+  try {
+    agentRunStore.shutdown()
+  } catch (err: any) {
+    logService.log(
+      'error',
+      'Failed to cancel Agent invocations on quit',
+      err?.message || String(err)
+    )
+  }
   try {
     sessionDbService.closeAll()
   } catch (err: any) {

@@ -126,6 +126,20 @@ CREATE TABLE IF NOT EXISTS execution_records (
   record TEXT NOT NULL,
   PRIMARY KEY (chat_id, floor)
 );
+
+-- Immutable, floor-owned Agent invocation evidence. The JSON record is a complete snapshot; the
+-- projected columns make lifecycle reads/deletion cheap without coupling callers to its internals.
+CREATE TABLE IF NOT EXISTS agent_runs (
+  invocation_id TEXT PRIMARY KEY,
+  chat_id TEXT NOT NULL,
+  floor INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  record TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_chat_floor ON agent_runs(chat_id, floor);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_chat_started ON agent_runs(chat_id, started_at);
 `
 
 // ---- pure helpers (unit-tested) --------------------------------------------------------------

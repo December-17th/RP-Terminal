@@ -28,4 +28,5 @@ export {
   resolveInvocationOptions
 } from './schema'
 export type * from './types'
+export type * from './runs'
 export { normalizeAgentName } from './names'

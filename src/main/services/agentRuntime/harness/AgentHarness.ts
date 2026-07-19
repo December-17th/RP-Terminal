@@ -44,7 +44,7 @@ import type {
   ToolEvidence
 } from './types'
 
-const DEFAULT_POLICY =
+export const DEFAULT_HARNESS_POLICY =
   'RP Terminal Agent Harness: follow the Agent prompt and return only its declared result.'
 
 type AttemptResult =
@@ -681,7 +681,7 @@ const runAttempt = async ({
 export const createAgentHarness = ({
   providerDispatch,
   toolRegistry,
-  harnessPolicy = DEFAULT_POLICY,
+  harnessPolicy = DEFAULT_HARNESS_POLICY,
   estimateTokens = defaultEstimateTokens,
   sleep = sleepWithSignal,
   contextWindowTokensForTest

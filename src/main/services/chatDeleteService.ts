@@ -1,5 +1,6 @@
 import { getDb } from './db'
 import * as sessionDbService from './sessionDbService'
+import { agentRunStore } from './agentRuntime/runs/AgentRunStore'
 
 /**
  * Delete ALL persisted state for one chat — the single centralized teardown reused by
@@ -26,6 +27,9 @@ import * as sessionDbService from './sessionDbService'
  * the folder + WAL sidecars (§B4); it is idempotent for a chat that never had a session store.
  */
 export const deleteChatFully = (profileId: string, chatId: string): void => {
+  // Abort live invocations before removing the owning session folder; this also emits deletion
+  // edges so renderer activity cannot remain stuck on a chat that no longer exists.
+  agentRunStore.deleteChat(chatId)
   const db = getDb()
   db.transaction(() => {
     db.prepare('DELETE FROM workflow_run_history WHERE chat_id = ?').run(chatId)
@@ -49,7 +53,7 @@ export const chatIdsForCharacter = (profileId: string, characterId: string): str
 /** The chat ids belonging to a profile (for centralized cascade on profile wipe). */
 export const chatIdsForProfile = (profileId: string): string[] =>
   (
-    getDb()
-      .prepare('SELECT id FROM chats WHERE profile_id = ?')
-      .all(profileId) as Array<{ id: string }>
+    getDb().prepare('SELECT id FROM chats WHERE profile_id = ?').all(profileId) as Array<{
+      id: string
+    }>
   ).map((r) => r.id)

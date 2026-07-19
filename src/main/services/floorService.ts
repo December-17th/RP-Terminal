@@ -4,6 +4,7 @@ import { FloorFile } from '../types/chat'
 import { normalizeSwipes, selectSwipe, appendSwipe } from './swipeHelpers'
 import { withLock } from './asyncLock'
 import { cleanForHistory } from '../../shared/responseView'
+import { agentRunStore } from './agentRuntime/runs/AgentRunStore'
 
 /** Per-chat floor-variable write lock key (agent-packs WP1.5; ADR 0003). Floors are keyed by
  *  `chat_id` in SQLite (PRIMARY KEY (chat_id, floor)), so a chat is the write-serialization scope —
@@ -372,6 +373,9 @@ export const deleteFloorAndSubsequent = (
   chatId: string,
   fromFloorIndex: number
 ): void => {
+  // Invocation Floors own their Run Records. Cancel first so no late provider completion can
+  // finalize a record after the transcript cut, then erase completed and in-flight evidence.
+  agentRunStore.deleteFromFloor(chatId, fromFloorIndex)
   getSessionDbByChat(chatId)
     ?.prepare('DELETE FROM floors WHERE chat_id = ? AND floor >= ?')
     .run(chatId, fromFloorIndex)
