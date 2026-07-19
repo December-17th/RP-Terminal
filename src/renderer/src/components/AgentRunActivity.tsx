@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
+import { useMemo, useState } from 'react'
 import type { AgentRunSummary } from '../../../shared/agentRuntime'
 import { useT } from '../i18n'
 import { recentAgentRuns, useAgentRunStore } from '../stores/agentRunStore'
@@ -134,13 +133,14 @@ export function AgentRunActivity({
   chatId: string
 }): React.ReactElement {
   const t = useT()
-  const { runs, loading, loadError } = useAgentRunStore(
-    useShallow((state) => ({
-      runs: recentAgentRuns(state.byChat, chatId),
-      loading: state.loadingByChat[chatId] ?? false,
-      loadError: state.errorByChat[chatId] ?? false
-    }))
-  )
+  // Each subscription must return a value React can compare with Object.is across renders:
+  // `byChat` is a stable reference between store writes, and the other two are primitives. Deriving
+  // `runs` inside the selector instead would hand useSyncExternalStore a fresh array every call,
+  // which re-renders forever and tears the tree down (blank screen on entering a session).
+  const byChat = useAgentRunStore((state) => state.byChat)
+  const loading = useAgentRunStore((state) => state.loadingByChat[chatId] ?? false)
+  const loadError = useAgentRunStore((state) => state.errorByChat[chatId] ?? false)
+  const runs = useMemo(() => recentAgentRuns(byChat, chatId), [byChat, chatId])
   const [stoppingIds, setStoppingIds] = useState<Set<string>>(new Set())
   const [cancelError, setCancelError] = useState(false)
 
