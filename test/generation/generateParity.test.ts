@@ -54,6 +54,12 @@ const RAW =
 let capturedSend: unknown = null
 let capturedParams: any = null
 let capturedFloor: FloorFile | null = null
+let capturedSavedFloor: FloorFile | null = null
+let capturedTruncations: number[] = []
+
+const generationCalls = vi.hoisted(
+  () => [] as Array<{ userAction: string | undefined; generationType: string | undefined }>
+)
 
 // Project Yuzu WP-S1: a hoisted toggle so the SAME mocked module serves both the classic baseline
 // (off → byte-identical) and the VN-mode case (on → overlay + raised ceiling). Off by default.
@@ -94,7 +100,9 @@ vi.mock('../../src/main/services/chatService', () => ({
   appendFloor: (_p: string, _c: string, f: FloorFile) => {
     capturedFloor = f
   },
-  truncateFloors: () => {}
+  truncateFloors: (_p: string, _c: string, fromFloor: number) => {
+    capturedTruncations.push(fromFloor)
+  }
 }))
 vi.mock('../../src/main/services/characterService', () => ({ getCharacter: () => card }))
 vi.mock('../../src/main/services/settingsService', async (orig) => ({
@@ -114,8 +122,23 @@ vi.mock('../../src/main/services/floorService', () => ({
   getFloor: () => floors[floors.length - 1],
   getFloorRequest: () => undefined,
   getFloorCount: () => floors.length,
-  saveFloor: () => {}
+  saveFloor: (_p: string, _c: string, f: FloorFile) => {
+    capturedSavedFloor = f
+  }
 }))
+vi.mock('../../src/main/services/nodes/turnContext', async (orig) => {
+  const actual = await orig<typeof import('../../src/main/services/nodes/turnContext')>()
+  return {
+    ...actual,
+    buildTurnContext: (args: Parameters<typeof actual.buildTurnContext>[0]) => {
+      generationCalls.push({
+        userAction: args.userAction,
+        generationType: args.generationType
+      })
+      return actual.buildTurnContext(args)
+    }
+  }
+})
 vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [], getWorldInfoRules: () => [] }))
 vi.mock('../../src/main/services/templateService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
@@ -146,13 +169,18 @@ vi.mock('../../src/main/services/apiService', async (orig) => ({
   }
 }))
 
-import { generate } from '../../src/main/services/generationService'
+import { generate, generateSwipe, regenerate } from '../../src/main/services/generationService'
 
 describe('generate() — parity baseline', () => {
   beforeEach(() => {
     capturedSend = null
     capturedParams = null
     capturedFloor = null
+    capturedSavedFloor = null
+    capturedTruncations = []
+    generationCalls.length = 0
+    delete floors[1].swipes
+    delete floors[1].swipe_id
     yuzuFlag.on = false
     provider.queue = []
     provider.calls = 0
@@ -168,6 +196,29 @@ describe('generate() — parity baseline', () => {
     // the two things the parity contract pins:
     expect(capturedSend).toMatchSnapshot('sendMessages')
     expect(capturedFloor).toMatchSnapshot('writtenFloor')
+  })
+
+  it('regenerate truncates the latest floor and replays its action with generation type regenerate', async () => {
+    const floor = await regenerate('profile1', 'chat1')
+
+    expect(capturedTruncations).toEqual([1])
+    expect(generationCalls).toEqual([
+      { userAction: 'look around', generationType: 'regenerate' }
+    ])
+    expect(floor?.user_message.content).toBe('look around')
+  })
+
+  it('generateSwipe preserves prior alternates, appends the reroll, and marks it active', async () => {
+    floors[1].swipes = ['A first look.', 'You see a door.']
+    floors[1].swipe_id = 1
+
+    const floor = await generateSwipe('profile1', 'chat1')
+
+    expect(capturedTruncations).toEqual([1])
+    expect(generationCalls).toEqual([{ userAction: 'look around', generationType: 'swipe' }])
+    expect(floor?.swipes).toEqual(['A first look.', 'You see a door.', RAW])
+    expect(floor?.swipe_id).toBe(2)
+    expect(capturedSavedFloor).toBe(floor)
   })
 
   // Project Yuzu WP-S1: VN mode on. The classic pipeline gains ONE extra system block (the YSS overlay)
