@@ -21,6 +21,7 @@ import { registerAgentPackIpc } from './agentPackIpc'
 import { registerNotesMemoryIpc } from './notesMemoryIpc'
 import { registerSaveTransferIpc } from './saveTransferIpc'
 import { registerUpdateIpc } from './updateIpc'
+import { registerAgentRunIpc } from './agentRunIpc'
 
 /** Register every IPC handler, grouped by domain. Called once after app-ready. */
 export const registerIpc = (ipcMain: IpcMain): void => {
@@ -46,4 +47,5 @@ export const registerIpc = (ipcMain: IpcMain): void => {
   registerNotesMemoryIpc(ipcMain)
   registerSaveTransferIpc(ipcMain)
   registerUpdateIpc(ipcMain)
+  registerAgentRunIpc(ipcMain)
 }

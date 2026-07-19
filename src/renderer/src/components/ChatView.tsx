@@ -26,6 +26,7 @@ import {
   currentActivityLabelKey
 } from '../stores/agentActivityStore'
 import { useT } from '../i18n'
+import { AgentRunActivity } from './AgentRunActivity'
 
 // Local copy of the workflow editors' `inEditable` shape (do NOT import across modules): true when
 // focus is inside a text-entry element, so keyboard paging never fires while typing in the composer.
@@ -525,6 +526,8 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           {t(postActivityKey)}
         </div>
       ) : null}
+
+      {activeChatId ? <AgentRunActivity profileId={profileId} chatId={activeChatId} /> : null}
 
       <ChatToolbar
         canRegenerate={canRegenerate}

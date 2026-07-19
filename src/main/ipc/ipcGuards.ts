@@ -62,6 +62,10 @@ export const GATED_CHANNELS = [
   'plugins-set-enabled',
   'plugins-install-dialog',
   'plugins-install-zip-dialog',
+  // Full Agent Run records contain prompts/evidence; cancellation controls active model work.
+  'agent-runs-list',
+  'agent-run-get',
+  'agent-run-cancel',
   // agent-pack / module / recipe transfer dialogs (agentPackIpc)
   'agent-pack-export-dialog',
   'agent-pack-import-dialog',

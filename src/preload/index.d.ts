@@ -97,6 +97,23 @@ declare global {
           state: 'start' | 'end'
         }) => void
       ) => () => void
+      listAgentRuns: (
+        profileId: string,
+        chatId: string
+      ) => Promise<import('../shared/agentRuntime').AgentRunRecord[]>
+      getAgentRun: (
+        profileId: string,
+        chatId: string,
+        invocationId: string
+      ) => Promise<import('../shared/agentRuntime').AgentRunRecord | null>
+      cancelAgentRun: (
+        profileId: string,
+        chatId: string,
+        invocationId: string
+      ) => Promise<import('../shared/agentRuntime').AgentRunCancelResult>
+      onAgentRunEvent: (
+        cb: (event: import('../shared/agentRuntime').AgentRunEvent) => void
+      ) => () => void
       onWorkflowPanel: (
         cb: (p: { chatId: string; nodeId: string; label?: string; delta: string }) => void
       ) => () => void

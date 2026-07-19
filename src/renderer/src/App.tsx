@@ -30,6 +30,7 @@ import {
 } from './stores/agentFailureStore'
 import { useRecallFailOpenStore, recallOutcome } from './stores/recallFailOpenStore'
 import { useAgentActivityStore } from './stores/agentActivityStore'
+import { useAgentRunStore } from './stores/agentRunStore'
 import type { WorkflowRunTrace } from '../../shared/workflow/trace'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
@@ -217,6 +218,20 @@ export default function App(): React.ReactElement {
         useAgentActivityStore.getState().start(a.chatId, a.nodeId, a.nodeType, a.phase)
       else useAgentActivityStore.getState().end(a.chatId, a.nodeId)
     })
+    // Agent Runtime activity is keyed by Invocation ID, so overlapping calls in one chat remain
+    // independently visible and stoppable. Notification policy never gates this activity edge.
+    const unsubAgentRuns = window.api.onAgentRunEvent((event) => {
+      useAgentRunStore.getState().apply(event)
+      if (event.type === 'started') {
+        useAgentActivityStore
+          .getState()
+          .start(event.run.chatId, event.run.invocationId, event.run.agentName, 'post')
+      } else if (event.type === 'deleted') {
+        useAgentActivityStore.getState().end(event.chatId, event.invocationId)
+      } else if (event.run.status !== 'running') {
+        useAgentActivityStore.getState().end(event.run.chatId, event.run.invocationId)
+      }
+    })
     // Opt-in node output panels (spec D4): append deltas; a chat's panels belong to its latest
     // turn, so clear them on the turn's rising edge (isGenerating false→true).
     const unsubPanel = window.api.onWorkflowPanel((p) => useWorkflowPanelStore.getState().append(p))
@@ -246,6 +261,7 @@ export default function App(): React.ReactElement {
       unsubEvents()
       unsubTrace()
       unsubActivity()
+      unsubAgentRuns()
       unsubPanel()
       unsubPanelClear()
       unsubModeChanged()
@@ -320,6 +336,35 @@ export default function App(): React.ReactElement {
       .getState()
       .load(pid, { cardId: activeCharacter?.id, chatId: activeChatId })
   }, [activeProfile?.id, activeCharacter?.id, activeChatId, activePresetId])
+
+  // Hydrate persisted recent activity whenever a chat opens. Running rows are also projected into
+  // the existing always-visible chat indicator, covering renderer reloads without discarding the
+  // legacy workflow activity source during the cutover.
+  useEffect(() => {
+    const profileId = activeProfile?.id
+    if (!profileId || !activeChatId) return
+    let disposed = false
+    const generation = useAgentRunStore.getState().beginHydrate(activeChatId)
+    void window.api
+      .listAgentRuns(profileId, activeChatId)
+      .then((records) => {
+        if (disposed) return
+        if (!useAgentRunStore.getState().hydrate(activeChatId, records, generation)) return
+        for (const run of Object.values(useAgentRunStore.getState().byChat[activeChatId] ?? {})) {
+          if (run.status === 'running') {
+            useAgentActivityStore
+              .getState()
+              .start(run.chatId, run.invocationId, run.agentName, 'post')
+          }
+        }
+      })
+      .catch(() => {
+        if (!disposed) useAgentRunStore.getState().failHydrate(activeChatId, generation)
+      })
+    return () => {
+      disposed = true
+    }
+  }, [activeProfile?.id, activeChatId])
 
   // If the active card declares a left_panel, find its promoted panel by scriptName and auto-dock it.
   const leftPanelName = activeCharacter?.card?.data?.extensions?.rp_terminal?.left_panel?.name

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { VarsOrigin } from '../shared/thRuntime/types'
+import type { AgentRunCancelResult, AgentRunEvent, AgentRunRecord } from '../shared/agentRuntime'
 import type { CharacterImportDialogResult } from '../shared/characterImport'
 
 // Custom APIs for renderer
@@ -227,6 +228,25 @@ const api = {
     const listener = (_e: IpcRendererEvent, p: any): void => cb(p)
     ipcRenderer.on('workflow-activity', listener)
     return () => ipcRenderer.removeListener('workflow-activity', listener)
+  },
+  listAgentRuns: (profileId: string, chatId: string): Promise<AgentRunRecord[]> =>
+    ipcRenderer.invoke('agent-runs-list', { profileId, chatId }),
+  getAgentRun: (
+    profileId: string,
+    chatId: string,
+    invocationId: string
+  ): Promise<AgentRunRecord | null> =>
+    ipcRenderer.invoke('agent-run-get', { profileId, chatId, invocationId }),
+  cancelAgentRun: (
+    profileId: string,
+    chatId: string,
+    invocationId: string
+  ): Promise<AgentRunCancelResult> =>
+    ipcRenderer.invoke('agent-run-cancel', { profileId, chatId, invocationId }),
+  onAgentRunEvent: (cb: (event: AgentRunEvent) => void) => {
+    const listener = (_event: IpcRendererEvent, runEvent: AgentRunEvent): void => cb(runEvent)
+    ipcRenderer.on('agent-run-event', listener)
+    return () => ipcRenderer.removeListener('agent-run-event', listener)
   },
   // Opt-in node output panel deltas (spec D4 collapsible chat panels). Returns an unsubscribe.
   onWorkflowPanel: (
