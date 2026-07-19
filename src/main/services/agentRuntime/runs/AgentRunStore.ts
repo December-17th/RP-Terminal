@@ -310,8 +310,10 @@ const summary = (record: AgentRunRecord) => ({
 })
 
 export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunStore => {
-  const dbFor = dependencies.getDb ?? getSessionDbByChat
-  const dbForProfile = dependencies.getDbForProfile ?? getSessionDb
+  const dbFor = dependencies.getDb ?? ((chatId: string) => getSessionDbByChat(chatId))
+  const dbForProfile =
+    dependencies.getDbForProfile ??
+    ((profileId: string, chatId: string) => getSessionDb(profileId, chatId))
   const now = dependencies.now ?? (() => new Date().toISOString())
   const controllers = new Map<
     string,
