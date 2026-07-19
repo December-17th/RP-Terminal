@@ -9,7 +9,8 @@ import {
 import {
   createAgentHarness,
   createToolRegistry,
-  type ToolBinding
+  type ToolBinding,
+  type ToolRegistry
 } from '../../src/main/services/agentRuntime/harness'
 import { parseAgentDefinition } from '../../src/shared/agentRuntime'
 import type { Settings } from '../../src/main/types/models'
@@ -154,6 +155,30 @@ describe('AgentHarness.execute', () => {
       'Return the requested result.',
       '{"request":"answer"}'
     ])
+  })
+
+  it('preflights required card tools in the authoritative invocation scope before dispatching a provider call', async () => {
+    const adapter = createScriptedProviderAdapter([])
+    const resolve = vi.fn<ToolRegistry['resolve']>(() => undefined)
+    const harness = createAgentHarness({
+      providerDispatch: dispatchFor(adapter),
+      toolRegistry: { resolve }
+    })
+
+    const result = await harness.execute({
+      definition: definition({ tools: [lookupTool] }),
+      input: {},
+      profileId: 'test-profile',
+      toolScope: { profileId: 'test-profile', chatId: 'chat-a', characterId: 'card-a' }
+    })
+
+    expect(result).toMatchObject({ ok: false, failure: { code: 'TOOL_UNAVAILABLE' } })
+    expect(resolve).toHaveBeenCalledWith(lookupTool, {
+      profileId: 'test-profile',
+      chatId: 'chat-a',
+      characterId: 'card-a'
+    })
+    expect(adapter.requests).toHaveLength(0)
   })
 
   it('runs bounded Agent Steps and returns staged operations only after result validation', async () => {

@@ -66,6 +66,12 @@ export const GATED_CHANNELS = [
   'agent-runs-list',
   'agent-run-get',
   'agent-run-cancel',
+  // Inline card Agent transport. Main validates its explicit card scope against the authoritative chat.
+  'card-agent-run',
+  'card-agent-run-plan',
+  'card-agent-cancel',
+  'card-agent-tool-register',
+  'card-agent-tool-unregister',
   // agent-pack / module / recipe transfer dialogs (agentPackIpc)
   'agent-pack-export-dialog',
   'agent-pack-import-dialog',

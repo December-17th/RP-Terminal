@@ -30,3 +30,4 @@ export {
 export type * from './types'
 export type * from './runs'
 export { normalizeAgentName } from './names'
+export { CARD_AGENT_CHANNELS } from './cardHost'

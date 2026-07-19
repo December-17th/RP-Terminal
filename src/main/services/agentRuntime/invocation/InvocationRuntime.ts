@@ -12,6 +12,7 @@ import type { CatalogAgent } from '../catalog'
 import type { HarnessExecutionResult, HarnessFailure } from '../harness'
 import type { HarnessRunRequest } from '../runs'
 import type { AgentRunReplayOutcome } from '../../../../shared/agentRuntime'
+import type { ToolExecutionScope } from '../tools'
 
 export const INVOCATION_DEFAULTS = {
   required: true,
@@ -89,6 +90,8 @@ export interface InvocationRequest {
   floor: number
   agent: string
   options?: InvocationOptions
+  /** Authoritative mounted-card implementation scope, injected by the card transport only. */
+  toolScope?: ToolExecutionScope
   signal?: AbortSignal
 }
 
@@ -122,6 +125,7 @@ export interface InvocationPlanRequest {
   chatId: string
   floor?: number
   plan: unknown
+  toolScope?: ToolExecutionScope
   signal?: AbortSignal
 }
 
@@ -422,6 +426,7 @@ export const createInvocationRuntime = ({
               hash: resolvedAgent.effectiveHash
             },
             input: source.input,
+            ...(item.request.toolScope ? { toolScope: item.request.toolScope } : {}),
             options: corrective
               ? { ...invocationOptions(item.request.options), maxRetryAttempts: 0 }
               : invocationOptions(item.request.options),
@@ -791,6 +796,7 @@ export const createInvocationRuntime = ({
                   floor: floorNumber,
                   agent: call.agent,
                   options: callOptions(call),
+                  ...(request.toolScope ? { toolScope: request.toolScope } : {}),
                   signal: controller.signal
                 },
                 {

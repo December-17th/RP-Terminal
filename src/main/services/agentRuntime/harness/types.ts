@@ -15,12 +15,14 @@ import type {
   ProviderToolDefinition,
   ProviderUsage
 } from '../provider'
-import type { StagedToolOperation, ToolRegistry } from '../tools'
+import type { StagedToolOperation, ToolExecutionScope, ToolRegistry } from '../tools'
 
 export interface HarnessExecuteRequest {
   definition: AgentDefinition
   input: JsonObject
   profileId: string
+  /** Main-derived mounted-card scope for resolving live card Tool Bindings. */
+  toolScope?: ToolExecutionScope
   options?: InvocationOptions
   promptValues?: Record<string, JsonValue>
   history?: JsonValue

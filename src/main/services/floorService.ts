@@ -285,10 +285,19 @@ const saveFloorRow = (chatId: string, floor: FloorFile): void => {
  * that ~20 call sites rely on. A caller that must serialize a read-modify-write ACROSS an `await`
  * (the headless runner) wraps its own critical section in `withLock(varsLockKey(chatId), …)`.
  */
-export const saveFloor = (_profileId: string, chatId: string, floor: FloorFile): void => {
+export const saveFloor = (
+  _profileId: string,
+  chatId: string,
+  floor: FloorFile,
+  onCommitted?: (isNewFloor: boolean) => void
+): void => {
   void withLock(varsLockKey(chatId), () => {
+    const isNewFloor = !getSessionDbByChat(chatId)
+      ?.prepare('SELECT 1 FROM floors WHERE chat_id = ? AND floor = ?')
+      .get(chatId, floor.floor)
     saveFloorRow(chatId, floor)
     refreshChatSummary(chatId) // B3: keep the launcher's central summary current
+    onCommitted?.(Boolean(isNewFloor))
   })
 }
 

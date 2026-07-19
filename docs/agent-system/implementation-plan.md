@@ -1003,6 +1003,11 @@ The Agent Runtime replacement is complete only when:
 
 ## 8. Implementation log
 
+### 2026-07-19 - Milestone 4 Session 7 implemented
+
+Status: Session 7 is implemented in the current working tree; owner review and commit remain pending. Sessions 8-12 remain planned.
+
+The shared card runtime now exposes `rpt.agents.run`, `runPlan`, `registerTool`, and `onFloorCommitted` through null, inline, and WCV Hosts. Main binds every invocation and card tool to authoritative profile/chat/card scope, preserves direct JSON, correlates and aborts bounded tool callbacks, unregisters implementations on teardown, and rejects missing or incompatible tools before provider dispatch. New-floor commits emit current and previous variables once; FloorState replay does not emit the scheduling event. Existing Invocation Runtime identity coalesces repeated same-Agent/same-floor handlers. Classic remains on the workflow path and no scheduler was added.
 ### 2026-07-19 — Milestone 3 accepted
 
 Status: Milestone 3 Sessions 5–6 are implemented, reviewed, and accepted on `agent-system`.

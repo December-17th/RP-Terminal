@@ -153,3 +153,74 @@ export interface InvocationPlan {
   floor?: number
   steps: Array<InvocationPlanCall | InvocationPlanParallelGroup>
 }
+
+/** A live card implementation selected by name for an Agent-declared Tool Binding. */
+export interface CardAgentToolBinding {
+  name: string
+  inputSchema: JsonSchema
+  transactionMode: ToolTransactionMode
+  parallelSafe: boolean
+}
+
+/** A state operation returned by a card Tool implementation for its Attempt Transaction. */
+export interface CardAgentToolOperation {
+  type: string
+  payload: JsonObject
+}
+
+/** The structured result carried from a card Tool implementation back to the Harness. */
+export interface CardAgentToolExecution {
+  result: JsonValue
+  operations?: CardAgentToolOperation[]
+  externalEffectBegan?: boolean
+}
+
+export interface CardAgentToolContext {
+  signal: AbortSignal
+}
+
+export type CardAgentToolHandler = (
+  input: JsonObject,
+  context: CardAgentToolContext
+) => CardAgentToolExecution | Promise<CardAgentToolExecution>
+
+export interface CardAgentRunOptions extends InvocationOptions {
+  signal?: AbortSignal
+}
+
+/** The immutable snapshots supplied to card logic after a newly committed floor. */
+export interface CardFloorCommit {
+  floor: number
+  variables: JsonObject
+  previousVariables: JsonObject
+}
+
+/** Card-facing terminal outcome of one Agent Invocation. */
+export type CardAgentRunOutcome =
+  | {
+      invocationId: string
+      status: 'succeeded'
+      result?: JsonValue
+      sourceRestarts: number
+      required: boolean
+    }
+  | {
+      invocationId: string
+      status: 'failed'
+      failure: { code: string; message: string; retryable: boolean }
+      sourceRestarts: number
+      required: boolean
+    }
+  | {
+      invocationId: string
+      status: 'cancelled'
+      sourceRestarts: number
+      required: boolean
+    }
+
+/** Card-facing terminal outcome of a declarative Invocation Plan. */
+export interface CardAgentPlanOutcome {
+  planId: string
+  status: 'succeeded' | 'failed' | 'cancelled'
+  outcomes: CardAgentRunOutcome[]
+}

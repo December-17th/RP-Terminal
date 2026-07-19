@@ -153,6 +153,27 @@ through the host bridge as RFC-6902 JSON Patch.
   `/gen`·`/genraw`·`/trigger`·`/send`) via the shared [`stscript`](../src/shared/stscript.ts) interpreter.
   `while`/loops + the long-tail command set — ⬜.
 
+### Card Agent scheduling - built (RPT-only)
+
+- `await rpt.agents.run(name, options?)` invokes one enabled Agent. `options.input` is direct JSON; `options.floor` must name an existing committed floor and otherwise defaults to the latest committed floor. An `AbortSignal` cancels the invocation.
+- `await rpt.agents.runPlan(plan, { signal }?)` runs the validated top-level sequence / flat-parallel plan form. The same Agent cannot appear twice on one floor.
+- `rpt.agents.registerTool(binding, handler)` registers a card-owned implementation for one declared Agent tool and returns an unregister function. Calls are correlated and abortable; arguments and results are size-bounded; staged variable operations commit only with a valid Agent result. Missing, incompatible, duplicate, or unmounted implementations fail before provider dispatch.
+- `rpt.agents.onFloorCommitted(handler)` supplies `{ floor, variables, previousVariables }` once for a newly committed floor. Result incorporation and Forward Replay emit state refreshes, never this scheduling event.
+- Scope is authoritative. Inline main IPC validates profile/chat/card against the chat; WCV main IPC derives it from the mounted sender. Caller-supplied scope cannot redirect a run or tool callback.
+- Scheduling belongs to card JavaScript; RP Terminal has no variable/time scheduler. Repeated same-Agent calls for one floor coalesce to the existing invocation/result.
+
+```js
+const stop = rpt.agents.onFloorCommitted(async ({ floor, variables, previousVariables }) => {
+  const month = variables.stat_data?.world?.month
+  if (month === previousVariables.stat_data?.world?.month) return
+  await Promise.all([
+    rpt.agents.run('Monthly Property', { floor, input: { month } }),
+    rpt.agents.run('World Progression', { floor, input: { month } })
+  ])
+})
+```
+
+The inline and isolated WCV transports share the public runtime shape (`src/shared/thRuntime/index.ts`) and are covered by the same transport fixture (`test/fixtures/cardAgentTransport.ts`). Main dispatch and tool preflight live in `src/main/ipc/agentRunIpc.ts`, `src/main/ipc/wcvIpc.ts`, and `src/main/services/agentRuntime/tools/CardToolRegistry.ts`.
 ### Regex — ✅
 
 - `getTavernRegexes(option)` → full `TavernRegex[]` for a scope (`{type:'character'}` = the card's world

@@ -18,6 +18,7 @@ import {
 } from '../harness'
 import { buildAttemptLog } from '../harness/attemptLog'
 import type { AgentRunStore } from './AgentRunStore'
+import type { ToolExecutionScope } from '../tools'
 
 export interface AgentDefinitionSnapshot {
   definition: AgentDefinition
@@ -35,6 +36,7 @@ export interface HarnessRunRequest {
   options?: Omit<InvocationOptions, 'floor' | 'input' | 'inputBindings'>
   promptValues?: Record<string, JsonValue>
   history?: JsonValue
+  toolScope?: ToolExecutionScope
   signal?: AbortSignal
   yssVocabulary?: SceneVocabulary
   /** Narrow fresh-context input used only after transactional incorporation/replay rejection. */
@@ -151,6 +153,7 @@ export const createHarnessRunAdapter = ({
         definition: request.agent.definition,
         input: request.input,
         profileId: request.profileId,
+        ...(request.toolScope ? { toolScope: request.toolScope } : {}),
         options: resolved.value,
         ...(request.promptValues ? { promptValues: request.promptValues } : {}),
         ...(request.history !== undefined ? { history: request.history } : {}),

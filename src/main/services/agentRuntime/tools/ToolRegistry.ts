@@ -14,6 +14,16 @@ export interface ToolExecutionContext {
   beginExternalEffect(): void
 }
 
+/**
+ * The live card implementation scope carried with an invocation. Only privileged transports construct
+ * it from their authoritative binding; Agent definitions and provider payloads cannot supply it.
+ */
+export interface ToolExecutionScope {
+  profileId: string
+  chatId: string
+  characterId?: string
+}
+
 export interface ToolBinding {
   name: string
   inputSchema: JsonSchema
@@ -23,7 +33,7 @@ export interface ToolBinding {
 }
 
 export interface ToolRegistry {
-  resolve(definition: AgentToolDefinition): ToolBinding | undefined
+  resolve(definition: AgentToolDefinition, scope?: ToolExecutionScope): ToolBinding | undefined
 }
 
 const sameJson = (left: unknown, right: unknown): boolean =>
@@ -46,6 +56,17 @@ export const createToolRegistry = (bindings: ToolBinding[] = []): ToolRegistry =
     }
   }
 }
+
+/** Resolve through ordered registries while preserving the invocation's authoritative card scope. */
+export const createCompositeToolRegistry = (...registries: ToolRegistry[]): ToolRegistry => ({
+  resolve(definition, scope) {
+    for (const registry of registries) {
+      const binding = registry.resolve(definition, scope)
+      if (binding) return binding
+    }
+    return undefined
+  }
+})
 
 export const executionContextFor = (
   transaction: AttemptTransaction,

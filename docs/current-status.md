@@ -83,7 +83,7 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   manual pass.
 - The [Agent Runtime design](agent-system/agent-runtime-design.md) and
   [ADR 0019](adr/0019-agent-runtime-replaces-workflow-system.md) are approved. Implementation has
-  started on `agent-system`; Milestones 1–3, Sessions 0–6, are implemented, reviewed, and accepted,
+  started on `agent-system`; Milestones 1-4, Sessions 0-7, are implemented, reviewed, and accepted,
   with commits pending in the current working tree. Session 0 baseline evidence is complete and
   reviewed. The current foundation is internal only: Agent contracts, provider
   normalization/selection, the Harness, scripted characterization fixtures, the profile-wide Agent
@@ -94,8 +94,8 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   plan semantics, duplicate coalescing, deletion/cancellation, stale-source restarts, one shared
   corrective retry budget, atomic `RunStore`/result/FloorState incorporation, Next-turn Barriers, and
   activity stop/shutdown. Unified floor deletion removes floors, state journals, and Run Records in
-  one transaction while cancelling affected work. Sessions 7–12 remain planned and unimplemented;
-  the card public Agent API, Player Generation cutover, and workflow removal are not implemented, so
+  one transaction while cancelling affected work. Sessions 8-12 remain planned and unimplemented;
+  the public card Agent API now provides scoped run/plan calls, live card tools, cancellation, and exact-once floor commit scheduling with inline/WCV parity. Player Generation cutover and workflow removal are not implemented, so
   Classic and Yuzu still use the workflow-backed product path.
   The code-informed [implementation plan](agent-system/implementation-plan.md) sequences the remaining
   work into independently gated sessions.

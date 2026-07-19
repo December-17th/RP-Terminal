@@ -1,7 +1,14 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { VarsOrigin } from '../shared/thRuntime/types'
-import type { AgentRunCancelResult, AgentRunEvent, AgentRunRecord } from '../shared/agentRuntime'
+import { CARD_AGENT_CHANNELS } from '../shared/agentRuntime'
+import type {
+  AgentRunCancelResult,
+  AgentRunEvent,
+  AgentRunRecord,
+  CardAgentToolExecution,
+  CardFloorCommit
+} from '../shared/agentRuntime'
 import type { CharacterImportDialogResult } from '../shared/characterImport'
 
 // Custom APIs for renderer
@@ -247,6 +254,35 @@ const api = {
     const listener = (_event: IpcRendererEvent, runEvent: AgentRunEvent): void => cb(runEvent)
     ipcRenderer.on('agent-run-event', listener)
     return () => ipcRenderer.removeListener('agent-run-event', listener)
+  },
+  cardAgentRun: (request: unknown) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.run, request),
+  cardAgentRunPlan: (request: unknown) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.runPlan, request),
+  cardAgentCancel: (requestId: string) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.cancel, requestId),
+  cardAgentRegisterTool: (request: unknown) =>
+    ipcRenderer.invoke(CARD_AGENT_CHANNELS.registerTool, request),
+  cardAgentUnregisterTool: (request: unknown) =>
+    ipcRenderer.invoke(CARD_AGENT_CHANNELS.unregisterTool, request),
+  cardAgentToolResult: (result: CardAgentToolExecution & { requestId: string; error?: string }) =>
+    ipcRenderer.send(CARD_AGENT_CHANNELS.toolResult, result),
+  onCardAgentToolRequest: (cb: (request: any) => void) => {
+    const listener = (_event: IpcRendererEvent, request: any): void => cb(request)
+    ipcRenderer.on(CARD_AGENT_CHANNELS.toolRequest, listener)
+    return () => ipcRenderer.removeListener(CARD_AGENT_CHANNELS.toolRequest, listener)
+  },
+  onCardAgentToolAbort: (cb: (request: { requestId: string }) => void) => {
+    const listener = (_event: IpcRendererEvent, request: { requestId: string }): void => cb(request)
+    ipcRenderer.on(CARD_AGENT_CHANNELS.toolAbort, listener)
+    return () => ipcRenderer.removeListener(CARD_AGENT_CHANNELS.toolAbort, listener)
+  },
+  onCardFloorCommitted: (
+    cb: (payload: { profileId: string; chatId: string; event: CardFloorCommit }) => void
+  ) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      payload: { profileId: string; chatId: string; event: CardFloorCommit }
+    ): void => cb(payload)
+    ipcRenderer.on(CARD_AGENT_CHANNELS.floorCommitted, listener)
+    return () => ipcRenderer.removeListener(CARD_AGENT_CHANNELS.floorCommitted, listener)
   },
   // Opt-in node output panel deltas (spec D4 collapsible chat panels). Returns an unsubscribe.
   onWorkflowPanel: (

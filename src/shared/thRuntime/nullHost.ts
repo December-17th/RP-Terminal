@@ -86,6 +86,22 @@ export function createNullHost(ctx?: CardCtx): Host {
     evalTemplate: () => '',
     evalTemplateError: () => null,
     prepareContext: () => ({}),
-    onHostEvent: () => () => {}
+    onHostEvent: () => () => {},
+
+    // --- AgentHost ---
+    runAgent: async () => ({
+      invocationId: '',
+      status: 'failed',
+      failure: {
+        code: 'AGENT_HOST_UNAVAILABLE',
+        message: 'Agent Host is unavailable',
+        retryable: false
+      },
+      sourceRestarts: 0,
+      required: true
+    }),
+    runAgentPlan: async () => ({ planId: '', status: 'failed', outcomes: [] }),
+    registerAgentTool: () => () => {},
+    onFloorCommitted: () => () => {}
   }
 }

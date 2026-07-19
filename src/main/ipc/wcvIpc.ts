@@ -22,13 +22,23 @@ import { log } from '../services/logService'
 import { ArtifactScope } from '../../shared/artifactScope'
 import { LorebookEntry, LorebookEntrySchema, getRpExt } from '../types/character'
 import type { OverlayDecl } from '../services/wcvOverlay'
+import type { CardAgentRunOptions, CardAgentToolBinding } from '../../shared/agentRuntime'
+import { onCardFloorCommitted } from '../services/agentRuntime/cardAgentEvents'
+import {
+  invocationRuntime,
+  liveCardToolRegistry
+} from '../services/agentRuntime/InvocationRuntimeService'
 // The Host-member channels are registered THROUGH the shared Channel Spec (ADR 0013): a member-keyed
 // `WcvHostImpls` map, typed against `WcvSpecMember`, drives `registerHostChannels` — so a spec member with
 // no main-side implementation is a COMPILE error, not a runtime gap. The channel strings + call kinds come
 // from `WCV_CHANNEL_SPEC`; the four residue channels that still cross IPC read their names from
 // `WCV_RESIDUE_CHANNELS`. Non-Host channels (slot lifecycle, geometry, colorscheme, broadcast, async
 // get-vars) stay hand-registered below — they have no spec row.
-import { WCV_CHANNEL_SPEC, WCV_RESIDUE_CHANNELS } from '../../shared/thRuntime/wcvChannelSpec'
+import {
+  WCV_AGENT_CHANNELS,
+  WCV_CHANNEL_SPEC,
+  WCV_RESIDUE_CHANNELS
+} from '../../shared/thRuntime/wcvChannelSpec'
 import type { WcvSpecMember } from '../../shared/thRuntime/wcvChannelSpec'
 
 // Resolve an overlay id against a card's declared `panel_ui.overlays` (PM-A7). Returns the surface to
@@ -46,7 +56,7 @@ const resolveOverlayDecl = (
 }
 
 // Coerce a TavernHelper-shaped worldbook entry (from getWorldbook, possibly edited or freshly built by a
-// card) back into a valid LorebookEntry. `name` → comment; unknown fields (uid) are dropped by the schema;
+// card) back into a valid LorebookEntry. `name` 鈫?comment; unknown fields (uid) are dropped by the schema;
 // our other fields round-trip because getWorldbook returns them, so a full replace is lossless.
 const toLoreEntry = (te: unknown): LorebookEntry => {
   const src = (te && typeof te === 'object' ? te : {}) as Record<string, unknown>
@@ -141,8 +151,7 @@ type WcvEvt = IpcMainEvent | IpcMainInvokeEvent
 type WcvHostImpls = { [K in WcvSpecMember]: (e: WcvEvt, ...args: any[]) => any }
 
 /**
- * Register every Host channel from the spec: `sync` → `ipcMain.on` writing `e.returnValue`; `invoke` →
- * `ipcMain.handle`; `send` → `ipcMain.on` (fire-and-forget). Registration becomes mechanical; the impls
+ * Register every Host channel from the spec: `sync` 鈫?`ipcMain.on` writing `e.returnValue`; `invoke` 鈫? * `ipcMain.handle`; `send` 鈫?`ipcMain.on` (fire-and-forget). Registration becomes mechanical; the impls
  * hold the real logic.
  */
 const registerHostChannels = (ipcMain: IpcMain, impls: WcvHostImpls): void => {
@@ -182,8 +191,49 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   const slotCtxIf = (senderId: number): ReturnType<typeof wcvManager.contextFor> =>
     wcvManager.contextFor(senderId)
 
+  type AgentSender = IpcMainInvokeEvent['sender']
+  const agentSenders = new Map<
+    number,
+    { sender: AgentSender; subscribed: boolean; cleanup: () => void }
+  >()
+  const pendingAgentRuns = new Map<string, { senderId: number; kind: 'run' | 'plan'; id: string }>()
+  const pendingAgentRunKey = (senderId: number, requestId: string): string =>
+    senderId + ':' + requestId
+
+  const agentScope = (senderId: number) => {
+    const ctx = wcvManager.contextFor(senderId)
+    if (!ctx) return null
+    const characterId =
+      ctx.characterId || chatService.getChat(ctx.profileId, ctx.chatId)?.character_id || ''
+    return characterId ? { profileId: ctx.profileId, chatId: ctx.chatId, characterId } : null
+  }
+
+  const ensureAgentSender = (sender: AgentSender) => {
+    const current = agentSenders.get(sender.id)
+    if (current) return current
+    const cleanup = (): void => {
+      const state = agentSenders.get(sender.id)
+      if (!state) return
+      agentSenders.delete(sender.id)
+      liveCardToolRegistry().unregisterSender(sender.id)
+      for (const [requestId, pending] of pendingAgentRuns) {
+        if (pending.senderId !== sender.id) continue
+        if (pending.kind === 'run') invocationRuntime().cancelInvocation(pending.id)
+        else invocationRuntime().cancelPlan(pending.id)
+        pendingAgentRuns.delete(requestId)
+      }
+      sender.removeListener?.('destroyed', cleanup)
+      sender.removeListener?.('did-start-navigation', cleanup)
+    }
+    const state = { sender, subscribed: false, cleanup }
+    agentSenders.set(sender.id, state)
+    sender.once?.('destroyed', cleanup)
+    sender.once?.('did-start-navigation', cleanup)
+    return state
+  }
+
   // Slots whose teardown is deferred but not yet run (see `wcv-destroy`). A re-`ensure` for the same id
-  // (React runs a cleanup→body pair on every dep change: dataUrl settling after mount, session switch,
+  // (React runs a cleanup鈫抌ody pair on every dep change: dataUrl settling after mount, session switch,
   // StrictMode double-mount) must CANCEL the pending destroy — otherwise the deferred close fires a turn
   // later and kills the freshly (re)bound view, blanking the card.
   const pendingDestroy = new Set<string>()
@@ -210,7 +260,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-destroy', (_e, id) => {
     pendingDestroy.add(id)
     setImmediate(() => {
-      if (!pendingDestroy.delete(id)) return // re-ensured before this ran → keep the live view
+      if (!pendingDestroy.delete(id)) return // re-ensured before this ran 鈫?keep the live view
       wcvManager.destroy(id)
     })
   })
@@ -245,21 +295,21 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     const ctx = wcvManager.contextFor(e.sender.id)
     log('error', `wcv card-script${ctx ? ` [${ctx.slotId}]` : ''}`, String(msg))
   })
-  // The user clicked a card-script button in the toolbar → deliver it as the button-named event to the
+  // The user clicked a card-script button in the toolbar 鈫?deliver it as the button-named event to the
   // chat's card WCVs (the script's eventOn(getButtonEvent(name)) fires).
   ipcMain.on('wcv-button-click', (e, chatId, name) => {
-    // Host renderer → card panels. A WCV card reaching this (captured ipcRenderer) may only fire button
+    // Host renderer 鈫?card panels. A WCV card reaching this (captured ipcRenderer) may only fire button
     // events into its OWN chat's panels, so override the target with its bound chatId.
     const slot = slotCtxIf(e.sender.id)
     wcvManager.notifyEvent(String(slot ? slot.chatId : chatId), String(name), undefined)
   })
-  // A card script's overlay opened/closed (a full-screen inset:0 element appeared/left) → expand the
+  // A card script's overlay opened/closed (a full-screen inset:0 element appeared/left) 鈫?expand the
   // card-script WCV to a full-window modal, or restore it to its panel rect.
   ipcMain.on('wcv-overlay', (e, has) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (ctx) wcvManager.setModal(ctx.slotId, !!has)
   })
-  // Inline card → host: content height (auto-size the message slot) and wheel deltas (scroll the
+  // Inline card 鈫?host: content height (auto-size the message slot) and wheel deltas (scroll the
   // message list past the overlay). Resolve the slot from the sender so only that frame reacts.
   ipcMain.on('wcv-content-size', (e, size) => {
     const ctx = wcvManager.contextFor(e.sender.id)
@@ -273,18 +323,18 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // mirrors. Forward the renderer-tagged origin so a card's own write echoed back here doesn't re-fire its
   // MVU events and loop (WS-3 fix). Undefined origin ⇒ notifyVarsChanged defaults to 'model-fold'.
   ipcMain.on('wcv-broadcast-vars', (e, chatId, statData, origin) => {
-    // Host renderer → card panels. A WCV card reaching this may only push vars into its OWN chat's panels
+    // Host renderer 鈫?card panels. A WCV card reaching this may only push vars into its OWN chat's panels
     // (which it can already do via wcv-host-apply-vars) — override the target with its bound chatId.
     const slot = slotCtxIf(e.sender.id)
     wcvManager.notifyVarsChanged(String(slot ? slot.chatId : chatId), statData, undefined, origin)
   })
-  // Host → card panels: a TavernHelper lifecycle/mutation event (computed from the chat-store transition).
+  // Host 鈫?card panels: a TavernHelper lifecycle/mutation event (computed from the chat-store transition).
   ipcMain.on('wcv-broadcast-event', (e, chatId, name, payload) => {
-    // Host renderer → card panels; a WCV card may only broadcast into its own chat (bound chatId).
+    // Host renderer 鈫?card panels; a WCV card may only broadcast into its own chat (bound chatId).
     const slot = slotCtxIf(e.sender.id)
     wcvManager.notifyEvent(String(slot ? slot.chatId : chatId), name, payload)
   })
-  // Card → sibling card panels: a card-authored coordination event (e.g. the poem stage's
+  // Card 鈫?sibling card panels: a card-authored coordination event (e.g. the poem stage's
   // `self:fold` / `stage:cast-changed`). Chat resolved from the sender (a card can't target another
   // session); the sender is excluded so its own page doesn't receive the event it just broadcast. The
   // event name is opaque to RPT — cards pick their own, so this stays card-agnostic.
@@ -307,7 +357,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-get-colorscheme-sync', (e) => {
     e.returnValue = wcvManager.colorSchemeSnapshotValue()
   })
-  // Card→app direction: a WCV card called rptHost.setColorScheme. ctx resolves from e.sender so a card
+  // Card鈫抋pp direction: a WCV card called rptHost.setColorScheme. ctx resolves from e.sender so a card
   // sets the scheme only for ITS OWN play session; main relays it to the renderer (the effective-scheme
   // authority). Returns true when accepted (bound slot + a host window to receive the relay).
   ipcMain.handle('wcv-host-set-colorscheme', (e, scheme) => {
@@ -351,10 +401,9 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // getters normalize main's response shape; format-regex's fallback is the input text. ---
 
   // A card's own lorebook is its character_book (stored under id == characterId). The card's home reads
-  // its expansions/cores (getCharWorldbookNames → getWorldbook) and toggles them (updateWorldbookWith →
-  // replace). The worldbook `name` arg is the card's own book, so we resolve to its character regardless.
+  // its expansions/cores (getCharWorldbookNames 鈫?getWorldbook) and toggles them (updateWorldbookWith 鈫?  // replace). The worldbook `name` arg is the card's own book, so we resolve to its character regardless.
   // SYNC: cards call getCharWorldbookNames WITHOUT await (it's synchronous in TavernHelper). An async
-  // Promise return makes `.primary` read as undefined → the card bails before getWorldbook. Return inline.
+  // Promise return makes `.primary` read as undefined 鈫?the card bails before getWorldbook. Return inline.
   ipcMain.on(WCV_RESIDUE_CHANNELS.worldbookNames, (e) => {
     const c = cardLoreCtx(e.sender.id)
     if (!c) {
@@ -365,7 +414,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     log(
       'info',
       'wcv worldbook',
-      `char ${c.characterId.slice(0, 8)} → ${lb ? `${lb.entries.length} entries` : 'no book'}`
+      `char ${c.characterId.slice(0, 8)} 鈫?${lb ? `${lb.entries.length} entries` : 'no book'}`
     )
     e.returnValue = { primary: lb ? lb.name || c.characterId : null, additional: [] }
   })
@@ -382,7 +431,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     log(
       'info',
       'wcv getWorldbook',
-      `${out.length} entries (${out.filter((o) => /^\[DLC\]/.test(o.name)).length} DLC) → card`
+      `${out.length} entries (${out.filter((o) => /^\[DLC\]/.test(o.name)).length} DLC) 鈫?card`
     )
     return out
   })
@@ -409,6 +458,139 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
           text
         )
       : String(text ?? '')
+  })
+
+  ipcMain.handle(WCV_AGENT_CHANNELS.run, async (event, request: unknown) => {
+    const scope = agentScope(event.sender.id)
+    if (!scope || !request || typeof request !== 'object') {
+      throw Object.assign(new Error('Card tool implementation is no longer mounted'), {
+        code: 'CARD_TOOL_UNMOUNTED'
+      })
+    }
+    const name = (request as { name?: unknown }).name
+    const requestId = (request as { requestId?: unknown }).requestId
+    if (typeof name !== 'string' || !name || typeof requestId !== 'string' || !requestId) {
+      throw Object.assign(new Error('Invalid WCV Agent request'), {
+        code: 'AGENT_RUN_SCOPE_REJECTED'
+      })
+    }
+    ensureAgentSender(event.sender)
+    const rawOptions = (request as { options?: CardAgentRunOptions }).options
+    const { signal: _signal, ...options } = rawOptions ?? {}
+    const latest = floorService.getAllFloors(scope.profileId, scope.chatId).at(-1)?.floor
+    const floor = options.floor ?? latest
+    if (floor === undefined) throw new Error('No committed Invocation Floor exists')
+    const running = invocationRuntime().run({
+      ...scope,
+      floor,
+      agent: name,
+      options,
+      toolScope: scope
+    })
+    pendingAgentRuns.set(pendingAgentRunKey(event.sender.id, requestId), {
+      senderId: event.sender.id,
+      kind: 'run',
+      id: running.invocationId
+    })
+    try {
+      return await running
+    } finally {
+      pendingAgentRuns.delete(pendingAgentRunKey(event.sender.id, requestId))
+    }
+  })
+
+  ipcMain.handle(WCV_AGENT_CHANNELS.runPlan, async (event, request: unknown) => {
+    const scope = agentScope(event.sender.id)
+    if (!scope || !request || typeof request !== 'object') {
+      throw Object.assign(new Error('Card tool implementation is no longer mounted'), {
+        code: 'CARD_TOOL_UNMOUNTED'
+      })
+    }
+    const requestId = (request as { requestId?: unknown }).requestId
+    const plan = (request as { plan?: any }).plan
+    if (typeof requestId !== 'string' || !requestId || !plan || typeof plan !== 'object') {
+      throw Object.assign(new Error('Invalid WCV Agent plan request'), {
+        code: 'AGENT_RUN_SCOPE_REJECTED'
+      })
+    }
+    ensureAgentSender(event.sender)
+    const latest = floorService.getAllFloors(scope.profileId, scope.chatId).at(-1)?.floor
+    const floor = typeof plan.floor === 'number' ? plan.floor : latest
+    if (floor === undefined) throw new Error('No committed Invocation Floor exists')
+    const running = invocationRuntime().runPlan({ ...scope, floor, plan, toolScope: scope })
+    pendingAgentRuns.set(pendingAgentRunKey(event.sender.id, requestId), {
+      senderId: event.sender.id,
+      kind: 'plan',
+      id: running.planId
+    })
+    try {
+      return await running
+    } finally {
+      pendingAgentRuns.delete(pendingAgentRunKey(event.sender.id, requestId))
+    }
+  })
+
+  ipcMain.handle(WCV_AGENT_CHANNELS.cancel, (event, requestId: unknown) => {
+    if (typeof requestId !== 'string') return false
+    const pending = pendingAgentRuns.get(pendingAgentRunKey(event.sender.id, requestId))
+    if (!pending || pending.senderId !== event.sender.id) return false
+    return pending.kind === 'run'
+      ? invocationRuntime().cancelInvocation(pending.id)
+      : invocationRuntime().cancelPlan(pending.id)
+  })
+
+  ipcMain.handle(WCV_AGENT_CHANNELS.registerTool, (event, binding: CardAgentToolBinding) => {
+    const scope = agentScope(event.sender.id)
+    if (!scope) {
+      throw Object.assign(new Error('Card tool implementation is no longer mounted'), {
+        code: 'CARD_TOOL_UNMOUNTED'
+      })
+    }
+    ensureAgentSender(event.sender)
+    liveCardToolRegistry().register({
+      scope: { ...scope, senderId: event.sender.id },
+      binding,
+      send: (channel, payload) => event.sender.send(channel, payload)
+    })
+    return true
+  })
+  ipcMain.handle(WCV_AGENT_CHANNELS.unregisterTool, (event, name: unknown) =>
+    typeof name === 'string'
+      ? liveCardToolRegistry().unregister(
+          event.sender.id,
+          name,
+          agentScope(event.sender.id) ?? undefined
+        )
+      : false
+  )
+  ipcMain.on(WCV_AGENT_CHANNELS.toolResult, (event, result: unknown) => {
+    if (!result || typeof result !== 'object') return
+    try {
+      const scope = agentScope(event.sender.id)
+      if (!scope) return
+      liveCardToolRegistry().complete({ ...(result as any), senderId: event.sender.id, scope })
+    } catch (cause) {
+      log('error', 'wcv agent tool result', cause instanceof Error ? cause.message : String(cause))
+    }
+  })
+  ipcMain.handle(WCV_AGENT_CHANNELS.floorSubscribe, (event) => {
+    if (!agentScope(event.sender.id)) return false
+    ensureAgentSender(event.sender).subscribed = true
+    return true
+  })
+  ipcMain.handle(WCV_AGENT_CHANNELS.floorUnsubscribe, (event) => {
+    const state = agentSenders.get(event.sender.id)
+    if (state) state.subscribed = false
+    return !!state
+  })
+  onCardFloorCommitted((profileId, chatId, event) => {
+    for (const state of agentSenders.values()) {
+      if (!state.subscribed) continue
+      const scope = agentScope(state.sender.id)
+      if (scope?.profileId === profileId && scope.chatId === chatId) {
+        state.sender.send(WCV_AGENT_CHANNELS.floorCommitted, event)
+      }
+    }
   })
 
   // --- Host channels: registered THROUGH the spec (member-keyed, compile-checked complete). ---
@@ -438,7 +620,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       wcvManager.pushHostVars(ctx.chatId, floor.variables)
       // Don't echo the write back to the card that made it, AND tag the sibling echo card-write so no panel
       // re-fires MVU events for another panel's programmatic write (faithful MVU + closes the INDIRECT loop:
-      // pushHostVars → host setLatestFloorVariables → wcv-broadcast-vars would otherwise re-fire events).
+      // pushHostVars 鈫?host setLatestFloorVariables 鈫?wcv-broadcast-vars would otherwise re-fire events).
       wcvManager.notifyVarsChanged(ctx.chatId, statData, e.sender.id, 'card-write')
       return statData
     },
@@ -556,7 +738,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       lb.entries = (Array.isArray(entries) ? entries : []).map(toLoreEntry)
       lorebookService.saveLorebookById(c.profileId, c.characterId, lb)
       wcvManager.pushLorebookChanged(c.characterId) // refresh the lorebook editor if it's open
-      log('info', 'wcv replaceWorldbook', `${lb.entries.length} entries → card book`)
+      log('info', 'wcv replaceWorldbook', `${lb.entries.length} entries 鈫?card book`)
       return true
     },
     // list/chat-ids are SYNC. CRUD/bind over the full library (trusted cards).
@@ -658,7 +840,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       log('info', 'wcv deleteChatMessages', 'truncated')
       return true
     },
-    // Persist a chat the card mutated (e.g. a greeting-swipe selection): assistant messages → floors in
+    // Persist a chat the card mutated (e.g. a greeting-swipe selection): assistant messages 鈫?floors in
     // order (content + swipes/swipe_id). Re-fold + push vars, but NO host reload — the card calls
     // reloadCurrentChat itself after saveChat.
     saveChat: (e, chat) => {
@@ -666,14 +848,14 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       if (!ctx) return false
       const r = chatWriteService.saveChat(ctx.profileId, ctx.chatId, chat)
       if (!r.ok) return false
-      // No-op echo → zero writes, nothing to re-fold or push (audit P1-4).
+      // No-op echo 鈫?zero writes, nothing to re-fold or push (audit P1-4).
       if (r.changedFrom !== null) {
         pushVars(
           ctx.chatId,
           chatWriteService.afterChatMutation(ctx.profileId, ctx.chatId, r.changedFrom),
           e.sender.id
         )
-        log('info', 'wcv saveChat', `assistant msgs → floors + reevaluated from ${r.changedFrom}`)
+        log('info', 'wcv saveChat', `assistant msgs 鈫?floors + reevaluated from ${r.changedFrom}`)
       }
       return true
     },
@@ -704,7 +886,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       const ctx = wcvManager.contextFor(e.sender.id)
       return ctx ? scriptApiService.listPresetNames(ctx.profileId) : []
     },
-    // Persist a card's preset edits (the 狐神抚 control surface). The runtime already merged the card's
+    // Persist a card's preset edits (the 鐙愮鎶?control surface). The runtime already merged the card's
     // mutated view onto the current normalized view, so this is a full normalized-preset-shaped patch.
     savePreset: (e, patch) => {
       const ctx = wcvManager.contextFor(e.sender.id)
@@ -732,7 +914,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     // isCharacterTavernRegexesEnabled — RPT keeps the card's world-scoped regexes active while the card is
     // open; there's no per-card disable toggle, so report enabled.
     isCharacterRegexesEnabled: () => true,
-    // Replace a scope's regexes (replaceTavernRegexes / updateTavernRegexesWith) → store, then reload chat.
+    // Replace a scope's regexes (replaceTavernRegexes / updateTavernRegexesWith) 鈫?store, then reload chat.
     replaceRegexes: (e, regexes, option) => {
       const c = cardLoreCtx(e.sender.id)
       if (!c) return false
@@ -745,12 +927,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       )
       const ctx = wcvManager.contextFor(e.sender.id)
       if (ctx) debouncedRegexReload(ctx.chatId)
-      log('info', 'wcv replaceTavernRegexes', `${(regexes || []).length} regex(es) → ${scope}`)
+      log('info', 'wcv replaceTavernRegexes', `${(regexes || []).length} regex(es) 鈫?${scope}`)
       return true
     },
 
     // --- SurfaceHost ---
-    // Card → host: set RP Terminal's chat input box (the onboarding finish's "inject prompt").
+    // Card 鈫?host: set RP Terminal's chat input box (the onboarding finish's "inject prompt").
     setInput: (e, text) => {
       const ctx = wcvManager.contextFor(e.sender.id)
       if (ctx) wcvManager.pushHostInput(ctx.chatId, String(text ?? ''))
@@ -761,7 +943,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       const ctx = wcvManager.contextFor(e.sender.id)
       if (ctx) wcvManager.pushHostSubmit(ctx.chatId)
     },
-    // A card script (replaceScriptButtons) declared its action buttons → push them to the renderer toolbar.
+    // A card script (replaceScriptButtons) declared its action buttons 鈫?push them to the renderer toolbar.
     setButtons: (e, buttons) => {
       const ctx = wcvManager.contextFor(e.sender.id)
       if (ctx) {
@@ -791,7 +973,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       wcvManager.closeOverlay()
       return true
     },
-    // --- Runtime play theme (runtime-theme-api-design §5) ---
+    // --- Runtime play theme (runtime-theme-api-design 搂5) ---
     // WCV transport: main can't derive the effective tokens (they live in the renderer), so it RELAYS the
     // set to the host renderer and returns the renderer's derive/AA verdict. ctx resolves from e.sender so
     // a card themes only its own play session. The sync getter returns the renderer-pushed snapshot.
@@ -858,7 +1040,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
 
     // --- GenHost ---
     // Generation requests (Track C0) — the card REQUESTS; the host runs it (AI key stays in main).
-    // generate(text) = a normal visible turn (new floor); generateRaw(config) = a one-off completion → text.
+    // generate(text) = a normal visible turn (new floor); generateRaw(config) = a one-off completion 鈫?text.
     generate: async (e, text) => {
       const ctx = wcvManager.contextFor(e.sender.id)
       if (!ctx) return ''
@@ -871,7 +1053,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         () => {},
         'script'
       )
-      wcvManager.pushHostReload(ctx.chatId) // a new floor → refresh the host chat UI + sibling WCVs
+      wcvManager.pushHostReload(ctx.chatId) // a new floor 鈫?refresh the host chat UI + sibling WCVs
       return floor?.response?.content ?? ''
     },
     generateRaw: async (e, config) => {

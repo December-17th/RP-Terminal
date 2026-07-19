@@ -9,6 +9,7 @@ import { buildInitialStatData, mergeDefaults } from './mvuSchema'
 import { extractMvuSchema, schemaDefaults } from './mvuZod'
 import {
   saveFloor,
+  getFloor,
   deleteFloorAndSubsequent,
   updateFloorFields,
   refreshChatSummary
@@ -20,6 +21,8 @@ import * as tableOpsService from './tableOpsService'
 import * as tableProgressService from './tableProgressService'
 import { deleteChatFully } from './chatDeleteService'
 import { floorStateForChat } from './agentRuntime/floorState'
+import { emitCardFloorCommitted } from './agentRuntime/cardAgentEvents'
+import type { JsonObject } from '../../shared/agentRuntime'
 
 interface ChatRow {
   id: string
@@ -366,7 +369,15 @@ export const createChat = async (profileId: string, characterId: string): Promis
 
 /** Persist a floor and bump the chat's updated_at. floor_count is derived, not stored. */
 export const appendFloor = (profileId: string, chatId: string, floor: FloorFile): void => {
-  saveFloor(profileId, chatId, floor)
+  const previousVariables = getFloor(profileId, chatId, floor.floor - 1)?.variables ?? {}
+  saveFloor(profileId, chatId, floor, (isNewFloor) => {
+    if (!isNewFloor) return
+    emitCardFloorCommitted(profileId, chatId, {
+      floor: floor.floor,
+      variables: structuredClone(floor.variables ?? {}) as JsonObject,
+      previousVariables: structuredClone(previousVariables) as JsonObject
+    })
+  })
   touch(chatId)
 }
 

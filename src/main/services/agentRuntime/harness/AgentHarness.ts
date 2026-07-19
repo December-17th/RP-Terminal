@@ -22,6 +22,7 @@ import {
   executionContextFor,
   type AttemptTransactionSnapshot,
   type ToolBinding,
+  type ToolExecutionScope,
   type ToolRegistry
 } from '../tools'
 import { normalizeJsonValue } from '../internal/json'
@@ -79,7 +80,8 @@ interface TransportRetry {
 const preflightTools = (
   definition: AgentDefinition,
   registry: ToolRegistry,
-  supportsTools: boolean
+  supportsTools: boolean,
+  toolScope?: ToolExecutionScope
 ):
   | {
       ok: true
@@ -111,7 +113,7 @@ const preflightTools = (
         }
       }
     }
-    const binding = registry.resolve(tool)
+    const binding = registry.resolve(tool, toolScope)
     if (!binding) {
       if (!tool.required) continue
       return {
@@ -752,7 +754,8 @@ export const createAgentHarness = ({
     const tools = preflightTools(
       request.definition,
       toolRegistry,
-      provider.capability.supportsTools
+      provider.capability.supportsTools,
+      request.toolScope
     )
     if (!tools.ok) {
       return { ok: false, failure: tools.failure, stagedOperations: [], evidence }

@@ -19,7 +19,11 @@ import {
 import { createProviderDispatch } from './provider'
 import { agentRunStore } from './runs/AgentRunStore'
 import { createHarnessRunAdapter } from './runs/HarnessRunAdapter'
-import { createToolRegistry } from './tools'
+import {
+  createCardToolRegistry,
+  createCompositeToolRegistry,
+  createToolRegistry
+} from './tools'
 
 interface PersistedSource extends InvocationSourceSnapshot {
   chatId: string
@@ -70,10 +74,7 @@ const stagedFloorOperation = (operation: {
 }): FloorStateOperation => {
   const kind = operation.type
   const path = operation.payload.path
-  if (
-    (kind !== 'set' && kind !== 'delete' && kind !== 'increment') ||
-    typeof path !== 'string'
-  ) {
+  if ((kind !== 'set' && kind !== 'delete' && kind !== 'increment') || typeof path !== 'string') {
     throw new Error(`Unsupported staged Agent operation "${operation.type}"`)
   }
   if (kind === 'delete') return { kind, path }
@@ -209,6 +210,10 @@ export const createSessionInvocationFloorPort = (
   }
 })
 
+const cardToolRegistry = createCardToolRegistry()
+
+export const liveCardToolRegistry = () => cardToolRegistry
+
 let runtime: InvocationRuntime | null = null
 let disposeBeforeDelete: (() => void) | null = null
 
@@ -218,7 +223,7 @@ export const initializeInvocationRuntime = (): InvocationRuntime => {
   const harness = createHarnessRunAdapter({
     runStore: agentRunStore,
     providerDispatch: createProviderDispatch(),
-    toolRegistry: createToolRegistry()
+    toolRegistry: createCompositeToolRegistry(createToolRegistry(), cardToolRegistry)
   })
   runtime = createInvocationRuntime({
     catalog: {
