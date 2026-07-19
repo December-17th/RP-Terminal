@@ -807,12 +807,28 @@ const runDocHeadless = async (
   const triggerCaption = annotation.trigger ?? chain.descriptions.join(' | ')
 
   try {
+    // M4 (execution-plan §4; parser-backed design §6): `memory.maintain` is now the built-in "Memory
+    // Maintenance" Agent, dispatched by the M3 floor-commit cadence trigger through the Agent Runtime.
+    // Strip it from every doc-trigger closure so a cadence window can NEVER double-fire from both the
+    // Agent trigger and this path (plan §6 risk 3). The node itself is not deleted until M5; other
+    // doc-trigger behavior is unchanged. A chain that reached ONLY `memory.maintain` now runs its
+    // (harmless) trigger/control nodes and produces no maintenance pass.
+    const M4_AGENT_CONVERTED_NODE_TYPES = new Set(['memory.maintain'])
+    const suppressedIds = new Set(
+      doc.nodes
+        .filter((n) => chain.closure.has(n.id) && M4_AGENT_CONVERTED_NODE_TYPES.has(n.type))
+        .map((n) => n.id)
+    )
     // The runnable closure doc: only the reachable nodes + the edges among them, run as a subgraph
     // (skips the main-output rule; runSubgraph runs the whole topo order in one pass). Deep-clone so
     // the stored doc is never mutated. The fired trigger nodes stay in — their run() fires the signal.
-    const closureNodes = doc.nodes.filter((n) => chain.closure.has(n.id))
+    const closureNodes = doc.nodes.filter((n) => chain.closure.has(n.id) && !suppressedIds.has(n.id))
     const closureEdges = doc.edges.filter(
-      (e) => chain.closure.has(e.from.node) && chain.closure.has(e.to.node)
+      (e) =>
+        chain.closure.has(e.from.node) &&
+        chain.closure.has(e.to.node) &&
+        !suppressedIds.has(e.from.node) &&
+        !suppressedIds.has(e.to.node)
     )
     const runnable: WorkflowDoc = {
       ...structuredClone(doc),

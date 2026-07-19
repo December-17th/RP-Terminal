@@ -286,6 +286,37 @@ describe('OR-dedupe per chain', () => {
   })
 })
 
+// ── M4: memory.maintain is no longer fired by the doc-trigger path (double-fire guard) ────────────────
+describe('memory.maintain is excluded from doc-trigger closures (M4, plan §6 risk 3)', () => {
+  it('a cadence → memory.maintain chain runs the trigger but NEVER the maintain node', async () => {
+    // floor index 0, cadence N=1 → the trigger fires. Before M4 this closure ran memory.maintain (the
+    // doc's only model-backed node); after M4 it is dispatched as the built-in Agent instead, so the
+    // doc-trigger closure strips it — a cadence window can never double-fire from both paths.
+    mockChat.getChat.mockReturnValue({ character_id: 'w1', floor_count: 1 })
+    const doc = docWith(
+      [
+        ...narratorNodes(),
+        { id: 'trg', type: 'trigger.cadence', config: { everyNFloors: 1 } },
+        { id: 'maintain', type: 'memory.maintain', config: { messages: [{ role: 'system', content: 'x' }] } }
+      ],
+      [{ from: { node: 'trg', port: 'fired' }, to: { node: 'maintain', port: 'when' } }]
+    )
+    mockWorkflowService.resolveWorkflowDoc.mockReturnValue({ id: 'doc1', doc })
+
+    await evaluateDocTriggers('prof', 'c1', 'turn', 0)
+
+    // The trigger fired (a trace was broadcast) but the maintain node is absent from every trace's
+    // node set — it was stripped from the runnable closure, so it never executed.
+    expect(mockEvents.notifyWorkflowTrace).toHaveBeenCalled()
+    for (const call of mockEvents.notifyWorkflowTrace.mock.calls) {
+      const ids = (call[0].nodes as Array<{ nodeId: string }>).map((n) => n.nodeId)
+      expect(ids).not.toContain('maintain')
+    }
+    // And no memory write reached disk from this path.
+    expect(mockFloor.saveFloor).not.toHaveBeenCalled()
+  })
+})
+
 // ── Disabled trigger never fires ─────────────────────────────────────────────────────────────────────
 describe('disabled trigger', () => {
   it('a disabled trigger is not evaluated and never fires', async () => {

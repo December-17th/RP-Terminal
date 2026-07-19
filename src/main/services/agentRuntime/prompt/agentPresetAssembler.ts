@@ -1,10 +1,15 @@
-import type {
-  AgentDefinition,
-  HistoryPolicy,
-  InvocationOptions,
-  PromptMessage
+import {
+  normalizeAgentName,
+  type AgentDefinition,
+  type HistoryPolicy,
+  type InvocationOptions,
+  type PromptMessage
 } from '../../../../shared/agentRuntime'
 import { log } from '../../logService'
+import {
+  MEMORY_MAINTENANCE_AGENT_NAME,
+  memoryMaintenanceBridge
+} from '../memoryMaintenanceSlot'
 import { createAgentPromptRenderer, type AgentPromptRendererPort } from './agentPromptRenderer'
 
 /**
@@ -105,6 +110,23 @@ export const createAgentPromptPlanner = (
   deps: AgentPromptPlannerDeps = defaultAgentPromptPlannerDeps
 ): InvocationPromptPort => {
   return (scope) => {
+    // Built-in Memory Maintenance Agent (M4): its prompt is the shared `composeMaintainerMessages`
+    // output, produced by the main-side bridge and SUBSTITUTED via `prompt` — the same seam a preset
+    // Agent uses. Nothing here imports the composer; the bridge owns it (memoryMaintenanceSlot.ts).
+    const memory = memoryMaintenanceBridge()
+    if (
+      memory &&
+      normalizeAgentName(scope.agent.name) === normalizeAgentName(MEMORY_MAINTENANCE_AGENT_NAME)
+    ) {
+      const prompt = memory.composePrompt({
+        profileId: scope.profileId,
+        chatId: scope.chatId,
+        floor: scope.floor
+      })
+      if (prompt?.length) return { prompt }
+      // Compose fell open (state changed since the due-gate) — fall through to the render/degrade path
+      // so the definition's placeholder prompt is sent rather than nothing.
+    }
     const render = deps.renderer({
       profileId: scope.profileId,
       chatId: scope.chatId,

@@ -1,7 +1,17 @@
-import type { AgentTrigger, CardFloorCommit } from '../../../shared/agentRuntime'
+import {
+  normalizeAgentName,
+  type AgentTrigger,
+  type CardFloorCommit,
+  type InvocationOptions
+} from '../../../shared/agentRuntime'
 import { onCardFloorCommitted } from './cardAgentEvents'
 import { AgentCatalog } from './catalog'
 import { invocationRuntime } from './InvocationRuntimeService'
+import type { InvocationOutcome, InvocationRequest } from './invocation'
+import {
+  MEMORY_MAINTENANCE_AGENT_NAME,
+  memoryMaintenanceBridge
+} from './memoryMaintenanceSlot'
 import { agentRunStore } from './runs/AgentRunStore'
 import { isEngineReady, whenTemplatesReady } from '../templateService'
 import { log } from '../logService'
@@ -76,6 +86,77 @@ export const createFloorCommitTriggerRuntime = (
 const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
+export interface TriggerDispatchRequest {
+  profileId: string
+  chatId: string
+  floor: number
+  agent: string
+}
+
+export interface TriggerDispatchDeps {
+  /** Dispatch through the identity path (production: `invocationRuntime().run`). */
+  run(request: InvocationRequest): Promise<InvocationOutcome>
+  /** The Memory Maintenance bridge, or undefined (lightweight/test compositions). */
+  memoryBridge(): {
+    planDispatch(scope: { profileId: string; chatId: string; floor: number }): {
+      apiPresetId?: string
+    } | null
+    applyResult(scope: { profileId: string; chatId: string; floor: number }, result: unknown): void
+  } | undefined
+  warn(message: string): void
+}
+
+/**
+ * The per-Agent dispatch decision, factored out of the wiring so the M4 memory gating is unit-testable
+ * without the live runtime. For the built-in Memory Maintenance Agent it consults the bridge's
+ * INTERNAL due-gate BEFORE `run()` — a `null` plan means nothing is due (or mode is off), so the
+ * dispatch is skipped and no empty Run Record forms — and applies the parsed `<TableEdit>` AFTER a
+ * successful run. Every other Agent dispatches unchanged (fire-and-forget through the identity path).
+ */
+export const createTriggerDispatch = (
+  deps: TriggerDispatchDeps
+): ((request: TriggerDispatchRequest) => void) => {
+  return (request) => {
+    const bridge = deps.memoryBridge()
+    const isMemory =
+      !!bridge &&
+      normalizeAgentName(request.agent) === normalizeAgentName(MEMORY_MAINTENANCE_AGENT_NAME)
+    let options: InvocationOptions | undefined
+    if (isMemory) {
+      const plan = bridge!.planDispatch({
+        profileId: request.profileId,
+        chatId: request.chatId,
+        floor: request.floor
+      })
+      // Nothing due / mode off: SKIP entirely (no run, no provider call, no Run Record — plan §6
+      // risk 3's "no empty Run Records pile up").
+      if (plan === null) return
+      if (plan.apiPresetId) options = { apiPresetId: plan.apiPresetId }
+    }
+    const runRequest: InvocationRequest = options ? { ...request, options } : { ...request }
+    // Fire-and-forget: the turn never waits here (a blocksNextTurn Agent gates the NEXT turn via the
+    // barrier). `run()` never throws, but the outcome promise is observed so nothing goes unhandled.
+    void deps
+      .run(runRequest)
+      .then((outcome) => {
+        if (isMemory && outcome.status === 'succeeded') {
+          try {
+            // The Agent's own writes are NONE; the durable table write happens HERE, after the run,
+            // through the bridge's `applyTableEdit` — bracketed by the epoch fence it captured at
+            // compose time. A moved transcript drops the batch inside the bridge.
+            bridge!.applyResult(
+              { profileId: request.profileId, chatId: request.chatId, floor: request.floor },
+              outcome.result
+            )
+          } catch (cause) {
+            deps.warn(`Memory Maintenance apply failed — ${errorMessage(cause)}`)
+          }
+        }
+      })
+      .catch((cause: unknown) => deps.warn(`triggered Agent run failed — ${errorMessage(cause)}`))
+  }
+}
+
 let dispose: (() => void) | null = null
 
 /**
@@ -93,6 +174,11 @@ export const initializeFloorCommitTriggers = (): void => {
     }
     return catalog
   }
+  const dispatch = createTriggerDispatch({
+    run: (request) => invocationRuntime().run(request),
+    memoryBridge: () => memoryMaintenanceBridge(),
+    warn: (message) => log('error', message)
+  })
   const evaluate = createFloorCommitTriggerRuntime({
     catalogAgents: (profileId) =>
       catalogFor(profileId).list().map((agent) => ({
@@ -101,16 +187,7 @@ export const initializeFloorCommitTriggers = (): void => {
         ...(agent.effective.trigger ? { trigger: agent.effective.trigger } : {})
       })),
     latestRunFloor: (chatId, agentName) => agentRunStore.latestRunFloor(chatId, agentName),
-    dispatch: (request) => {
-      // Fire-and-forget: the turn never waits on a triggered run here (a blocksNextTurn Agent gates the
-      // NEXT turn via the barrier, not this commit). A rejection is impossible (run() never throws) but
-      // the outcome promise is observed so an unhandled rejection can never surface.
-      void invocationRuntime()
-        .run(request)
-        .catch((cause: unknown) =>
-          log('error', `triggered Agent run failed — ${errorMessage(cause)}`)
-        )
-    },
+    dispatch,
     isReady: () => isEngineReady(),
     whenReady: () => whenTemplatesReady()
   })

@@ -286,6 +286,35 @@ commit, not silently ignored.
 
 ## 7. Implementation log
 
+### 2026-07-19 — M4 implemented
+
+`memory.maintain` is CONVERTED to the built-in **Memory Maintenance** Agent (parser-backed design §6),
+routed through the Agent Runtime's `execute` path with a Run Record. A third `BUILTIN_AGENTS` row
+(`catalog/builtins.ts`, `trigger.onFloorCommitted.everyNFloors: 3`, `required: false`,
+`blocksNextTurn: false`, `maxRetryAttempts: 5`) is seeded, NOT role-bound. Following ADR 0021's
+registration-slot + bridge pattern, `agentRuntime/memoryMaintenanceSlot.ts` owns an empty slot and
+`services/memoryMaintenanceAgentBridge.ts` (imported once from `main/index.ts`) installs the real
+closure — `agentRuntime` still imports neither `nodes/` nor `generation/`. The prompt planner
+(`prompt/agentPresetAssembler.ts`) substitutes the bridge's `composeMaintainerMessages` output via
+`HarnessExecuteRequest.prompt` (the SAME shared composer the `memory-maintain-preview` IPC uses). The
+trigger dispatch is factored into a testable `createTriggerDispatch` (`triggerRuntime.ts`): the
+INTERNAL due-gate (`dueTables`, plus the live doc's `mode` off-switch) short-circuits BEFORE `run()`,
+so a nothing-to-do window opens no empty Run Record; on success the three-way `<TableEdit>`
+discrimination (no-tag → report; empty-tag → advanceProgress; sql → applyTableEdit) runs verbatim,
+bracketed by the `transcriptEpoch` staleness fence captured at compose. `evaluateDocTriggers` now
+strips `memory.maintain` from every doc-trigger closure (`headlessRunService.ts` `runDocHeadless`,
+M4/M5-commented) so a cadence window can never double-fire (plan §6 risk 3). **Settings mapping,
+bounded:** the chat's effective doc still owns the maintain config, mode (off), and API-preset choice;
+the bridge reads them LIVE at dispatch/compose (`resolveEffectiveDoc`), mapping `api_preset_id` →
+`InvocationOptions.apiPresetId` (the smallest supported ProviderDispatch mapping). The Agent's
+`everyNFloors: 3` trigger owns cadence. **Deltas reported:** a doc `everyNFloors` ≠ 3 is not re-homed
+onto the Agent trigger (uses 3 until M5); `trigger.state` async backlog-threshold is approximated by
+the internal due-gate; the `execute` path wraps the maintainer prompt with the harness policy prefix +
+serialized-input suffix (accepted for the Run Record / retry machinery). Settings-UI rewrite and the
+doc retirement are M5. Gate: typecheck / check:deps (583 modules) / test 4356 passed, 10 skipped
+(374 files); new `test/agentRuntime/memoryMaintenanceAgent.test.ts` + a double-fire pin in
+`test/headlessDocTriggers.test.ts`.
+
 ### 2026-07-19 — M3 implemented
 
 `trigger: { onFloorCommitted: { everyNFloors } }` on the Agent contract (strict schema, any other
