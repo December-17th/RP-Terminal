@@ -1005,6 +1005,109 @@ The Agent Runtime replacement is complete only when:
 
 ## 8. Implementation log
 
+### 2026-07-19 — Classic Narrator plan Milestone 3 implemented
+
+Status: Milestone 3 of the [Classic Narrator first execution plan](classic-narrator-first-execution-plan.md)
+is implemented on `agent-system` in the working tree; Milestones 1 (`b707a66`) and 2 (`ab87f3f`) are
+committed and untouched. Milestones 4-6 remain planned. Nothing was removed: the workflow engine,
+every node, and every workflow facility are intact, as Milestone 6's decision requires.
+
+**The literal exit criterion was not met, deliberately.** The milestone as written says "no synchronous
+Classic call reaches `runWorkflow`". Milestone 2's evidence — recorded in the entry below, and pinned by
+`test/workflow/classicTurnInventory.test.ts` — proved that removing `runWorkflow` UNCONDITIONALLY is a
+capability REGRESSION, which the plan could not know when it was written. Two production states break the
+assumption: the resolved doc is a SAVED, USER-EDITABLE copy, so a node the user wires downstream of
+`write` lands in the detached post phase and genuinely runs there; and opening an agent-pack gate splices
+extra nodes into the very graph the turn executes. Deleting the engine from the path would silently drop
+both. Preserving capability outranks the literal criterion, so this milestone ships a TWO-PATH design and
+leaves the disposition of the workflow surface to Milestone 6, where it belongs.
+
+Classic runs a direct orchestration only when a shape predicate says the resolved effective doc is
+structurally the seeded default; every other doc keeps the existing `runWorkflow` path, completely
+unchanged. The branch is one ternary in `generationService.generate` at the `runPromise` assignment.
+Both paths resolve the same `RunResult`, so the turn lock, abort registration, `onResponseReady` race,
+failure classification, trace broadcast, run-history persistence, and trigger chain are SHARED, not
+duplicated.
+
+The predicate (`src/main/services/generation/classicShape.ts`) has two parts, both required. Pack
+composition is detected by `doc.meta.composition`, which `composeEffectiveGraph` stamps exactly when it
+splices (it returns the narrator by identity when no gate is open). Doc shape is a STRUCTURAL comparison
+against `buildDefaultMemoryDocV2()`, because there is no provenance signal for "unedited":
+`createWorkflowFromDoc` stamps only a fresh id, `meta.seeded` is an idempotence marker that survives
+every edit, and `saveWorkflow` rewrites verbatim with no version, hash, or dirty flag. The comparison
+covers every node's `type`, `disabled`, `isMainOutput`, and `panel`, plus the whole edge set; `config` is
+compared ONLY inside the turn phase — the `computePhases` pre closure, now exported from
+`workflowEngine.ts` rather than re-derived, so the two definitions cannot drift. Scoping config to the
+turn phase is load-bearing: the seeded doc's most user-visible knobs (`control.mode.selected`,
+`trigger.cadence.everyNFloors`, the memory node's settings) are trigger-rooted and outside the turn
+phase, so whole-doc equality would demote every user who merely switched memory Mode onto the workflow
+path for no behavioral reason. Doc id, name, description, node position, and groups are ignored. The
+predicate fails CLOSED: any mismatch routes to the unchanged engine.
+
+The direct path (`src/main/services/generation/classicTurn.ts`) is eight awaited service calls in the
+order Milestone 2 pinned — no pipeline, graph, hook bus, scheduler, or registry dispatch. It reuses the
+existing services rather than copying them: `buildGenContext`, the newly extracted
+`trimProcessedContext` and `exportTableEntries` (the node bodies moved into exported helpers that the
+nodes now delegate to, so each has exactly one implementation), `matchWorldInfo` + `assemblePrompt`, the
+newly extracted `sampleMainCall` (the whole `llm.sample` dispatch seam, including provider shaping, late
+dispatch transforms, and the Milestone 1 Harness executor), `parseResponse` + `computeMetrics`,
+`foldState`, and `persistFloor`. All four off-port channels are preserved deliberately: the one shared
+`GenContext`, `gen.executionRecord`, `gen.floorStateBaseline`, and `gen.workingVars` BY REFERENCE — the
+"PARITY HAZARD" whose loss fails no turn and raises no error, it just silently omits the variable from
+the floor. `onResponseReady` fires after the durable write and before the hand-off; abort-with-empty
+aborts the graph signal and returns null; abort-with-text still persists; a hard failure surfaces as a
+fatal result.
+
+Run history is NOT dropped on the direct path. `appendRun` in `generationService` records every turn, so
+a path emitting no traces would silently delete Classic run history. Instead the direct path synthesizes
+a full `RunResult` — the eight stages traced `ran` with real timings and their outputs, the five memory
+nodes traced `skipped` with the same phases the engine assigns — so the existing `summarizeRun` →
+`notifyWorkflowTrace` → `appendRun` block is reached unchanged and produces an equivalent record.
+
+Coverage is parity-based, not one-sided: `test/generation/classicDirectParity.test.ts` runs the same turn
+twice against the same mocked leaves, once per path, and compares the provider-bound message array and
+sampler params AND the persisted floor (only the wall-clock stamps normalized away).
+`test/generation/classicShape.test.ts` covers the predicate in both directions plus a comparator-rot pin,
+and `test/generation/classicDirectGenerate.test.ts` covers routing, run history, and a mid-session edit
+that flips the path between turns without changing the floor or the prompt. Note that
+`test/generation/generateParity.test.ts` mocks `resolveEffectiveDoc` to the narrator spine fixture and
+therefore cannot distinguish the two paths; it is not parity evidence for this milestone.
+
+COMPARATOR ROT is the milestone's quiet failure mode: if `defaultMemoryTemplate.ts` changes without the
+comparator being revisited, every user falls back to `runWorkflow` — correct, but invisible. The pinning
+case in `classicShape.test.ts` fails first. It deliberately does not pin the memory group's config
+defaults, which the comparator ignores by design.
+
+The suites were mutation-checked rather than assumed to bite. Building the assembly template context
+from a copy of `workingVars` (the real parity hazard) fails 2 tests including the persisted-floor
+comparison; folding onto a copy fails 4; copying the whole `GenContext` fails 5; dropping the
+`executionRecord` stamp fails 2; handing the response over before persisting fails 1 (after the timing
+case was tightened to record every hand-off rather than only the last); letting abort-with-empty fall
+through fails 1. On the predicate: ignoring `panel` fails 2, ignoring composition fails 1, comparing
+config outside the turn phase fails 2, ignoring edges fails 1. On the template: adding a node, changing a
+turn-phase node's default config, and rewiring each fail the rot pin.
+
+Independent review returned PASS with two fixes, both applied. First, no test fed the predicate the
+input production actually resolves — a JSON-round-tripped, `parseWorkflowDoc`-normalized SAVED doc, the
+common case for any profile that has opened the workflows UI. The behavior was already right, but
+unpinned: a later normalization change could have flipped everyone to the fallback with nothing failing.
+`test/generation/classicShapeRoundTrip.test.ts` now seeds through the real lazy seeding path, resolves
+through `resolveWorkflowDoc` and `resolveEffectiveDoc`, re-saves through `saveWorkflow`, and reads the
+stored bytes straight off disk, asserting the direct route each time and the fallback for an edited save.
+Perturbing normalization three ways — coercing a default `panel` onto every node, dropping an edge, and
+injecting node config — fails 4 of its 5 cases each, while the in-memory predicate suite stays green,
+which is the gap itself. Second, the synthesized trace appended its skipped-node rows last while the
+engine seeds excluded trigger nodes first, so the Runs-timeline row ORDER differed between paths; the
+parity comparison sorted and could not see it. The direct path now emits excluded rows first, pre-phase
+rows next, and post-phase rows in the engine's topological order, and — matching `runNodes` — traces
+NOTHING past a pre-phase fatal. The comparison no longer sorts and covers the happy, abort, and fatal
+paths. Appending excluded rows last fails 3, tracing past a fatal fails 1, post rows out of topological
+order fails 2.
+
+Gates on darwin: `npm run typecheck` PASS; `npm run test` PASS — 356 files, 4131 tests (was 352 / 4077);
+`npm run check:docs` expected baseline failure at 72 broken local links, unchanged by this work.
+`npm run check:deps` was skipped: it aborts on a Node 25.9.0 version gate before reading any source.
+
 ### 2026-07-19 — Classic Narrator plan Milestone 2 implemented
 
 Status: Milestone 2 of the [Classic Narrator first execution plan](classic-narrator-first-execution-plan.md)

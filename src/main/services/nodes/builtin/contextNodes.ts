@@ -255,6 +255,25 @@ const resolveProcessedPointer = (gen: GenContext, only?: string): number => {
   return min === Infinity ? -1 : min
 }
 
+/** The trim itself, as a plain Context→Context service (Classic Narrator plan, Milestone 3): the
+ *  direct Classic path runs this stage WITHOUT the graph, and `resolveProcessedPointer` + the slice
+ *  are node-local logic that a second copy would drift from. `contextTrimProcessed.run` below is now
+ *  a one-line delegation, so there is exactly ONE implementation for both paths. Returns the SAME
+ *  object when nothing is trimmed (the identity the inventory test pins). */
+export const trimProcessedContext = (gen: GenContext, only?: string): GenContext => {
+  const pointer = resolveProcessedPointer(gen, only)
+  // pointer < 0 → nothing processed / no template / compaction not landed → carry the FULL history
+  // (fail-soft, ADR 0003). Also a no-op when there is nothing to drop.
+  if (pointer < 0 || gen.floors.length === 0) return gen
+
+  // Floors at index ≤ pointer are already folded into the tables → drop them; keep index > pointer.
+  // slice(pointer + 1) never trims PAST the pointer, and clamps naturally when the pointer is beyond
+  // the history (→ empty tail). lastFloor is re-pinned so every lastFloor-derived read stays coherent.
+  const kept = gen.floors.slice(pointer + 1)
+  if (kept.length === gen.floors.length) return gen // nothing to drop
+  return { ...gen, floors: kept, lastFloor: kept[kept.length - 1] }
+}
+
 export const contextTrimProcessed: NodeImpl = {
   type: 'context.trimProcessed',
   title: 'Trim Processed History',
@@ -262,23 +281,7 @@ export const contextTrimProcessed: NodeImpl = {
   outputs: [{ name: 'gen', type: 'Context' }],
   configSchema: trimProcessedConfig,
   run: (_ctx, inputs, node) => {
-    const gen = inputs.gen as GenContext
     const cfg = (node.config ?? {}) as z.infer<typeof trimProcessedConfig>
-
-    const pointer = resolveProcessedPointer(gen, cfg.table)
-    // pointer < 0 → nothing processed / no template / compaction not landed → carry the FULL history
-    // (fail-soft, ADR 0003). Also a no-op when there is nothing to drop.
-    if (pointer < 0 || gen.floors.length === 0) return { outputs: { gen } }
-
-    // Floors at index ≤ pointer are already folded into the tables → drop them; keep index > pointer.
-    // slice(pointer + 1) never trims PAST the pointer, and clamps naturally when the pointer is beyond
-    // the history (→ empty tail). lastFloor is re-pinned so every lastFloor-derived read stays coherent.
-    const kept = gen.floors.slice(pointer + 1)
-    if (kept.length === gen.floors.length) return { outputs: { gen } } // nothing to drop
-    return {
-      outputs: {
-        gen: { ...gen, floors: kept, lastFloor: kept[kept.length - 1] }
-      }
-    }
+    return { outputs: { gen: trimProcessedContext(inputs.gen as GenContext, cfg.table) } }
   }
 }

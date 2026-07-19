@@ -17,6 +17,8 @@ import { floorStateForChat } from './agentRuntime/floorState'
 import { buildTurnContext } from './nodes/turnContext'
 import { builtinRegistry } from './nodes/builtin'
 import { runWorkflow } from './workflowEngine'
+import { isClassicDirectShape } from './generation/classicShape'
+import { runClassicTurnDirect } from './generation/classicTurn'
 import { resolveEffectiveDoc } from './workflowService'
 import { summarizeRun, derivePackIds } from '../../shared/workflow/trace'
 import { CompositionMeta } from '../../shared/workflow/compose'
@@ -176,7 +178,20 @@ export const generate = async (
     }
 
     const startedAt = Date.now()
-    const runPromise = runWorkflow(doc, builtinRegistry, ctx)
+    // Classic Narrator plan, Milestone 3 — the TWO-PATH split. When the resolved effective doc's turn
+    // phase is structurally identical to the seeded default and no agent pack composed into it, the
+    // turn runs the DIRECT orchestration (eight service calls, no engine); anything else — a user-
+    // edited graph, a node hung off `write`, an open pack gate — keeps the unchanged `runWorkflow`
+    // path. Milestone 3 as written asked for `runWorkflow` to be removed unconditionally; Milestone 2's
+    // evidence showed that would silently drop real capability (see classicShape.ts's header), so the
+    // two paths coexist until Milestone 6 decides the workflow surface's fate.
+    //
+    // Both resolve the SAME RunResult shape, so everything below this line — the detached trace /
+    // run-history / trigger chain, the responseReady race, and the failure classification — is shared,
+    // not duplicated, and Classic run history is recorded on both paths.
+    const runPromise = isClassicDirectShape(doc)
+      ? runClassicTurnDirect(doc, ctx)
+      : runWorkflow(doc, builtinRegistry, ctx)
     // Broadcast the run trace when the FULL run settles (post phase included) — ok, aborted,
     // AND fatal — the trace panel is most useful when a turn just failed (spec §13).
     void runPromise

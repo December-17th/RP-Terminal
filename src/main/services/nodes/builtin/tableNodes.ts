@@ -121,6 +121,46 @@ const exportBlock = (entries: LorebookEntry[]): string =>
     .filter(Boolean)
     .join('\n\n')
 
+/** The export itself, as a plain service (Classic Narrator plan, Milestone 3): the direct Classic path
+ *  runs this stage WITHOUT the graph, and the read→cap→synthesize→qualify sequence is node-local logic
+ *  a second copy would drift from. `tableExport.run` below is now a one-line delegation, so there is
+ *  exactly ONE implementation for both paths. */
+export const exportTableEntries = (
+  gen: GenContext,
+  cfg: ExportConfig
+): { entries: LorebookEntry[]; block: string } => {
+  const templateId = getChatTableTemplateId(gen.profileId, gen.chatId)
+  const template = templateId ? getTableTemplateById(gen.profileId, templateId) : null
+  // No table memory on this chat → project nothing (silent; export is a read).
+  if (!template) return { entries: [], block: '' }
+
+  // Optional narrowing to a subset of tables (by sqlName). Empty filter = all tables.
+  const only = (cfg.tables ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  let reads: TableRead[] = readAllTables(gen.profileId, gen.chatId, template)
+  if (only.length) {
+    const set = new Set(only)
+    reads = reads.filter((r) => set.has(r.sqlName))
+  }
+  // Row cap: keep the LAST N rows (newest-last) per table so long tables don't blow the prompt.
+  if (cfg.max_rows != null) {
+    const cap = cfg.max_rows
+    reads = reads.map((r) => (r.rows.length > cap ? { ...r, rows: r.rows.slice(-cap) } : r))
+  }
+
+  const synthesized = synthesizeEntries(template, reads)
+  // QUALIFY through the REAL matcher — constants survive, keyword entries fire only on a scan hit.
+  const qualified = matchAcross(
+    [{ name: 'table-export', entries: synthesized }],
+    gen.scanText,
+    Math.random,
+    gen.maxRecursion
+  )
+  return { entries: qualified, block: exportBlock(qualified) }
+}
+
 export const tableExport: NodeImpl = {
   type: 'table.export',
   title: 'Export Table',
@@ -134,41 +174,9 @@ export const tableExport: NodeImpl = {
     { name: 'error', type: 'Error' }
   ],
   configSchema: exportConfig,
-  run: (_ctx, inputs, node) => {
-    const gen = inputs.gen as GenContext
-    const cfg = node.config as ExportConfig
-
-    const templateId = getChatTableTemplateId(gen.profileId, gen.chatId)
-    const template = templateId ? getTableTemplateById(gen.profileId, templateId) : null
-    // No table memory on this chat → project nothing (silent; export is a read).
-    if (!template) return { outputs: { entries: [], block: '' } }
-
-    // Optional narrowing to a subset of tables (by sqlName). Empty filter = all tables.
-    const only = (cfg.tables ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-    let reads: TableRead[] = readAllTables(gen.profileId, gen.chatId, template)
-    if (only.length) {
-      const set = new Set(only)
-      reads = reads.filter((r) => set.has(r.sqlName))
-    }
-    // Row cap: keep the LAST N rows (newest-last) per table so long tables don't blow the prompt.
-    if (cfg.max_rows != null) {
-      const cap = cfg.max_rows
-      reads = reads.map((r) => (r.rows.length > cap ? { ...r, rows: r.rows.slice(-cap) } : r))
-    }
-
-    const synthesized = synthesizeEntries(template, reads)
-    // QUALIFY through the REAL matcher — constants survive, keyword entries fire only on a scan hit.
-    const qualified = matchAcross(
-      [{ name: 'table-export', entries: synthesized }],
-      gen.scanText,
-      Math.random,
-      gen.maxRecursion
-    )
-    return { outputs: { entries: qualified, block: exportBlock(qualified) } }
-  }
+  run: (_ctx, inputs, node) => ({
+    outputs: exportTableEntries(inputs.gen as GenContext, node.config as ExportConfig)
+  })
 }
 
 // ---- Maintenance pipeline (issue 05) ---------------------------------------------------------

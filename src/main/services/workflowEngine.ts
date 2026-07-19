@@ -288,7 +288,11 @@ async function runNodes(
 
 /** Pre-phase = the main-output node and every node that can reach it (its ancestors). Everything
  *  else (downstream + independent side branches) is post-phase — async, off the hot path (spec §5). */
-function computePhases(doc: WorkflowDoc): { preIds: Set<string>; postIds: Set<string> } {
+/*  EXPORTED (Classic Narrator plan, Milestone 3): the direct Classic path's shape predicate compares a
+ *  resolved doc's TURN PHASE against the seeded default, and "turn phase" is defined by exactly this
+ *  closure. Duplicating the traversal there would let the two definitions drift apart silently, so the
+ *  predicate imports the engine's own. */
+export function computePhases(doc: WorkflowDoc): { preIds: Set<string>; postIds: Set<string> } {
   const main = doc.nodes.find((n) => n.isMainOutput)!.id
   const revAdj = new Map<string, string[]>(doc.nodes.map((n) => [n.id, []]))
   for (const e of doc.edges) revAdj.get(e.to.node)?.push(e.from.node)
@@ -317,7 +321,7 @@ function computePhases(doc: WorkflowDoc): { preIds: Set<string>; postIds: Set<st
  *  and turn behavior is byte-identical to pre-WP6.1 (the zero-triggers guarantee). Both rules feed the
  *  SAME seed (skip-trace + dead outgoing edges), so the engine's existing prune rules (`allDead` /
  *  `gatedOff` in runNodes) propagate the skip through each excluded node's exclusive downstream. */
-function computeExcluded(doc: WorkflowDoc, registry: NodeRegistry): Set<string> {
+export function computeExcluded(doc: WorkflowDoc, registry: NodeRegistry): Set<string> {
   const excluded = new Set<string>()
   for (const n of doc.nodes) {
     if (n.disabled === true) {

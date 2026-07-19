@@ -106,7 +106,7 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   template and the async-memory/table-memory packs; `agent.llm`, memory, notes, and recall nodes are
   unchanged. The workflow still owns assembly, parse, persistence, and secondary nodes, and no retry,
   concurrency, or provider-selection layer was duplicated.
-  Milestone 2 is implemented in the current working tree and not yet committed. It adds
+  Milestone 2 is implemented, reviewed, and committed as `ab87f3f`. It adds
   characterization tests only; nothing was removed and no production behavior changed. A Classic turn
   runs exactly 8 of the production doc's 13 nodes, all synchronous, with `llm.sample` the only
   provider call and `output.writeFloor` the only durable-state writer; the other 5 nodes, including
@@ -118,6 +118,21 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   seeding is lazy and hooked only to `listWorkflows` — a profile that never opens that UI still
   resolves the builtin. Both states are reachable, so the empty detached post phase is a property of
   the default doc's shape and does not survive user edits.
+  Milestone 3 is implemented in the current working tree and not yet committed. Classic now has TWO
+  synchronous paths. When the resolved effective doc is structurally the seeded default and no agent
+  pack composed into it, a turn runs a direct orchestration — eight service calls, no engine — through
+  the same assembly, Harness sampling, parse, fold, and persist-floor services; every other doc keeps
+  the existing `runWorkflow` path, unchanged. Milestone 3 as written asked for `runWorkflow` to be
+  removed from the synchronous path unconditionally; Milestone 2's evidence showed that would be a
+  capability regression, because the resolved doc is user-editable (a node wired downstream of `write`
+  really runs in the detached post phase) and an open pack gate really splices nodes into the turn
+  graph. Capability preservation outranked the literal criterion, so the two paths coexist and the
+  disposition of the workflow surface stays with Milestone 6. Nothing was removed. The routing
+  predicate compares the doc structurally against the seeded template — turn-phase node config, every
+  node's type/panel/disabled/main-output flag, and the whole edge set — so switching memory Mode or the
+  maintenance cadence keeps the direct path while any edit to the turn phase falls back. Provider bytes
+  and persisted floor state are proven equal across both paths, the four off-port `GenContext` channels
+  survive, and Classic run history is still recorded on the direct path.
   The original [implementation plan](agent-system/implementation-plan.md) remains the broader
   session record. Plot/memory node conversion is design-only until separately approved.
   The planned cutover replaces every model-backed operation with one provider-neutral Harness,

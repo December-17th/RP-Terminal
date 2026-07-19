@@ -246,6 +246,61 @@ export const runLlmCall = async (
   return r === null ? null : { raw: r.raw, rawUsage: r.rawUsage }
 }
 
+/**
+ * The main narrator's ONE sampling call, from the dispatch seam through the Harness (Classic Narrator
+ * plan, Milestone 3). Extracted verbatim from `llm.sample`'s run() so the direct Classic path executes
+ * the SAME provider-shaping, late-dispatch-transform, and Harness plumbing rather than a second copy —
+ * `llmSample.run` below now delegates to it. Returns `null` on abort-with-empty (the caller decides
+ * whether to abort its turn); throws on give-up exactly as before.
+ *
+ * `legacy` is the wired `sendMessages`/`params` pair (the seeded doc's wiring, and what the direct path
+ * has in hand); `prompt` is the optional rich artifact. With a legacy array present the artifact branch
+ * is inert, which is why the direct path passes only the pair.
+ */
+export const sampleMainCall = async (
+  ctx: RunContext,
+  gen: GenContext,
+  legacy: { sendMessages: unknown; params: unknown },
+  prompt: unknown,
+  cfg: LlmCallConfig
+): Promise<{ raw: string; rawUsage: unknown } | null> => {
+  // 18e SEAM 2 — the pre-dispatch transformation seam: resolve the messages to send AND provider-
+  // shape them exactly once here (the single dispatch boundary). A legacy `sendMessages` array or an
+  // already-shaped artifact passes through unchanged (byte-identical for seeded docs); only an
+  // UNSHAPED Prompt artifact is shaped, via providerShape bound to this turn's settings.
+  const shapedMessages = resolveDispatchMessages(legacy.sendMessages, prompt, (m) =>
+    providerShape(gen.settings, m)
+  ) as ChatMessage[]
+  // 18e capability-gated PRE-DISPATCH MUTATION seam (Tier-4 TavernHelper, issue 19): apply any
+  // registered high-trust late hooks to the FINAL message array and delta-record each real mutation as
+  // an `opaque` entry on the Prompt artifact's execution record (script id + hook + before/after hashes —
+  // never a raw untracked swap). Zero hooks (the default) ⇒ the array passes through byte-identical.
+  const hooks = getDispatchHooks(gen.chatId)
+  const { messages: sendMessages, entries: dispatchEntries } = applyDispatchTransforms(
+    shapedMessages ?? [],
+    hooks
+  )
+  if (dispatchEntries.length && isPromptArtifact(prompt) && prompt.record) {
+    // Forensic: land the late-hook deltas on the LIVE artifact's record — the same object the turn
+    // threads to parse.response/writeFloor — so the pre-dispatch mutation is journaled, never a raw
+    // untracked swap. `appendDispatchEntries` re-indexes seq; we splice its result back in place.
+    const merged = appendDispatchEntries(prompt, dispatchEntries)
+    prompt.record.entries.splice(0, prompt.record.entries.length, ...merged.record!.entries)
+  }
+  return runLlmCall(
+    ctx,
+    gen,
+    sendMessages,
+    resolveParams(legacy.params, prompt) as PresetParameters,
+    cfg,
+    // Milestone 1: this node's ONE sampling call executes through AgentHarness. `sendMessages` is
+    // already final here (shaped, then late-transformed above), so the Harness forwards it verbatim.
+    // Classic's default graph is the target; the memory/table templates embed this same node type
+    // and therefore also route here — accepted, since the seam is byte-identical either way.
+    harnessDispatchVia
+  )
+}
+
 export const llmSample: NodeImpl = {
   type: 'llm.sample',
   title: 'Sample',
@@ -270,40 +325,12 @@ export const llmSample: NodeImpl = {
   run: async (ctx, inputs, node) => {
     const cfg = (node?.config ?? {}) as LlmCallConfig
     const gen = inputs.gen as GenContext
-    // 18e SEAM 2 — the pre-dispatch transformation seam: resolve the messages to send AND provider-
-    // shape them exactly once here (the single dispatch boundary). A legacy `sendMessages` array or an
-    // already-shaped artifact passes through unchanged (byte-identical for seeded docs); only an
-    // UNSHAPED Prompt artifact is shaped, via providerShape bound to this turn's settings.
-    const shapedMessages = resolveDispatchMessages(inputs.sendMessages, inputs.prompt, (m) =>
-      providerShape(gen.settings, m)
-    ) as ChatMessage[]
-    // 18e capability-gated PRE-DISPATCH MUTATION seam (Tier-4 TavernHelper, issue 19): apply any
-    // registered high-trust late hooks to the FINAL message array and delta-record each real mutation as
-    // an `opaque` entry on the Prompt artifact's execution record (script id + hook + before/after hashes —
-    // never a raw untracked swap). Zero hooks (the default) ⇒ the array passes through byte-identical.
-    const hooks = getDispatchHooks(gen.chatId)
-    const { messages: sendMessages, entries: dispatchEntries } = applyDispatchTransforms(
-      shapedMessages ?? [],
-      hooks
-    )
-    if (dispatchEntries.length && isPromptArtifact(inputs.prompt) && inputs.prompt.record) {
-      // Forensic: land the late-hook deltas on the LIVE artifact's record — the same object the turn
-      // threads to parse.response/writeFloor — so the pre-dispatch mutation is journaled, never a raw
-      // untracked swap. `appendDispatchEntries` re-indexes seq; we splice its result back in place.
-      const merged = appendDispatchEntries(inputs.prompt, dispatchEntries)
-      inputs.prompt.record.entries.splice(0, inputs.prompt.record.entries.length, ...merged.record!.entries)
-    }
-    const r = await runLlmCall(
+    const r = await sampleMainCall(
       ctx,
       gen,
-      sendMessages,
-      resolveParams(inputs.params, inputs.prompt) as PresetParameters,
-      cfg,
-      // Milestone 1: this node's ONE sampling call executes through AgentHarness. `sendMessages` is
-      // already final here (shaped, then late-transformed above), so the Harness forwards it verbatim.
-      // Classic's default graph is the target; the memory/table templates embed this same node type
-      // and therefore also route here — accepted, since the seam is byte-identical either way.
-      harnessDispatchVia
+      { sendMessages: inputs.sendMessages, params: inputs.params },
+      inputs.prompt,
+      cfg
     )
     // Abort-with-empty (callModel returned null): nothing to persist — abort the GRAPH so the engine
     // skips parse/apply/write and generate() returns null. Abort-with-text returns {raw,...} here, so
