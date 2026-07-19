@@ -10,9 +10,14 @@ orchestration), which delivers the substance of Session 8's objective, and M6, w
 [debloat audit](debloat-audit.md) is decision-support only with no deletion approved or performed.
 Session 8 is therefore not re-run as written; its remaining scope is the Pending Floor cutover.
 
-Session 10 is **in progress**: the Agent Workspace is being implemented ahead of Session 9, with a
-Settings-rail quick-adjustment panel plus a full editor popup. Sessions 9, 11, and 12 remain planned
-and unimplemented.
+Session 10 is **implemented and committed** (`9036935` plus the ADR 0021 follow-ups `429090f` and
+`ef8ab9f`): the Agent Workspace, Agent file import, and preset-driven prompt assembly
+([ADR 0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md)) all landed ahead of
+Session 9. **Sessions 8, 9, 11, and 12 are superseded as written by the
+[execution plan v2 (2026-07-19)](execution-plan-2026-07-19.md)** — its audit (§1.2) records the facts
+that invalidated them, including that the Workspace's manual Run now made `InvocationRuntime` and
+`AgentHarness.execute` production-reachable, and that Yuzu now rides the shared Classic assembly
+path. This document remains the record for Sessions 0–7 and 10 and their implementation log.
 
 Two facilities are built but deliberately NOT wired, and must not be assumed live:
 

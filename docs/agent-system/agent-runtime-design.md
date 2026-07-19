@@ -1,8 +1,13 @@
 # Agent Runtime design
 
-**Status:** Approved design; Milestones 1–3, Sessions 0–6, are implemented, reviewed, and accepted on
-`agent-system`, with commits pending in the current working tree. Sessions 7–12 remain planned and
-unimplemented.
+**Status:** Approved design; Sessions 0–7 and 10, the
+[Classic Narrator first execution plan](classic-narrator-first-execution-plan.md)'s six milestones,
+and [ADR 0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md)'s prompt/preset
+assembly are implemented and committed on `agent-system`. ADR 0021 extends §3 and §10 of this
+document (Agent prompts now render through the template engine and may bundle a preset); those
+sections have not yet been rewritten to match — the ADR wins where they differ. Remaining work is
+planned in the [execution plan v2 (2026-07-19)](execution-plan-2026-07-19.md), which supersedes
+Sessions 8, 9, 11, and 12.
 **Decision date:** 2026-07-18.
 **Supersedes:** the workflow/node authoring and execution model, ADR 0011, the unshipped
 tool-loop portions of `docs/agentic-mode-design.md`, and the future-facing contract in
@@ -148,6 +153,25 @@ The schema above establishes the contract, not a requirement that every prompt u
 Plain string content is valid for static role messages; messages containing Prompt Bindings use typed
 content segments. RP Terminal normalizes both forms before validation and execution. There is no
 shorthand for variable or Result Slot paths.
+
+> **Reconciled with [ADR 0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md)
+> (the ADR wins where this section is narrower).** Two facts extend the shape above:
+>
+> - **Every Agent's `prompt` messages render through RP Terminal's existing template engine** (EJS +
+>   macros + the TH shim in the quickjs sandbox) before dispatch — there is no opt-in flag, because a
+>   prompt containing `<%` is already broken if sent verbatim. Assembly happens *before* the Harness;
+>   the Harness still receives finished messages (§5.1's "the Harness assembles" is superseded — it
+>   receives, it does not assemble).
+> - **A definition may carry an optional inline `preset` bundle.** When present it turns on full
+>   `assemblePrompt` assembly against the owning floor's real `GenContext` (character card, persona,
+>   world info), with the `prompt` messages appended as the Agent's task instruction. Chat history is
+>   opt-in via a declared History Policy (§5.3); the bundle may also select which lorebooks and which
+>   entries feed assembly. The bundle is a lossless ST preset envelope
+>   ([ADR 0018](../adr/0018-presets-persist-as-lossless-envelopes-edited-in-place.md)) that carries **no
+>   connection or model** (§10 portability) and may carry generation-parameter overrides (§10). A
+>   guaranteed-inert envelope is rejected at save time. Assembly failure is **fail-open but recorded** —
+>   the invocation proceeds with the un-assembled prompt, and the reason is written to the Run Record's
+>   warnings and shown as a "Degraded" badge, never dropped silently.
 
 ### 3.2 Names and collisions
 
@@ -374,7 +398,11 @@ do not fit RP Terminal.
 ## 10. Models, presets, and request budgets
 
 The Harness resolves an API preset, not a standalone model. A portable card Agent may include a
-preferred-model hint but cannot reference a user-local preset id.
+preferred-model hint but cannot reference a user-local preset id. When an Agent bundles a `preset`
+(§3.1, [ADR 0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md)) it carries that
+prompt preset **inline and lossless**, still with no connection or model, so portability is preserved:
+the bundle supplies the prompt preset and optional generation-parameter overrides, never a reference to
+something in the importing user's profile.
 
 API preset precedence is:
 
@@ -387,8 +415,11 @@ Generation parameter precedence is:
 
 1. user per-Agent override;
 2. invocation-step override;
-3. Agent Definition default; and
-4. active generation preset.
+3. Agent Definition default;
+4. bundled `preset` generation-parameter override
+   ([ADR 0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md) inserts this layer
+   directly above the resolved preset, as `ProviderSelection.presetBundleParameters`); and
+5. active generation preset.
 
 Supported parameters reuse RP Terminal's existing partial preset fields, including temperature,
 output-token limit, common samplers, penalties, and stop strings. The Provider Capability Profile

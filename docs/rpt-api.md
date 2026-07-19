@@ -153,7 +153,14 @@ through the host bridge as RFC-6902 JSON Patch.
   `/gen`·`/genraw`·`/trigger`·`/send`) via the shared [`stscript`](../src/shared/stscript.ts) interpreter.
   `while`/loops + the long-tail command set — ⬜.
 
-### Card Agent scheduling - built (RPT-only)
+### Card Agent scheduling - implemented but HELD, not a shipped contract (RPT-only)
+
+> **Do not treat this as an available card API yet.** The `rpt.agents.*` surface exists in code at both
+> transports (`src/shared/thRuntime`, `agentRunIpc.ts`, `wcvIpc.ts`, `CardToolRegistry.ts`), but the owner
+> decision is to hold it dormant (`docs/agent-system/execution-plan-2026-07-19.md` §3 D2) — it is not
+> released and a card must not depend on it. The behaviour below documents the code surface for when it
+> ships; until then the only way an installed Agent runs is a manual **Run now** in the Agent Workspace or
+> a folder scan. The signatures are stable but unshipped.
 
 - `await rpt.agents.run(name, options?)` invokes one enabled Agent. `options.input` is direct JSON; `options.floor` must name an existing committed floor and otherwise defaults to the latest committed floor. An `AbortSignal` cancels the invocation.
 - `await rpt.agents.runPlan(plan, { signal }?)` runs the validated top-level sequence / flat-parallel plan form. The same Agent cannot appear twice on one floor.
