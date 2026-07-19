@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { getAppDir, ensureDir } from './storageService'
 import { classifyStatement } from './tableSql'
+import { normalizeAgentName } from '../../shared/agentRuntime'
 
 let db: Database.Database | null = null
 
@@ -50,6 +51,42 @@ CREATE TABLE IF NOT EXISTS chats (
   cached_world_info TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chats_profile ON chats(profile_id);
+
+-- Profile-wide Agent Runtime catalog. Baselines remain source-faithful; customization_ops is a
+-- deterministic path/value overlay, and effective_definition/effective_hash are the activation
+-- snapshot derived from both. Names are unique case-insensitively across every source kind.
+CREATE TABLE IF NOT EXISTS agent_catalog (
+  id TEXT NOT NULL,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL COLLATE NOCASE,
+  name_key TEXT NOT NULL,
+  source_kind TEXT NOT NULL CHECK(source_kind IN ('builtin','user-created','user-imported','card')),
+  source_key TEXT NOT NULL,
+  source_version TEXT NOT NULL,
+  source_present INTEGER NOT NULL DEFAULT 1,
+  available_source_version TEXT,
+  available_definition TEXT,
+  baseline_definition TEXT NOT NULL,
+  customization_ops TEXT NOT NULL DEFAULT '[]',
+  effective_definition TEXT NOT NULL,
+  effective_hash TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (profile_id, id),
+  UNIQUE (profile_id, name_key)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_catalog_source
+  ON agent_catalog(profile_id, source_kind, source_key, name);
+
+CREATE TABLE IF NOT EXISTS agent_role_bindings (
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK(role IN ('classic.narrator','yuzu.sceneDirector')),
+  agent_id TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (profile_id, role),
+  FOREIGN KEY (profile_id, agent_id) REFERENCES agent_catalog(profile_id, id) ON DELETE RESTRICT
+);
 
 CREATE TABLE IF NOT EXISTS floors (
   chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -433,6 +470,29 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'mode', 'mode TEXT')
   addColumnIfMissing(db, 'chats', 'cached_world_info', 'cached_world_info TEXT')
   addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
+  addColumnIfMissing(db, 'agent_catalog', 'name_key', 'name_key TEXT')
+  addColumnIfMissing(
+    db,
+    'agent_catalog',
+    'source_present',
+    'source_present INTEGER NOT NULL DEFAULT 1'
+  )
+  addColumnIfMissing(db, 'agent_catalog', 'available_source_version', 'available_source_version TEXT')
+  addColumnIfMissing(db, 'agent_catalog', 'available_definition', 'available_definition TEXT')
+  const agentNames = db
+    .prepare('SELECT profile_id, id, name FROM agent_catalog WHERE name_key IS NULL')
+    .all() as Array<{ profile_id: string; id: string; name: string }>
+  const updateAgentNameKey = db.prepare(
+    'UPDATE agent_catalog SET name_key = ? WHERE profile_id = ? AND id = ?'
+  )
+  db.transaction(() => {
+    for (const row of agentNames) {
+      updateAgentNameKey.run(normalizeAgentName(row.name), row.profile_id, row.id)
+    }
+  })()
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_catalog_name_key ON agent_catalog(profile_id, name_key)'
+  )
   // Session-tier workflow override (node-workflow spec §12); null = inherit world/global/builtin.
   addColumnIfMissing(db, 'chats', 'workflow_id', 'workflow_id TEXT')
   // Project Yuzu (ADR 0008 §7): opt-in VN play mode for the session — ORTHOGONAL to `mode` (the FSM

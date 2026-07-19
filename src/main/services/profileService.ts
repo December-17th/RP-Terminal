@@ -7,17 +7,24 @@ import * as settingsService from './settingsService'
 import { deleteChatFully, chatIdsForProfile } from './chatDeleteService'
 import * as sessionDbService from './sessionDbService'
 import { Profile } from '../types/models'
+import { AgentCatalog } from './agentRuntime/catalog'
 
 export const getProfiles = (): Profile[] => {
-  return getDb()
+  const db = getDb()
+  const profiles = db
     .prepare(
       'SELECT id, name, avatar_path as avatar_path, password_hash, created_at, last_active FROM profiles ORDER BY last_active DESC'
     )
     .all() as Profile[]
+  for (const profile of profiles) new AgentCatalog(profile.id, db)
+  return profiles
 }
 
 export const getProfile = (id: string): Profile | undefined => {
-  return getDb().prepare('SELECT * FROM profiles WHERE id = ?').get(id) as Profile | undefined
+  const db = getDb()
+  const profile = db.prepare('SELECT * FROM profiles WHERE id = ?').get(id) as Profile | undefined
+  if (profile) new AgentCatalog(profile.id, db)
+  return profile
 }
 
 export const createProfile = (name: string, passwordHash?: string): Profile => {
@@ -34,13 +41,16 @@ export const createProfile = (name: string, passwordHash?: string): Profile => {
       'INSERT INTO profiles (id, name, password_hash, created_at, last_active) VALUES (?, ?, ?, ?, ?)'
     )
     .run(profile.id, profile.name, profile.password_hash ?? null, now, now)
+  new AgentCatalog(profile.id)
   return profile
 }
 
 export const updateProfileActivity = (id: string): void => {
-  getDb()
+  const db = getDb()
+  db
     .prepare('UPDATE profiles SET last_active = ? WHERE id = ?')
     .run(new Date().toISOString(), id)
+  new AgentCatalog(id, db)
 }
 
 // Per-profile file content to remove on a debug wipe. The API connection config lives in the
@@ -106,6 +116,9 @@ export const wipeProfile = (profileId: string): void => {
   //    no-op for these). The characters delete runs after. Profile + reset settings rows stay.
   for (const chatId of chatIdsForProfile(profileId)) deleteChatFully(profileId, chatId)
   db.prepare('DELETE FROM characters WHERE profile_id = ?').run(profileId)
+  db.prepare('DELETE FROM agent_role_bindings WHERE profile_id = ?').run(profileId)
+  db.prepare('DELETE FROM agent_catalog WHERE profile_id = ?').run(profileId)
+  new AgentCatalog(profileId, db)
 
   // 3. File-based per-profile content (includes the whole `chats/` per-session store).
   wipeProfileFiles(profileId)

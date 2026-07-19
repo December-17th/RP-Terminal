@@ -186,6 +186,25 @@ const RawAgentDefinitionSchema = z.strictObject({
   defaults: AgentDefaultsSchema
 })
 
+/**
+ * Zod adapter for embedding Agent Definitions in larger strict contracts (for example World Cards).
+ * Standalone callers should prefer parseAgentDefinition so they retain structured contract errors.
+ */
+export const AgentDefinitionSchema: z.ZodType<AgentDefinition> = z
+  .unknown()
+  .transform((raw, context) => {
+    const result = parseAgentDefinition(raw)
+    if (result.ok) return result.value
+    for (const error of result.errors) {
+      context.addIssue({
+        code: 'custom',
+        path: error.path,
+        message: error.message
+      })
+    }
+    return z.NEVER
+  })
+
 const InvocationOptionsSchema = z.strictObject({
   floor: z.int().positive().optional(),
   input: JsonObjectSchema.optional(),

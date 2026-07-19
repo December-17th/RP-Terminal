@@ -19,6 +19,7 @@ export {
   type JsonSchemaSemanticIssue
 } from './jsonSchema'
 export {
+  AgentDefinitionSchema,
   normalizePrompt,
   parseAgentDefinition,
   parseInputBindings,
@@ -27,3 +28,4 @@ export {
   resolveInvocationOptions
 } from './schema'
 export type * from './types'
+export { normalizeAgentName } from './names'
