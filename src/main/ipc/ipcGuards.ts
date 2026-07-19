@@ -32,6 +32,8 @@ export const GATED_CHANNELS = [
   // whole-entity deletion (conservative default) + native card import/export dialogs (characterIpc)
   'delete-character',
   'import-character-dialog',
+  'confirm-character-import',
+  'cancel-character-import',
   'export-character-dialog',
   // save (session) export/import native dialogs (saveTransferIpc) — host-path read/write
   'export-save-dialog',

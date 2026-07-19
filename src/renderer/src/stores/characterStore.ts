@@ -6,6 +6,12 @@ import { useScriptsStore } from './scriptsStore'
 import { useChatStore } from './chatStore'
 import { useUiStore } from './uiStore'
 import { t } from '../i18n'
+import type { CharacterImportDialogResult } from '../../../shared/characterImport'
+
+type AgentCollisionResult = Extract<
+  CharacterImportDialogResult,
+  { status: 'agent-collisions' }
+>
 
 export interface CharacterCard {
   id: string
@@ -18,6 +24,9 @@ interface CharacterState {
   loadCharacters: (profileId: string) => Promise<void>
   setActiveCharacter: (char: CharacterCard) => void
   importCharacter: (profileId: string) => Promise<void>
+  pendingAgentImport: (AgentCollisionResult & { profileId: string }) | null
+  confirmAgentImport: (renames: Record<string, string>) => Promise<void>
+  cancelAgentImport: () => Promise<void>
   exportCharacter: (profileId: string, characterId: string) => Promise<void>
   importMockCharacter: (profileId: string) => Promise<void>
   deleteCharacter: (profileId: string, characterId: string) => Promise<void>
@@ -25,9 +34,55 @@ interface CharacterState {
   saveCard: (profileId: string, characterId: string, card: any) => Promise<void>
 }
 
-export const useCharacterStore = create<CharacterState>((set) => ({
+const finishCharacterImport = async (
+  profileId: string,
+  res: Extract<CharacterImportDialogResult, { status: 'imported' }>,
+  set: (partial: Partial<CharacterState>) => void
+): Promise<void> => {
+  const characters = await window.api.getCharacters(profileId)
+  useChatStore.getState().clearActiveChat()
+  set({
+    characters,
+    activeCharacter: characters.find((c: any) => c.id === res.id) || null,
+    pendingAgentImport: null
+  })
+
+  const s = res.summary
+  const parts = [
+    s.regexScripts && `${s.regexScripts} regex`,
+    s.presets && `${s.presets} presets`,
+    s.lorebooks && `${s.lorebooks} lorebooks`,
+    s.loreEntries && `${s.loreEntries} lore`,
+    s.scripts && `${s.scripts} scripts`,
+    s.assetsImported && `${s.assetsImported} assets`
+  ].filter(Boolean)
+  useToastStore
+    .getState()
+    .push(
+      parts.length
+        ? `Imported “${s.name}” — installed ${parts.join(', ')}`
+        : `Imported “${s.name}”`
+    )
+  if (s.cartridgeError) {
+    useToastStore
+      .getState()
+      .push(t('characterImport.cartridgeWarning', { error: s.cartridgeError }))
+  }
+  if (s.regexScripts) {
+    await useRegexStore.getState().load(profileId)
+    await useRegexStore.getState().loadScripts(profileId)
+  }
+  if (s.scripts) await useScriptsStore.getState().load(profileId)
+  if (s.presets) await usePresetStore.getState().load(profileId)
+  if (s.requiresTrust) {
+    useUiStore.getState().openTrustPrompt({ profileId, cardId: res.id, cardName: s.name })
+  }
+}
+
+export const useCharacterStore = create<CharacterState>((set, get) => ({
   characters: [],
   activeCharacter: null,
+  pendingAgentImport: null,
   loadCharacters: async (profileId: string) => {
     const characters = await window.api.getCharacters(profileId)
     set({ characters })
@@ -54,53 +109,25 @@ export const useCharacterStore = create<CharacterState>((set) => ({
   },
   importCharacter: async (profileId: string) => {
     const res = await window.api.importCharacterDialog(profileId)
-    if (!res?.id) return
-    const characters = await window.api.getCharacters(profileId)
-    // A freshly imported world has no open session yet — clear any stale one.
-    useChatStore.getState().clearActiveChat()
-    set({ characters, activeCharacter: characters.find((c: any) => c.id === res.id) || null })
-
-    // Surface what the one-click import installed as a toast.
-    const s = res.summary
-    if (s) {
-      const parts = [
-        s.regexScripts && `${s.regexScripts} regex`,
-        s.presets && `${s.presets} presets`,
-        s.lorebooks && `${s.lorebooks} lorebooks`,
-        s.loreEntries && `${s.loreEntries} lore`,
-        s.scripts && `${s.scripts} scripts`,
-        s.assetsImported && `${s.assetsImported} assets`
-      ].filter(Boolean)
-      useToastStore
-        .getState()
-        .push(
-          parts.length
-            ? `Imported “${s.name}” — installed ${parts.join(', ')}`
-            : `Imported “${s.name}”`
-        )
-      // The card's panels are served from its PNG code cartridge; if that failed to install, say so
-      // NOW — otherwise the first symptom is every panel rendering a bare 404 later.
-      if (s.cartridgeError) {
-        useToastStore
-          .getState()
-          .push(t('characterImport.cartridgeWarning', { error: s.cartridgeError }))
-      }
-      // Bundled regex landed in the profile store — refresh the regex views so the
-      // new scripts appear and the active chat picks up any display rules.
-      if (s.regexScripts) {
-        await useRegexStore.getState().load(profileId)
-        await useRegexStore.getState().loadScripts(profileId)
-      }
-      // Bundled TH scripts landed in the profile script store (world-scoped) — refresh the
-      // Scripts manager so they show up under the new world.
-      if (s.scripts) await useScriptsStore.getState().load(profileId)
-      if (s.presets) await usePresetStore.getState().load(profileId)
-      // Executable scripts and cartridge-backed UI share the same trust grant. Ask before a WCV can
-      // occlude the modal; the decision persists so all run-time hosts use the same gate.
-      if (s.requiresTrust) {
-        useUiStore.getState().openTrustPrompt({ profileId, cardId: res.id, cardName: s.name })
-      }
+    if (!res) return
+    if (res.status === 'agent-collisions') {
+      set({ pendingAgentImport: { ...res, profileId } })
+      return
     }
+    if (res.status === 'imported') await finishCharacterImport(profileId, res, set)
+    else useToastStore.getState().push(res.message)
+  },
+  confirmAgentImport: async (renames) => {
+    const pending = get().pendingAgentImport
+    if (!pending) return
+    const res = await window.api.confirmCharacterImport(pending.token, renames)
+    if (res.status === 'imported') await finishCharacterImport(pending.profileId, res, set)
+    else useToastStore.getState().push(res.message)
+  },
+  cancelAgentImport: async () => {
+    const pending = get().pendingAgentImport
+    if (pending) await window.api.cancelCharacterImport(pending.token)
+    set({ pendingAgentImport: null })
   },
   exportCharacter: async (profileId: string, characterId: string) => {
     const name = await window.api.exportCharacterDialog(profileId, characterId)

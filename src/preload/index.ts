@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { VarsOrigin } from '../shared/thRuntime/types'
+import type { CharacterImportDialogResult } from '../shared/characterImport'
 
 // Custom APIs for renderer
 const api = {
@@ -22,8 +23,15 @@ const api = {
     ipcRenderer.invoke('set-titlebar-overlay', overlay),
   saveCharacter: (profileId: string, charId: string, card: any) =>
     ipcRenderer.invoke('save-character', profileId, charId, card),
-  importCharacterDialog: (profileId: string) =>
+  importCharacterDialog: (profileId: string): Promise<CharacterImportDialogResult | null> =>
     ipcRenderer.invoke('import-character-dialog', profileId),
+  confirmCharacterImport: (
+    token: string,
+    agentRenames: Record<string, string>
+  ): Promise<CharacterImportDialogResult> =>
+    ipcRenderer.invoke('confirm-character-import', token, agentRenames),
+  cancelCharacterImport: (token: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('cancel-character-import', token),
   exportCharacterDialog: (profileId: string, characterId: string) =>
     ipcRenderer.invoke('export-character-dialog', profileId, characterId),
   getChats: (profileId: string) => ipcRenderer.invoke('get-chats', profileId),

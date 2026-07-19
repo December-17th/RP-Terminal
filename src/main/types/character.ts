@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AgentDefinitionSchema } from '../../shared/agentRuntime'
 
 /**
  * A single World Info / Lorebook entry. Mirrors the ST `character_book` entry
@@ -219,6 +220,16 @@ export const RPTerminalExtSchema = z
      *  validated against the builtin node registry on install; the first successfully-imported one
      *  becomes this world's default workflow. */
     workflows: z.array(z.any()).optional(),
+    /** Declarative Agent Runtime definitions bundled by this card. Unlike legacy workflows these are
+     * strict at the card import boundary and normalize through AgentContracts. */
+    agents: z.array(AgentDefinitionSchema).optional(),
+    /** A card recommendation only; the player's profile role binding remains authoritative. */
+    agent_role_recommendations: z
+      .strictObject({
+        'classic.narrator': z.string().trim().min(1).optional(),
+        'yuzu.sceneDirector': z.string().trim().min(1).optional()
+      })
+      .optional(),
     /** Bundled memory-table templates (chatSheets v2, or our native TableTemplate). Dropped into the
      *  profile's template library on install (never auto-assigned — assignment is destructive). */
     table_templates: z.array(z.any()).optional(),

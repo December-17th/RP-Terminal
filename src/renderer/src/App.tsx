@@ -70,6 +70,7 @@ const TableTemplateReminderModal = lazyNamed(
   'TableTemplateReminderModal'
 )
 import { CardTrustPrompt } from './components/CardTrustPrompt'
+import { CharacterAgentRenameModal } from './components/CharacterAgentRenameModal'
 import { refreshWcvHostState } from './cardBridge/hostReload'
 
 export default function App(): React.ReactElement {
@@ -471,6 +472,7 @@ export default function App(): React.ReactElement {
         {templateReminderOpen && <TableTemplateReminderModal profileId={activeProfile.id} />}
       </Suspense>
       <CardTrustPrompt />
+      <CharacterAgentRenameModal />
       <ToastStack />
     </>
   )

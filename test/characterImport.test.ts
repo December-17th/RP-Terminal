@@ -210,6 +210,39 @@ describe('summarizeCardBundle + hasBundle', () => {
 })
 
 describe('parseCardFile (lossless)', () => {
+  it('strictly validates bundled Agents and role recommendations while preserving workflows', () => {
+    const file = writeJson({
+      spec: 'chara_card_v3',
+      data: {
+        name: 'Agent World',
+        extensions: {
+          rp_terminal: {
+            agents: [textAgentForCard('Card Narrator')],
+            agent_role_recommendations: { 'classic.narrator': 'Card Narrator' },
+            workflows: [{ id: 'legacy-readable' }]
+          }
+        }
+      }
+    })
+    const parsed = parseCardFile(file)!
+    const rpt = parsed.card.data.extensions.rp_terminal!
+    expect(rpt.agents?.[0].name).toBe('Card Narrator')
+    expect(rpt.agent_role_recommendations).toEqual({ 'classic.narrator': 'Card Narrator' })
+    expect(rpt.workflows).toEqual([{ id: 'legacy-readable' }])
+  })
+
+  it('rejects malformed bundled Agents instead of silently retaining them through catchall', () => {
+    const file = writeJson({
+      name: 'Broken Agent World',
+      extensions: {
+        rp_terminal: {
+          agents: [{ format: 'rpt-agent', formatVersion: 1, name: 'Broken' }]
+        }
+      }
+    })
+    expect(parseCardFile(file)).toBeNull()
+  })
+
   it('preserves the full extensions object from a wrapped v3 card', () => {
     const file = writeJson({
       spec: 'chara_card_v3',
@@ -249,6 +282,14 @@ describe('parseCardFile (lossless)', () => {
   it('returns null for unreadable input', () => {
     expect(parseCardFile(path.join(os.tmpdir(), 'nope.json'))).toBeNull()
   })
+})
+
+const textAgentForCard = (name: string) => ({
+  format: 'rpt-agent',
+  formatVersion: 1,
+  name,
+  prompt: [{ role: 'system', content: 'Narrate.' }],
+  result: { mode: 'text' }
 })
 
 describe('buildWorldCardExport (S4) — round-trips with import', () => {

@@ -5,6 +5,12 @@ const en: Record<string, string> = {
   'nav.lorebook': 'Lorebook',
   'nav.assets': 'Assets',
   'characterImport.cartridgeWarning': 'Card panels not installed: {{error}}',
+  'characterImport.agentRenameTitle': 'Rename imported Agents',
+  'characterImport.agentRenameDetail':
+    'These Agent names are already in use. Choose a unique name for every imported Agent listed below.',
+  'characterImport.agentRenameLabel':
+    'Incoming “{{incoming}}” conflicts with existing “{{existing}}”',
+  'characterImport.agentRenameConfirm': 'Continue import',
   'assets.heading': 'Assets',
   'assets.selectWorld': 'Select a World first.',
   'assets.openFolder': 'Open folder',

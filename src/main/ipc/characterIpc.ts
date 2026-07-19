@@ -1,9 +1,82 @@
 import { IpcMain, BrowserWindow, dialog } from 'electron'
 import fs from 'fs'
+import crypto from 'crypto'
 import * as characterService from '../services/characterService'
 import * as settingsService from '../services/settingsService'
 import { CharacterImportText, getCharacterImportText } from './characterImportText'
 import { gate } from './ipcGuards'
+import type { CharacterImportDialogResult } from '../../shared/characterImport'
+
+interface PendingCharacterImport {
+  profileId: string
+  filePath: string
+  assetZipPath?: string
+  mode: 'import' | 'update' | 'replace'
+  characterId?: string
+}
+
+const pendingCharacterImports = new Map<string, PendingCharacterImport>()
+
+const applyPendingImport = (
+  pending: PendingCharacterImport,
+  agentRenames: Record<string, string> = {},
+  isContinuation = false
+): CharacterImportDialogResult => {
+  const options = { agentRenames }
+  const result =
+    pending.mode === 'update'
+      ? characterService.updateCharacterInPlace(
+          pending.profileId,
+          pending.characterId!,
+          pending.filePath,
+          pending.assetZipPath,
+          options
+        )
+      : pending.mode === 'replace'
+        ? characterService.replaceCharacterFromFile(
+            pending.profileId,
+            pending.characterId!,
+            pending.filePath,
+            pending.assetZipPath,
+            options
+          )
+        : characterService.importCharacterFromFile(
+            pending.profileId,
+            pending.filePath,
+            pending.assetZipPath,
+            options
+          )
+  return result
+    ? { status: 'imported', id: result.id, summary: result.summary }
+    : isContinuation
+      ? { status: 'invalid-renames', message: 'Agent renames are incomplete or already in use.' }
+      : { status: 'failed', message: 'The selected card could not be imported.' }
+}
+
+const inspectOrApplyPendingImport = (
+  pending: PendingCharacterImport
+): CharacterImportDialogResult => {
+  const sourceKey =
+    pending.mode === 'update' || pending.mode === 'replace'
+      ? pending.characterId
+      : 'new-card-inspection'
+  const inspection = characterService.characterAgentImportInspection(
+    pending.profileId,
+    pending.filePath,
+    sourceKey
+  )
+  if (!inspection) return { status: 'failed', message: 'The selected card could not be parsed.' }
+  if (inspection.collisions.length === 0) return applyPendingImport(pending)
+  const token = crypto.randomUUID()
+  pendingCharacterImports.set(token, pending)
+  return {
+    status: 'agent-collisions',
+    token,
+    incomingAgents: inspection.incomingAgents,
+    conflicts: inspection.collisions,
+    requiredRenames: inspection.requiredRenames
+  }
+}
 
 /** Optionally prompt for a World Card's asset zip (character/ + location/ images). Only offered for World
  *  Cards — plain cards can use the Asset Manager later. Returns the chosen path, or undefined if skipped.
@@ -89,12 +162,13 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
         if (response === 0) {
           // Update in place (keeps saves). Still offer the optional asset zip for World Cards.
           const assetZipPath = await maybePickAssets(win, summary.isWorldCard, text)
-          return characterService.updateCharacterInPlace(
+          return inspectOrApplyPendingImport({
             profileId,
-            target.id,
             filePath,
-            assetZipPath
-          )
+            assetZipPath,
+            mode: 'update',
+            characterId: target.id
+          })
         }
         if (response === 2) {
           // Defer deletion until the replacement has been fully imported and validated.
@@ -130,15 +204,36 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
         if (response !== 0) return null
       }
       const assetZipPath = await maybePickAssets(win, summary.isWorldCard, text)
-      return replaceTargetId
-        ? characterService.replaceCharacterFromFile(
-            profileId,
-            replaceTargetId,
-            filePath,
-            assetZipPath
-          )
-        : characterService.importCharacterFromFile(profileId, filePath, assetZipPath)
+      return inspectOrApplyPendingImport({
+        profileId,
+        filePath,
+        assetZipPath,
+        mode: replaceTargetId ? 'replace' : 'import',
+        characterId: replaceTargetId ?? undefined
+      })
     })
+  )
+
+  ipcMain.handle(
+    'confirm-character-import',
+    gate(
+      'confirm-character-import',
+      (_, token: string, agentRenames: Record<string, string>) => {
+        const pending = pendingCharacterImports.get(token)
+        if (!pending) {
+          return { status: 'failed', message: 'This import request has expired.' }
+        }
+        const result = applyPendingImport(pending, agentRenames, true)
+        if (result.status === 'imported') pendingCharacterImports.delete(token)
+        return result
+      }
+    )
+  )
+  ipcMain.handle(
+    'cancel-character-import',
+    gate('cancel-character-import', (_, token: string) => ({
+      ok: pendingCharacterImports.delete(token)
+    }))
   )
 
   // GATED: native save dialog writing a card JSON to an arbitrary host path.

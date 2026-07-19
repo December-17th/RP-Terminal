@@ -1,27 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { StoredRunRecord } from '../shared/workflow/trace'
 
-interface CharacterImportDialogResult {
-  id: string
-  summary: {
-    name: string
-    isWorldCard: boolean
-    regexScripts: number
-    loreEntries: number
-    scripts: number
-    cardCodeSurfaces: number
-    requiresTrust: boolean
-    uiWidgets: number
-    presets: number
-    lorebooks: number
-    workflows: number
-    tableTemplates: number
-    pluginsSkipped: number
-    assetsImported: number
-    cartridgeError?: string
-  }
-}
-
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -31,7 +10,14 @@ declare global {
         latestVersion: string
       } | null>
       openUpdateRelease: () => Promise<boolean>
-      importCharacterDialog: (profileId: string) => Promise<CharacterImportDialogResult | null>
+      importCharacterDialog: (
+        profileId: string
+      ) => Promise<import('../shared/characterImport').CharacterImportDialogResult | null>
+      confirmCharacterImport: (
+        token: string,
+        agentRenames: Record<string, string>
+      ) => Promise<import('../shared/characterImport').CharacterImportDialogResult>
+      cancelCharacterImport: (token: string) => Promise<{ ok: boolean }>
       getRuntimeScripts: (
         profileId: string,
         cardId: string | null,
