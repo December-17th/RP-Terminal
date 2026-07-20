@@ -20,6 +20,17 @@ export interface AgentSource {
   version: string
 }
 
+/**
+ * PROFILE-LOCAL per-Agent invocation config (execution-plan M5b). Held in a dedicated `agent_catalog`
+ * column, NEVER folded into the portable definition (baseline/customization/effective) — so it never
+ * exports into a `.rptagent` file (design §10 forbids user-local preset refs). Currently the single
+ * re-homed setting: the API-preset the triggered dispatch runs this Agent against
+ * (`InvocationOptions.apiPresetId`).
+ */
+export interface AgentInvocationConfig {
+  apiPresetId?: string
+}
+
 export interface AgentImportPackage {
   source: AgentSource
   agents: unknown[]
@@ -37,6 +48,8 @@ export interface CatalogAgent {
   effectiveHash: string
   customized: boolean
   enabled: boolean
+  /** Profile-local, non-exported invocation config (API-preset choice). */
+  invocationConfig: AgentInvocationConfig
   createdAt: string
   updatedAt: string
 }
@@ -91,6 +104,7 @@ interface CatalogRow {
   customization_ops: string
   effective_definition: string
   effective_hash: string
+  invocation_config: string
   enabled: number
   created_at: string
   updated_at: string
@@ -637,6 +651,23 @@ export class AgentCatalog {
     return this.require(id)
   }
 
+  /**
+   * Write the profile-local invocation config (execution-plan M5b). Stored in its own column, so it is
+   * invisible to `diffOps`/`effective`/`exportStandalone` and can never leak into a `.rptagent`. An
+   * empty/blank `apiPresetId` is normalized away so "cleared" stores `{}` rather than `{ apiPresetId: '' }`.
+   */
+  setInvocationConfig(id: string, config: AgentInvocationConfig): CatalogAgent {
+    const current = this.require(id)
+    const normalized: AgentInvocationConfig = {}
+    if (config.apiPresetId && config.apiPresetId.trim()) normalized.apiPresetId = config.apiPresetId.trim()
+    this.database
+      .prepare(
+        'UPDATE agent_catalog SET invocation_config = ?, updated_at = ? WHERE profile_id = ? AND id = ?'
+      )
+      .run(JSON.stringify(normalized), new Date().toISOString(), this.profileId, current.id)
+    return this.require(id)
+  }
+
   setEnabled(id: string, enabled: boolean): CatalogAgent {
     const current = this.require(id)
     if (!enabled) this.assertNotRoleBound(id)
@@ -808,8 +839,8 @@ export class AgentCatalog {
           `INSERT INTO agent_catalog
            (id, profile_id, name, name_key, source_kind, source_key, source_version, source_present,
             available_source_version, available_definition, baseline_definition, customization_ops,
-            effective_definition, effective_hash, enabled, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, '[]', ?, ?, ?, ?, ?)`
+            effective_definition, effective_hash, invocation_config, enabled, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, '[]', ?, ?, '{}', ?, ?, ?)`
         )
         .run(
           id,
@@ -927,9 +958,22 @@ const toAgent = (row: CatalogRow): CatalogAgent => ({
   effectiveHash: row.effective_hash,
   customized: (JSON.parse(row.customization_ops) as unknown[]).length > 0,
   enabled: row.enabled === 1,
+  invocationConfig: parseInvocationConfig(row.invocation_config),
   createdAt: row.created_at,
   updatedAt: row.updated_at
 })
+
+/** Parse the stored invocation-config JSON, tolerating a legacy NULL/blank column (pre-M5b rows read
+ *  through the `DEFAULT '{}'` migration, but a hand-null is coerced to an empty config). */
+const parseInvocationConfig = (raw: string | null | undefined): AgentInvocationConfig => {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as AgentInvocationConfig
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
 
 const isRoleCompatible = (role: AgentRole, definition: AgentDefinition): boolean => {
   if (definition.result.mode !== 'text') return false

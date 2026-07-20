@@ -2,12 +2,10 @@ import { z } from 'zod'
 import { stripThinking } from '../../../parsers/contentParser'
 import { ChatMessage } from '../../promptBuilder'
 import { GenContext } from '../../generation/types'
-import { getChatTableTemplateId } from '../../chatService'
 import { resolveYuzuMaxTokens } from '../../settingsService'
-import { getTableTemplateById } from '../../tableTemplateService'
-import { getProgress } from '../../tableProgressService'
 import { NodeImpl } from '../types'
 import { interpolate } from './messageNodes'
+import { trimProcessedContext } from '../../generation/classicStages'
 
 /**
  * Context-extractor nodes (extractor-nodes plan §2.3-2.5, + the decomposed-default additions):
@@ -235,44 +233,10 @@ const trimProcessedConfig = z.object({
   table: z.string().optional()
 })
 
-/** Resolve the committed progress pointer (the highest floor index safely trimmable) for a chat: the
- *  min last-processed floor over the in-scope template tables, treating a never-processed table as -1.
- *  Returns -1 (⇒ no trim) when there is no template, no tables, or a table has never been processed. */
-const resolveProcessedPointer = (gen: GenContext, only?: string): number => {
-  const templateId = getChatTableTemplateId(gen.profileId, gen.chatId)
-  const template = templateId ? getTableTemplateById(gen.profileId, templateId) : null
-  if (!template) return -1 // no table memory on this chat → nothing is "processed" → carry full history
-
-  const scopeNames = only
-    ? template.tables.filter((t) => t.sqlName === only).map((t) => t.sqlName)
-    : template.tables.map((t) => t.sqlName)
-  if (!scopeNames.length) return -1 // named table not in this template (or empty template) → no trim
-
-  const progress = getProgress(gen.profileId, gen.chatId)
-  // MIN over the scope; a table absent from the store has never been processed → -1 pins the min to -1.
-  let min = Infinity
-  for (const name of scopeNames) min = Math.min(min, progress[name] ?? -1)
-  return min === Infinity ? -1 : min
-}
-
-/** The trim itself, as a plain Context→Context service (Classic Narrator plan, Milestone 3): the
- *  direct Classic path runs this stage WITHOUT the graph, and `resolveProcessedPointer` + the slice
- *  are node-local logic that a second copy would drift from. `contextTrimProcessed.run` below is now
- *  a one-line delegation, so there is exactly ONE implementation for both paths. Returns the SAME
- *  object when nothing is trimmed (the identity the inventory test pins). */
-export const trimProcessedContext = (gen: GenContext, only?: string): GenContext => {
-  const pointer = resolveProcessedPointer(gen, only)
-  // pointer < 0 → nothing processed / no template / compaction not landed → carry the FULL history
-  // (fail-soft, ADR 0003). Also a no-op when there is nothing to drop.
-  if (pointer < 0 || gen.floors.length === 0) return gen
-
-  // Floors at index ≤ pointer are already folded into the tables → drop them; keep index > pointer.
-  // slice(pointer + 1) never trims PAST the pointer, and clamps naturally when the pointer is beyond
-  // the history (→ empty tail). lastFloor is re-pinned so every lastFloor-derived read stays coherent.
-  const kept = gen.floors.slice(pointer + 1)
-  if (kept.length === gen.floors.length) return gen // nothing to drop
-  return { ...gen, floors: kept, lastFloor: kept[kept.length - 1] }
-}
+// `trimProcessedContext` (+ its pointer resolver) moved to `generation/classicStages.ts` (execution-plan
+// M5b) and is imported above; the node run delegates to it so there is ONE implementation for both the
+// graph and the direct Classic path. Re-exported so node-internal importers keep resolving it from here.
+export { trimProcessedContext }
 
 export const contextTrimProcessed: NodeImpl = {
   type: 'context.trimProcessed',

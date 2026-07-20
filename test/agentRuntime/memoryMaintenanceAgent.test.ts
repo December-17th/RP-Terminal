@@ -36,14 +36,16 @@ const mockCore = vi.hoisted(() => ({
 }))
 vi.mock('../../src/main/services/nodes/builtin/memoryCore', () => mockCore)
 
-// Real memoryMaintainConfig (a zod schema used with safeParse); composeMaintainerMessages spied.
+// Real memoryMaintainConfig (a zod schema used with safeParse); composeMaintainerMessages spied. Both
+// now live in `services/memory/maintainerCompose` (execution-plan M5b relocation), so that is the mock
+// target the bridge resolves through.
 const composeSpy = vi.hoisted(() =>
   vi.fn(() => [
     { role: 'system' as const, content: 'SCOPE' },
     { role: 'user' as const, content: 'BODY' }
   ])
 )
-vi.mock('../../src/main/services/nodes/builtin/memoryNodes', async (orig) => {
+vi.mock('../../src/main/services/memory/maintainerCompose', async (orig) => {
   const real = await orig<Record<string, unknown>>()
   return { ...real, composeMaintainerMessages: composeSpy }
 })
@@ -117,12 +119,8 @@ describe('Memory Maintenance bridge — planDispatch due-gate', () => {
     expect(bridge().planDispatch(scope)).toBeNull()
   })
 
-  it('skips (null) when the mode is off — the user off switch is honored', () => {
-    withMaintainDoc('off')
-    mockCore.chatTemplate.mockReturnValue(template)
-    mockCore.dueTables.mockReturnValue(['summary'])
-    expect(bridge().planDispatch(scope)).toBeNull()
-  })
+  // M5b: the off-switch is now the Agent's `enabled` flag (the trigger runtime skips a disabled Agent
+  // before the bridge is consulted), so the bridge no longer reads the doc's `control.mode` off state.
 
   it('skips (null) when no table template is bound', () => {
     withMaintainDoc()
@@ -137,15 +135,10 @@ describe('Memory Maintenance bridge — planDispatch due-gate', () => {
     expect(bridge().planDispatch(scope)).toBeNull()
   })
 
-  it('dispatches with the live API preset when tables are due', () => {
+  it('returns an EMPTY plan (work to do, no preset) when tables are due — the API preset is re-homed', () => {
+    // M5b: the API-preset choice is no longer read off the doc; it rides the trigger request from the
+    // catalog invocation config. planDispatch is now purely the due-gate → {} means "there is work".
     withMaintainDoc('every_turn', 'preset-9')
-    mockCore.chatTemplate.mockReturnValue(template)
-    mockCore.dueTables.mockReturnValue(['summary'])
-    expect(bridge().planDispatch(scope)).toEqual({ apiPresetId: 'preset-9' })
-  })
-
-  it('dispatches with no preset override when the doc has none', () => {
-    withMaintainDoc('every_turn')
     mockCore.chatTemplate.mockReturnValue(template)
     mockCore.dueTables.mockReturnValue(['summary'])
     expect(bridge().planDispatch(scope)).toEqual({})
@@ -271,17 +264,21 @@ describe('createTriggerDispatch — memory gating + result handling', () => {
     expect(mem.applyResult).not.toHaveBeenCalled()
   })
 
-  it('due → runs with the API-preset option and applies the parsed result on success', async () => {
+  it('due → runs with the request API-preset option (from invocation config) and applies on success', async () => {
     const run = vi.fn<(r: InvocationRequest) => Promise<InvocationOutcome>>(() =>
       Promise.resolve(succeeded('<TableEdit></TableEdit>'))
     )
-    const mem = makeBridge({ apiPresetId: 'preset-9' })
+    // M5b: the API preset now comes from the request (the catalog's profile-local invocation config),
+    // NOT the bridge plan — the plan is the due-gate only.
+    const mem = makeBridge({})
     const dispatch = createTriggerDispatch({ run, memoryBridge: () => mem, warn: () => {} })
 
-    dispatch(memReq)
+    dispatch({ ...memReq, apiPresetId: 'preset-9' })
     await flush()
     expect(run).toHaveBeenCalledTimes(1)
     expect(run.mock.calls[0][0].options).toEqual({ apiPresetId: 'preset-9' })
+    // The apiPresetId is consumed into options and does NOT leak onto the identity request.
+    expect((run.mock.calls[0][0] as { apiPresetId?: string }).apiPresetId).toBeUndefined()
     expect(mem.applyResult).toHaveBeenCalledWith(
       { profileId: 'p', chatId: 'c1', floor: 7 },
       '<TableEdit></TableEdit>'

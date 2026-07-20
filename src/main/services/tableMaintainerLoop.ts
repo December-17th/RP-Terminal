@@ -1,7 +1,7 @@
 import type { GenContext } from './generation/types'
 import type { ChatMessage } from './promptBuilder'
 import { callModelResilient } from './generation/resilientCall'
-import { extractTagAll } from './nodes/builtin/parseNodes'
+import { extractTagAll } from '../../shared/memory/tagExtract'
 import { TableSqlError } from './tableSql'
 
 /**

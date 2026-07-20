@@ -164,4 +164,44 @@ describe('AgentCatalog', () => {
     ).toEqual(expect.objectContaining({ ok: false, format: 'legacy-workflow-pack' }))
     expect(catalog.list().some((agent) => agent.name === 'Imported')).toBe(true)
   })
+
+  describe('profile-local invocation config (M5b)', () => {
+    it('persists the API preset and reads it back, defaulting to empty', () => {
+      const catalog = new AgentCatalog('p')
+      const agent = catalog.create(textAgent('Configured'))
+      expect(agent.invocationConfig).toEqual({})
+
+      const updated = catalog.setInvocationConfig(agent.id, { apiPresetId: 'preset-42' })
+      expect(updated.invocationConfig).toEqual({ apiPresetId: 'preset-42' })
+      expect(catalog.get(agent.id)!.invocationConfig).toEqual({ apiPresetId: 'preset-42' })
+
+      // A blank/cleared preset normalizes back to an empty config (not { apiPresetId: '' }).
+      expect(catalog.setInvocationConfig(agent.id, { apiPresetId: '  ' }).invocationConfig).toEqual({})
+    })
+
+    it('NEVER exports the invocation config into a .rptagent — design §10 forbids user-local preset refs', () => {
+      const catalog = new AgentCatalog('p')
+      const agent = catalog.create(textAgent('Exported'))
+      catalog.setInvocationConfig(agent.id, { apiPresetId: 'secret-preset' })
+
+      const exported = catalog.exportStandalone(agent.id)
+      expect(exported).not.toContain('secret-preset')
+      expect(exported).not.toContain('apiPresetId')
+      expect(exported).not.toContain('invocation_config')
+      // The exported definition round-trips WITHOUT any invocation config surface.
+      const parsed = JSON.parse(exported) as Record<string, unknown>
+      expect(parsed).not.toHaveProperty('invocationConfig')
+      expect(parsed).not.toHaveProperty('apiPresetId')
+    })
+
+    it('keeps the invocation config out of the customization diff (an edit does not fold it in)', () => {
+      const catalog = new AgentCatalog('p')
+      const agent = catalog.create(textAgent('Edited'))
+      catalog.setInvocationConfig(agent.id, { apiPresetId: 'preset-7' })
+      // Editing an unrelated field must not mark the Agent as carrying the preset in its definition.
+      const edited = catalog.edit(agent.id, { ...agent.effective, prompt: [{ role: 'system', content: 'new' }] })
+      expect(edited.invocationConfig).toEqual({ apiPresetId: 'preset-7' })
+      expect(JSON.stringify(edited.effective)).not.toContain('preset-7')
+    })
+  })
 })

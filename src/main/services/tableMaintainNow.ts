@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { resolveEffectiveDoc } from './workflowService'
-import { memoryMaintainConfig } from './nodes/builtin/memoryNodes'
+import { memoryMaintainConfig } from './memory/maintainerCompose'
 
 /**
  * Resolve the chat's effective `memory.maintain` node config — the exact maintainer config an automatic

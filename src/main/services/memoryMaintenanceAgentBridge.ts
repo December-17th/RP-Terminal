@@ -6,8 +6,8 @@ import {
 import { buildGenContext } from './generation/genContext'
 import type { GenContext } from './generation/types'
 import { applyTableEdit, chatTemplate, dueTables } from './nodes/builtin/memoryCore'
-import { composeMaintainerMessages, memoryMaintainConfig } from './nodes/builtin/memoryNodes'
-import { extractTagAll } from './nodes/builtin/parseNodes'
+import { composeMaintainerMessages, memoryMaintainConfig } from './memory/maintainerCompose'
+import { extractTagAll } from '../../shared/memory/tagExtract'
 import { advanceProgress, getProgress } from './tableProgressService'
 import { getFloorCount, transcriptEpoch } from './floorService'
 import { getSettings } from './settingsService'
@@ -30,35 +30,35 @@ import type { z } from 'zod'
  * and the `transcriptEpoch` staleness fence. The three-way `<TableEdit>` discrimination is copied
  * verbatim from `memoryNodes.ts:216-260`.
  *
- * SETTINGS, read LIVE (M4 keeps the doc alive; M5 retires it): the chat's effective doc still owns the
- * maintain config, the mode (off switch), and the API-preset choice, so the bridge reads them from
- * `resolveEffectiveDoc` at dispatch/compose time. The Agent's own `everyNFloors: 3` trigger is the
- * cadence clock; the doc owns the rest until the settings UI is re-homed onto the Agent in M5.
+ * SETTINGS (execution-plan M5b re-home): the GROUP settings are now the Agent's — the off-switch is the
+ * catalog `enabled` flag (a disabled Agent never reaches this bridge), the cadence is the Agent's
+ * `trigger.onFloorCommitted.everyNFloors`, and the API-preset is the catalog's profile-local invocation
+ * config (read by the trigger dispatch, mapped to `InvocationOptions.apiPresetId`). This bridge reads the
+ * still-live doc ONLY for the maintainer SCAFFOLD/table/due content (the prompt itself), which retires
+ * with the doc in M5c. It no longer reads the doc's mode or API-preset.
  */
 
 type MemoryMaintainConfig = z.infer<typeof memoryMaintainConfig>
 
-interface LiveConfig {
-  /** control.mode.selected — 'every_turn' | 'async' | 'off' (default 'every_turn'). */
-  mode: string
-  cfg: MemoryMaintainConfig
-}
-
 /**
- * Read the chat's effective Table-memory settings from the still-live doc: the maintain node's config
- * (its scaffold messages, lastNFloors, max_rows, api_preset_id) and the mode node's selection. `null`
- * when the doc has no `memory.maintain` node or its config is malformed — meaning there is nothing to
- * run, exactly as `evaluateDocTriggers` would not have fired an absent node.
+ * Read the chat's effective Table-memory MAINTAINER config from the still-live doc: the maintain node's
+ * scaffold messages, lastNFloors, max_rows. `null` when the doc has no `memory.maintain` node or its
+ * config is malformed — meaning there is nothing to compose.
+ *
+ * SETTINGS RE-HOME (execution-plan M5b, task 2d): the bridge no longer reads the doc's GROUP settings —
+ * the off-switch (was `control.mode` == 'off') is now the Agent's `enabled` flag (the trigger runtime
+ * skips a disabled Agent, so a disabled Agent never reaches this bridge), and the API-preset choice is
+ * now the catalog's profile-local invocation config (read by the trigger dispatch, mapped to
+ * `InvocationOptions.apiPresetId`). Only the maintainer scaffold/table/due content still lives on the
+ * doc — that retires with the doc itself in M5c.
  */
-const resolveLive = (profileId: string, chatId: string): LiveConfig | null => {
+const resolveLive = (profileId: string, chatId: string): MemoryMaintainConfig | null => {
   const { doc } = resolveEffectiveDoc(profileId, chatId)
   const maintainNode = doc.nodes.find((node) => node.type === 'memory.maintain')
   if (!maintainNode) return null
   const parsed = memoryMaintainConfig.safeParse(maintainNode.config ?? {})
   if (!parsed.success) return null
-  const modeNode = doc.nodes.find((node) => node.type === 'control.mode')
-  const mode = (modeNode?.config as { selected?: string } | undefined)?.selected ?? 'every_turn'
-  return { mode, cfg: parsed.data }
+  return parsed.data
 }
 
 /** Compute the DUE tables for this floor exactly as the node does (memoryNodes.ts:171-173). */
@@ -98,16 +98,19 @@ const asPromptMessages = (
 setMemoryMaintenanceBridge({
   planDispatch(scope: MemoryMaintenanceScope) {
     try {
-      const live = resolveLive(scope.profileId, scope.chatId)
-      // Mode off, or no maintain node in the doc → nothing to do (preserve the user's off switch).
-      if (!live || live.mode === 'off') return null
+      const cfg = resolveLive(scope.profileId, scope.chatId)
+      // No maintain node in the doc / malformed config → nothing to compose. The off-switch is now the
+      // Agent's enabled flag (a disabled Agent never reaches this bridge), so mode is no longer read.
+      if (!cfg) return null
       const gen = buildGenContext(scope.profileId, scope.chatId, '')
       const template = chatTemplate(gen)
       if (!template) return null
       const { due } = computeDue(gen, template)
       // Internal due-gate: an empty due set SKIPS the model call entirely (memoryNodes.ts:174).
       if (!due.length) return null
-      return live.cfg.api_preset_id ? { apiPresetId: live.cfg.api_preset_id } : {}
+      // The API-preset choice now rides the trigger request from the catalog invocation config (M5b);
+      // the due-gate returns an EMPTY plan on success (a non-null "there is work to do" signal).
+      return {}
     } catch (cause) {
       log('error', `Memory Maintenance planDispatch failed — ${errorMessage(cause)}`)
       return null
@@ -116,8 +119,8 @@ setMemoryMaintenanceBridge({
 
   composePrompt(scope: MemoryMaintenanceScope) {
     try {
-      const live = resolveLive(scope.profileId, scope.chatId)
-      if (!live || live.mode === 'off') return undefined
+      const cfg = resolveLive(scope.profileId, scope.chatId)
+      if (!cfg) return undefined
       const gen = buildGenContext(scope.profileId, scope.chatId, '')
       const template = chatTemplate(gen)
       if (!template) return undefined
@@ -132,14 +135,14 @@ setMemoryMaintenanceBridge({
         .map((table) => table.displayName)
       // The SAME shared composer the preview IPC uses (memory-maintain-preview, tableMemoryIpc.ts:109),
       // plus the due-set write-scope directive the auto pass prepends (memoryNodes.ts:190).
-      const messages = composeMaintainerMessages(gen, template, live.cfg, {
+      const messages = composeMaintainerMessages(gen, template, cfg, {
         scopeDirective: writeScopeDirective(dueDisplay)
       })
       composed.set(scope.chatId, {
         floor: scope.floor,
         gen,
         template,
-        cfg: live.cfg,
+        cfg,
         due,
         currentFloor,
         composedEpoch

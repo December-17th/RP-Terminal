@@ -1,18 +1,14 @@
 import { z } from 'zod'
 import { GenContext } from '../../generation/types'
-import { getChatTableTemplateId } from '../../chatService'
-import { getTableTemplateById } from '../../tableTemplateService'
 import { executeReadQuery, TableSqlError } from '../../tableSql'
-import { readAllTables, TableRead } from '../../tableDbService'
-import { synthesizeEntries, renderWholeTable } from '../../tableExportService'
+import { renderWholeTable } from '../../tableExportService'
 import { getProgress, advanceProgress, resolveUpdateFrequency } from '../../tableProgressService'
 import { getSettings } from '../../settingsService'
-import { matchAcross } from '../../lorebookService'
 import { getFloorCount } from '../../floorService'
 import { TableDef } from '../../../types/tableTemplate'
-import { LorebookEntry } from '../../../types/character'
 import { NodeImpl, NodeRunFailure } from '../types'
 import { chatTemplate, applyTableEdit, renderTablesBlock } from './memoryCore'
+import { exportTableEntries } from '../../generation/classicStages'
 
 /** Parse a comma-separated sqlName list (trimmed, empties dropped). Accepts a string OR a string[]
  *  (the gate emits an array on its `tables` port; a config field is a comma string) — anything else
@@ -111,55 +107,10 @@ const exportConfig = z.object({
 
 type ExportConfig = z.infer<typeof exportConfig>
 
-/** The top World Info block text of the qualified entries: null-depth entries' content, joined like
- *  promptBuilder's top block (blank content dropped, '\n\n'-separated). For composed prompts that want
- *  a plain text rendering rather than the entry objects. */
-const exportBlock = (entries: LorebookEntry[]): string =>
-  entries
-    .filter((e) => e.insertion_depth == null)
-    .map((e) => e.content)
-    .filter(Boolean)
-    .join('\n\n')
-
-/** The export itself, as a plain service (Classic Narrator plan, Milestone 3): the direct Classic path
- *  runs this stage WITHOUT the graph, and the read→cap→synthesize→qualify sequence is node-local logic
- *  a second copy would drift from. `tableExport.run` below is now a one-line delegation, so there is
- *  exactly ONE implementation for both paths. */
-export const exportTableEntries = (
-  gen: GenContext,
-  cfg: ExportConfig
-): { entries: LorebookEntry[]; block: string } => {
-  const templateId = getChatTableTemplateId(gen.profileId, gen.chatId)
-  const template = templateId ? getTableTemplateById(gen.profileId, templateId) : null
-  // No table memory on this chat → project nothing (silent; export is a read).
-  if (!template) return { entries: [], block: '' }
-
-  // Optional narrowing to a subset of tables (by sqlName). Empty filter = all tables.
-  const only = (cfg.tables ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  let reads: TableRead[] = readAllTables(gen.profileId, gen.chatId, template)
-  if (only.length) {
-    const set = new Set(only)
-    reads = reads.filter((r) => set.has(r.sqlName))
-  }
-  // Row cap: keep the LAST N rows (newest-last) per table so long tables don't blow the prompt.
-  if (cfg.max_rows != null) {
-    const cap = cfg.max_rows
-    reads = reads.map((r) => (r.rows.length > cap ? { ...r, rows: r.rows.slice(-cap) } : r))
-  }
-
-  const synthesized = synthesizeEntries(template, reads)
-  // QUALIFY through the REAL matcher — constants survive, keyword entries fire only on a scan hit.
-  const qualified = matchAcross(
-    [{ name: 'table-export', entries: synthesized }],
-    gen.scanText,
-    Math.random,
-    gen.maxRecursion
-  )
-  return { entries: qualified, block: exportBlock(qualified) }
-}
+// `exportTableEntries` (+ its `exportBlock` helper) moved to `generation/classicStages.ts` (execution-plan
+// M5b) and is imported above; the node run delegates to it so there is ONE implementation for both the
+// graph and the direct Classic path. Re-exported so node-internal importers keep resolving it from here.
+export { exportTableEntries }
 
 export const tableExport: NodeImpl = {
   type: 'table.export',

@@ -64,6 +64,7 @@ CREATE TABLE agent_catalog (
   customization_ops TEXT NOT NULL DEFAULT '[]',
   effective_definition TEXT NOT NULL,
   effective_hash TEXT NOT NULL,
+  invocation_config TEXT NOT NULL DEFAULT '{}',
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,

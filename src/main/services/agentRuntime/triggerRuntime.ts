@@ -38,12 +38,21 @@ import { log } from '../logService'
  */
 
 export interface FloorCommitTriggerDeps {
-  /** The profile's catalog Agents (effective definitions), enabled flag included. */
-  catalogAgents(profileId: string): Array<{ name: string; enabled: boolean; trigger?: AgentTrigger }>
+  /** The profile's catalog Agents (effective definitions), enabled flag + the profile-local API-preset
+   *  choice (execution-plan M5b — sourced from the catalog invocation config, NOT the definition). */
+  catalogAgents(
+    profileId: string
+  ): Array<{ name: string; enabled: boolean; trigger?: AgentTrigger; apiPresetId?: string }>
   /** The floor of the Agent's most recent Run Record in this chat, or null when it never ran. */
   latestRunFloor(chatId: string, agentName: string): number | null
   /** Dispatch a triggered Invocation at the committed floor (the identity path). */
-  dispatch(request: { profileId: string; chatId: string; floor: number; agent: string }): void
+  dispatch(request: {
+    profileId: string
+    chatId: string
+    floor: number
+    agent: string
+    apiPresetId?: string
+  }): void
   /** Whether the template engine is ready (synchronous probe). */
   isReady(): boolean
   /** Resolves when the template engine finishes loading (awaited only on a not-ready first dispatch). */
@@ -63,7 +72,13 @@ export const createFloorCommitTriggerRuntime = (
       if (!agent.enabled || !cadence) continue
       const lastFire = deps.latestRunFloor(chatId, agent.name) ?? -1
       if (event.floor - lastFire < cadence.everyNFloors) continue
-      const request = { profileId, chatId, floor: event.floor, agent: agent.name }
+      const request = {
+        profileId,
+        chatId,
+        floor: event.floor,
+        agent: agent.name,
+        ...(agent.apiPresetId ? { apiPresetId: agent.apiPresetId } : {})
+      }
       if (deps.isReady()) {
         // Common case: the engine is ready, so dispatch synchronously — `run()` registers a
         // `blocksNextTurn` barrier synchronously, in time for the next turn to await it.
@@ -91,6 +106,9 @@ export interface TriggerDispatchRequest {
   chatId: string
   floor: number
   agent: string
+  /** The profile-local API-preset choice for this Agent (execution-plan M5b — from the catalog
+   *  invocation config, mapped to `InvocationOptions.apiPresetId` here). */
+  apiPresetId?: string
 }
 
 export interface TriggerDispatchDeps {
@@ -108,10 +126,11 @@ export interface TriggerDispatchDeps {
 
 /**
  * The per-Agent dispatch decision, factored out of the wiring so the M4 memory gating is unit-testable
- * without the live runtime. For the built-in Memory Maintenance Agent it consults the bridge's
- * INTERNAL due-gate BEFORE `run()` — a `null` plan means nothing is due (or mode is off), so the
- * dispatch is skipped and no empty Run Record forms — and applies the parsed `<TableEdit>` AFTER a
- * successful run. Every other Agent dispatches unchanged (fire-and-forget through the identity path).
+ * without the live runtime. The API-preset now rides the request from the catalog's profile-local
+ * invocation config (execution-plan M5b) — it is NO LONGER read off the memory doc. For the built-in
+ * Memory Maintenance Agent it still consults the bridge's INTERNAL due-gate BEFORE `run()` — a `null`
+ * plan means nothing is due, so the dispatch is skipped and no empty Run Record forms — and applies the
+ * parsed `<TableEdit>` AFTER a successful run. Every other Agent dispatches fire-and-forget.
  */
 export const createTriggerDispatch = (
   deps: TriggerDispatchDeps
@@ -121,19 +140,28 @@ export const createTriggerDispatch = (
     const isMemory =
       !!bridge &&
       normalizeAgentName(request.agent) === normalizeAgentName(MEMORY_MAINTENANCE_AGENT_NAME)
-    let options: InvocationOptions | undefined
+    // The re-homed per-Agent API-preset (profile-local invocation config), applied to every triggered
+    // Agent uniformly.
+    const options: InvocationOptions | undefined = request.apiPresetId
+      ? { apiPresetId: request.apiPresetId }
+      : undefined
     if (isMemory) {
       const plan = bridge!.planDispatch({
         profileId: request.profileId,
         chatId: request.chatId,
         floor: request.floor
       })
-      // Nothing due / mode off: SKIP entirely (no run, no provider call, no Run Record — plan §6
-      // risk 3's "no empty Run Records pile up").
+      // Nothing due: SKIP entirely (no run, no provider call, no Run Record — plan §6 risk 3's "no
+      // empty Run Records pile up").
       if (plan === null) return
-      if (plan.apiPresetId) options = { apiPresetId: plan.apiPresetId }
     }
-    const runRequest: InvocationRequest = options ? { ...request, options } : { ...request }
+    const identity = {
+      profileId: request.profileId,
+      chatId: request.chatId,
+      floor: request.floor,
+      agent: request.agent
+    }
+    const runRequest: InvocationRequest = options ? { ...identity, options } : { ...identity }
     // Fire-and-forget: the turn never waits here (a blocksNextTurn Agent gates the NEXT turn via the
     // barrier). `run()` never throws, but the outcome promise is observed so nothing goes unhandled.
     void deps
@@ -184,7 +212,10 @@ export const initializeFloorCommitTriggers = (): void => {
       catalogFor(profileId).list().map((agent) => ({
         name: agent.name,
         enabled: agent.enabled,
-        ...(agent.effective.trigger ? { trigger: agent.effective.trigger } : {})
+        ...(agent.effective.trigger ? { trigger: agent.effective.trigger } : {}),
+        ...(agent.invocationConfig.apiPresetId
+          ? { apiPresetId: agent.invocationConfig.apiPresetId }
+          : {})
       })),
     latestRunFloor: (chatId, agentName) => agentRunStore.latestRunFloor(chatId, agentName),
     dispatch,

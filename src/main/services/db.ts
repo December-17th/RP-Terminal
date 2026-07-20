@@ -70,6 +70,10 @@ CREATE TABLE IF NOT EXISTS agent_catalog (
   customization_ops TEXT NOT NULL DEFAULT '[]',
   effective_definition TEXT NOT NULL,
   effective_hash TEXT NOT NULL,
+  -- PROFILE-LOCAL per-Agent invocation config (execution-plan M5b). JSON { apiPresetId?: string }.
+  -- Deliberately SEPARATE from baseline/customization/effective so it NEVER travels into an exported
+  -- .rptagent (design section 10 forbids user-local preset refs): export serializes effective only.
+  invocation_config TEXT NOT NULL DEFAULT '{}',
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -515,6 +519,8 @@ export const getDb = (): Database.Database => {
   )
   addColumnIfMissing(db, 'agent_catalog', 'available_source_version', 'available_source_version TEXT')
   addColumnIfMissing(db, 'agent_catalog', 'available_definition', 'available_definition TEXT')
+  // M5b: the profile-local per-Agent invocation config (API-preset choice re-homed off the memory doc).
+  addColumnIfMissing(db, 'agent_catalog', 'invocation_config', "invocation_config TEXT NOT NULL DEFAULT '{}'")
   const agentNames = db
     .prepare('SELECT profile_id, id, name FROM agent_catalog WHERE name_key IS NULL')
     .all() as Array<{ profile_id: string; id: string; name: string }>

@@ -24,7 +24,7 @@ import {
 } from '../services/tableRefillService'
 import { buildGenContext } from '../services/generation/genContext'
 import { chatTemplate } from '../services/nodes/builtin/memoryCore'
-import { composeMaintainerMessages, memoryMaintainConfig } from '../services/nodes/builtin/memoryNodes'
+import { composeMaintainerMessages, memoryMaintainConfig } from '../services/memory/maintainerCompose'
 import { resolveMaintainConfig } from '../services/tableMaintainNow'
 import { gate } from './ipcGuards'
 

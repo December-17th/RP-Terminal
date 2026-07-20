@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { NodeImpl, NodeRunFailure } from '../types'
+import { extractTagAll, extractTagAllWithAttrs, type TagWithAttrs } from '../../../../shared/memory/tagExtract'
 
 /**
  * Generic text-extraction node — deliberately table-AGNOSTIC (it's the plot-preset `extractTags`
@@ -7,7 +8,14 @@ import { NodeImpl, NodeRunFailure } from '../types'
  * user regex), it emits the first match and all matches; a `found` Signal fires only when there's
  * at least one match, so a downstream branch can gate on "the reply carried this tag". Lives here in
  * a general `parseNodes.ts`, NOT with the table nodes.
+ *
+ * The PURE extractors (`extractTagAll` / `extractTagAllWithAttrs`) moved to
+ * `shared/memory/tagExtract.ts` (execution-plan M5b) so survivors outside the node system keep them
+ * after M5c deletes this file; re-exported here so the existing node-internal importers are unchanged.
  */
+
+export { extractTagAll, extractTagAllWithAttrs }
+export type { TagWithAttrs }
 
 const extractConfig = z.object({
   /** 'tag' matches `<name>…</name>`; 'regex' runs a user-supplied pattern. Default 'tag'. */
@@ -21,61 +29,6 @@ const extractConfig = z.object({
 })
 
 type ExtractConfig = z.infer<typeof extractConfig>
-
-/** Escape a tag name so it can be embedded literally into a RegExp. */
-const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-/**
- * PURE tag extractor (issue 07): every `<tag>…</tag>` inner content in `text` (non-greedy, dotall,
- * case-insensitive). Shared by the backfill service, which reuses the node's tag-mode logic without
- * copying it; the node's own `extractMatches` (with regex mode) delegates here for the tag path.
- * A blank tag or no match → [].
- */
-export const extractTagAll = (text: string, tag: string): string[] => {
-  const name = tag.trim()
-  if (!name) return []
-  const re = new RegExp(`<${escapeRegExp(name)}>([\\s\\S]*?)</${escapeRegExp(name)}>`, 'gi')
-  const out: string[] = []
-  for (const m of text.matchAll(re)) out.push(m[1] ?? '')
-  return out
-}
-
-/** One `<tag …attrs…>…</tag>` match: its parsed (lower-cased key) quoted attributes + inner content. */
-export interface TagWithAttrs {
-  attrs: Record<string, string>
-  content: string
-}
-
-/** Attribute scanner — QUOTED values only (double or single quotes); unquoted attributes are ignored.
- *  Keys are lower-cased so lookups are case-insensitive. */
-const ATTR_RE = /([A-Za-z_:][\w:.-]*)\s*=\s*"([^"]*)"|([A-Za-z_:][\w:.-]*)\s*=\s*'([^']*)'/g
-
-/**
- * PURE attribute-aware tag extractor (plot-recall WP6): every `<tag …attrs…>…</tag>` in `text`
- * (non-greedy, dotall, case-insensitive), returning each occurrence's parsed quoted attributes and
- * inner content. Powers `notes.maintain`'s `<MemoryNote section="…" mode="append|replace">…` parse.
- * A blank tag name, no match, or a malformed (never-closed) tag → [] (it never throws). Attributes may
- * appear in any order; only quoted values are captured; the attribute segment forbids `<`/`>` so a
- * missing `>` cannot swallow the rest of the document.
- */
-export const extractTagAllWithAttrs = (text: string, tag: string): TagWithAttrs[] => {
-  const name = tag.trim()
-  if (!name) return []
-  const re = new RegExp(
-    `<${escapeRegExp(name)}((?:\\s[^<>]*)?)>([\\s\\S]*?)</${escapeRegExp(name)}>`,
-    'gi'
-  )
-  const out: TagWithAttrs[] = []
-  for (const m of text.matchAll(re)) {
-    const attrs: Record<string, string> = {}
-    for (const a of (m[1] ?? '').matchAll(ATTR_RE)) {
-      const key = a[1] ?? a[3]
-      if (key) attrs[key.toLowerCase()] = a[2] ?? a[4] ?? ''
-    }
-    out.push({ attrs, content: m[2] ?? '' })
-  }
-  return out
-}
 
 /**
  * Pull matches out of `text`. In 'tag' mode: every `<tag>…</tag>` (non-greedy, dotall,
