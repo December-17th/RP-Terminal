@@ -792,20 +792,10 @@ export class AgentCatalog {
           )
         }
       }
-      const classic = this.get('Classic Narrator')
-      const yuzu = this.get('Yuzu Scene Director')
-      if (classic) this.bindRoleIfMissing('classic.narrator', classic.id)
-      if (yuzu) this.bindRoleIfMissing('yuzu.sceneDirector', yuzu.id)
+      // The `Classic Narrator` / `Yuzu Scene Director` decoys and their role auto-binding were removed in
+      // execution-plan M5a (D6). Only Memory Maintenance seeds now; roles are bound by cards/users, and a
+      // one-time DB migration (`migrateRemoveDecoyBuiltinAgents`) purges any legacy decoy rows + bindings.
     })()
-  }
-
-  private bindRoleIfMissing(role: AgentRole, id: string): void {
-    this.database
-      .prepare(
-        `INSERT OR IGNORE INTO agent_role_bindings (profile_id, role, agent_id, updated_at)
-         VALUES (?, ?, ?, ?)`
-      )
-      .run(this.profileId, role, id, new Date().toISOString())
   }
 
   private insert(definition: AgentDefinition, source: AgentSource, enabled: boolean): CatalogAgent {

@@ -62,6 +62,8 @@ vi.mock('../../src/main/services/chatService', () => ({
   getChatLorebookIds: () => null,
   getChatMode: () => 'explore',
   isYuzuMode: () => false,
+  // M5a single-path direct: the table-export stage always runs and reads this (null ⇒ empty).
+  getChatTableTemplateId: () => null,
   getChatWorkflowId: () => null,
   getCachedWorldInfo: () => null,
   setCachedWorldInfo: () => {},
@@ -166,56 +168,12 @@ describe('generate() — resolves the active workflow', () => {
     expect(capturedFloor).not.toBeNull()
   })
 
-  it('returns the floor from the doc-declared main-output node, not a hardcoded id', async () => {
-    // A hand-authored graph names its nodes freely — rename every default id and re-point edges.
-    const renamed = structuredClone(DEFAULT_GRAPH)
-    const rename = (id: string): string => `${id}-x`
-    renamed.nodes = renamed.nodes.map((n) => ({ ...n, id: rename(n.id) }))
-    renamed.edges = renamed.edges.map((e) => ({
-      from: { ...e.from, node: rename(e.from.node) },
-      to: { ...e.to, node: rename(e.to.node) }
-    }))
-    resolveEffectiveDoc.mockReturnValue({ id: 'custom-2', doc: renamed, warnings: [] })
-
-    const floor = await generate('profile1', 'chat1', 'open the door')
-    expect(floor).not.toBeNull()
-    expect(appendFloorCalled).toBe(true)
-  })
-
-  it('delivers the floor at the phase boundary — a slow post-phase LLM never blocks the turn', async () => {
-    vi.useRealTimers() // this test coordinates real promises, not timers
-    // Default graph + a post-phase side LLM (not an ancestor of write → post phase).
-    const doc = structuredClone(DEFAULT_GRAPH)
-    doc.nodes.push({ id: 'llm2', type: 'llm.sample', config: { stream: false } })
-    doc.edges.push(
-      { from: { node: 'ctx', port: 'gen' }, to: { node: 'llm2', port: 'gen' } },
-      { from: { node: 'assemble', port: 'sendMessages' }, to: { node: 'llm2', port: 'sendMessages' } },
-      { from: { node: 'assemble', port: 'params' }, to: { node: 'llm2', port: 'params' } }
-    )
-    resolveEffectiveDoc.mockReturnValue({ id: 'custom-3', doc, warnings: [] })
-
-    // Call 1 = the main sample (fast). Call 2 = the side job — held open by the test.
-    let releaseSideJob!: (v: string) => void
-    const sideJob = new Promise<string>((r) => {
-      releaseSideJob = r
-    })
-    streamProviderMock
-      .mockImplementationOnce(defaultStream)
-      .mockImplementationOnce(async () => sideJob)
-    notifyWorkflowTrace.mockClear()
-
-    // The player's floor arrives while the side job is still in flight…
-    const floor = await generate('profile1', 'chat1', 'open the door')
-    expect(floor).not.toBeNull()
-    expect(streamProviderMock).toHaveBeenCalledTimes(2) // side job started…
-    expect(notifyWorkflowTrace).not.toHaveBeenCalled() // …but the run hasn't settled
-
-    // …and the trace lands once the detached post phase completes.
-    releaseSideJob('background job result')
-    await vi.waitFor(() => expect(notifyWorkflowTrace).toHaveBeenCalledTimes(1))
-    const trace = notifyWorkflowTrace.mock.calls[0][0]
-    expect(trace.nodes.find((n: { nodeId: string }) => n.nodeId === 'llm2')?.status).toBe('ran')
-  })
+  // M5a note: two cases were removed here as a deliberate characterization update. `generate()` is now
+  // single-path direct (D4 hard cutover) and no longer runs the workflow engine, so the two behaviors
+  // those cases pinned — resolving a floor by an ARBITRARILY-renamed doc's main-output id, and running a
+  // POST-PHASE side LLM detached from the turn — are workflow-engine features `generate()` no longer
+  // exercises (the direct path addresses the fixed seeded spine and has no post phase). The engine and
+  // those behaviors are deleted wholesale in M5b.
 
   it('rejects a SECOND concurrent generate for the same chat (ST-faithful serialization)', async () => {
     vi.useRealTimers() // real promise coordination

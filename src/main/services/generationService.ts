@@ -16,8 +16,6 @@ import { listVarsOps, VarsOpRow } from './varsOpsService'
 import { floorStateForChat } from './agentRuntime/floorState'
 import { buildTurnContext } from './nodes/turnContext'
 import { builtinRegistry } from './nodes/builtin'
-import { runWorkflow } from './workflowEngine'
-import { isClassicDirectShape } from './generation/classicShape'
 import { runClassicTurnDirect } from './generation/classicTurn'
 import { resolveEffectiveDoc } from './workflowService'
 import { summarizeRun, derivePackIds } from '../../shared/workflow/trace'
@@ -183,39 +181,31 @@ export const generate = async (
     }
 
     const startedAt = Date.now()
-    // Classic Narrator plan, Milestone 3 — the TWO-PATH split. When the resolved effective doc's turn
-    // phase is structurally identical to the seeded default and no agent pack composed into it, the
-    // turn runs the DIRECT orchestration (eight service calls, no engine); anything else — a user-
-    // edited graph, a node hung off `write`, an open pack gate — keeps the unchanged `runWorkflow`
-    // path. Milestone 3 as written asked for `runWorkflow` to be removed unconditionally; Milestone 2's
-    // evidence showed that would silently drop real capability (see classicShape.ts's header), so the
-    // two paths coexist until Milestone 6 decides the workflow surface's fate.
+    // SINGLE-PATH CLASSIC (execution-plan M5a, decision D4 = hard cutover). Every Classic turn now takes
+    // the DIRECT orchestration (`runClassicTurnDirect` — eight service calls, no engine). The
+    // `classicShape` predicate and the `runWorkflow` fallback are GONE: edited docs and open pack gates
+    // route direct too, accepting the documented behavior change (a node the user wired downstream of
+    // `write`, or an open pack gate splicing extra nodes, no longer runs on a turn). The workflow engine
+    // still exists this half (deleted in M5b), but no Classic turn reaches it. Everything below — the
+    // detached trace / run-history / trigger chain, the responseReady race, the failure classification —
+    // is unchanged, and `runClassicTurnDirect` resolves the SAME RunResult shape the engine did.
     //
-    // Both resolve the SAME RunResult shape, so everything below this line — the detached trace /
-    // run-history / trigger chain, the responseReady race, and the failure classification — is shared,
-    // not duplicated, and Classic run history is recorded on both paths.
-    const direct = isClassicDirectShape(doc)
-    // blocksNextTurn barrier (execution-plan M3, decision D5 = fail-open, warned). A required Agent
-    // that declared blocksNextTurn holds the NEXT turn until it settles, so the turn's prompt reads the
-    // Agent's committed writes. Awaited HERE — before the direct path's `buildGenContext`/assembly
-    // reads variables, and on the seam that covers normal generate, regenerate, and swipe (all funnel
-    // through generate()). Policy is fail-open: a failed/cancelled required Agent releases the barrier
-    // and the turn proceeds; a Stop cancels the invocation, which also releases it. The workflow
-    // fallback path is DELIBERATELY not gated — it predates the feature and is removed in M5.
-    if (direct) {
-      const barrier = await waitForNextTurnBarriers(chatId)
-      if (barrier.status === 'failed') {
-        for (const failure of barrier.failures) {
-          log(
-            'error',
-            `blocksNextTurn Agent failed for chat ${chatId} — proceeding fail-open (D5): ${failure.code}: ${failure.message}`
-          )
-        }
+    // blocksNextTurn barrier (execution-plan M3, decision D5 = fail-open, warned). A required Agent that
+    // declared blocksNextTurn holds the NEXT turn until it settles, so the turn's prompt reads the
+    // Agent's committed writes. Awaited HERE — before `buildGenContext`/assembly reads variables, and on
+    // the seam that covers normal generate, regenerate, and swipe (all funnel through generate()).
+    // Policy is fail-open: a failed/cancelled required Agent releases the barrier and the turn proceeds;
+    // a Stop cancels the invocation, which also releases it.
+    const barrier = await waitForNextTurnBarriers(chatId)
+    if (barrier.status === 'failed') {
+      for (const failure of barrier.failures) {
+        log(
+          'error',
+          `blocksNextTurn Agent failed for chat ${chatId} — proceeding fail-open (D5): ${failure.code}: ${failure.message}`
+        )
       }
     }
-    const runPromise = direct
-      ? runClassicTurnDirect(doc, ctx)
-      : runWorkflow(doc, builtinRegistry, ctx)
+    const runPromise = runClassicTurnDirect(doc, ctx)
     // Broadcast the run trace when the FULL run settles (post phase included) — ok, aborted,
     // AND fatal — the trace panel is most useful when a turn just failed (spec §13).
     void runPromise

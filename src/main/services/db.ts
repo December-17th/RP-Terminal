@@ -418,6 +418,42 @@ export const migrateAgentPacksToVersioned = (database: Database.Database): void 
 }
 
 /**
+ * D6 / execution-plan M5a: purge the retired `Classic Narrator` and `Yuzu Scene Director` built-in
+ * decoy rows and their role bindings from every profile. Those two were seeded into `agent_catalog`
+ * (source_kind 'builtin') and role-bound, but generation never read them (Classic's prompt comes from
+ * `generation/classicTurn.ts`; Yuzu rides the same path via `vnMode`). A FRESH profile no longer seeds
+ * them; this migration removes the ORPHANED rows a pre-M5a profile already holds — the orphan case a
+ * fresh profile cannot reproduce (plan §6 risk 4).
+ *
+ * A MIGRATION-INTERNAL path that bypasses the `AgentCatalog` `SOURCE_BACKED` delete guard: plain DELETE
+ * statements, no table rebuild (the `agent_role_bindings` table, its `role` CHECK constraint, and the
+ * card role-recommendation schema are KEPT — a harmless constraint over an empty table; cards may still
+ * recommend roles). Bindings are deleted FIRST because their FK to `agent_catalog` is `ON DELETE
+ * RESTRICT`. Idempotent: no matching rows ⇒ a no-op. Runs across all profiles in one pass (the DB is
+ * shared; `agent_catalog` is profile-scoped by column, not by file).
+ */
+export const migrateRemoveDecoyBuiltinAgents = (database: Database.Database): void => {
+  const cols = database.prepare(`PRAGMA table_info(agent_catalog)`).all() as Array<{ name: string }>
+  if (cols.length === 0) return // no catalog table yet (a fresh DB before SCHEMA) — nothing to purge
+  // The retired built-in source keys (agentRuntime/catalog/builtins.ts RETIRED_BUILTIN_KEYS). Inlined
+  // here so the low-level db module keeps no dependency on the catalog module.
+  const RETIRED = "('classic-narrator','yuzu-scene-director')"
+  database.transaction(() => {
+    database.exec(
+      `DELETE FROM agent_role_bindings
+        WHERE agent_id IN (
+          SELECT id FROM agent_catalog
+           WHERE source_kind = 'builtin' AND source_key IN ${RETIRED}
+        )`
+    )
+    database.exec(
+      `DELETE FROM agent_catalog
+        WHERE source_kind = 'builtin' AND source_key IN ${RETIRED}`
+    )
+  })()
+}
+
+/**
  * One-time backfill for the `table_ops.target_table` column (WS1). Rows logged before the column
  * existed carry NULL; classify each with the write-path classifier and store the target table, or
  * `'*'` when the raw SQL no longer classifies (the always-replay defensive tail). Since only
@@ -493,6 +529,9 @@ export const getDb = (): Database.Database => {
   db.exec(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_catalog_name_key ON agent_catalog(profile_id, name_key)'
   )
+  // D6 / M5a: delete the retired Classic Narrator / Yuzu Scene Director decoy rows + role bindings from
+  // any pre-M5a profile (no-op on a fresh DB; no table rebuild — see migrateRemoveDecoyBuiltinAgents).
+  migrateRemoveDecoyBuiltinAgents(db)
   // Session-tier workflow override (node-workflow spec §12); null = inherit world/global/builtin.
   addColumnIfMissing(db, 'chats', 'workflow_id', 'workflow_id TEXT')
   // Project Yuzu (ADR 0008 §7): opt-in VN play mode for the session — ORTHOGONAL to `mode` (the FSM

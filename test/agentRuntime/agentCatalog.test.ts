@@ -43,12 +43,10 @@ afterEach(() => {
 })
 
 describe('AgentCatalog', () => {
-  it('seeds the built-in role defaults and enforces profile-wide names across sources', () => {
+  it('seeds no decoy role defaults (M5a/D6) and enforces profile-wide names across sources', () => {
     const catalog = new AgentCatalog('p')
-    expect(catalog.getRoleBindings()).toEqual({
-      'classic.narrator': 'Classic Narrator',
-      'yuzu.sceneDirector': 'Yuzu Scene Director'
-    })
+    // The Classic Narrator / Yuzu Scene Director decoys no longer seed, so no role is auto-bound.
+    expect(catalog.getRoleBindings()).toEqual({})
 
     catalog.create(textAgent('Shared Name'))
     expect(() =>
@@ -65,10 +63,7 @@ describe('AgentCatalog', () => {
     ).toEqual({ n: 0 })
 
     expect(getProfiles().map((item) => item.id)).toEqual(['p'])
-    expect(new AgentCatalog('p').getRoleBindings()).toEqual({
-      'classic.narrator': 'Classic Narrator',
-      'yuzu.sceneDirector': 'Yuzu Scene Director'
-    })
+    expect(new AgentCatalog('p').getRoleBindings()).toEqual({})
     const seededCount = new AgentCatalog('p').list().length
     getProfiles()
     expect(new AgentCatalog('p').list()).toHaveLength(seededCount)

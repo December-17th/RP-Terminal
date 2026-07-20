@@ -146,7 +146,6 @@ vi.mock('../../src/main/services/presetService', () => ({
 
 import { runWorkflow } from '../../src/main/services/workflowEngine'
 import { runClassicTurnDirect } from '../../src/main/services/generation/classicTurn'
-import { isClassicDirectShape } from '../../src/main/services/generation/classicShape'
 import { builtinRegistry } from '../../src/main/services/nodes/builtin'
 import { RunContext } from '../../src/main/services/nodes/types'
 import { BUILTIN_DEFAULT_DOC } from '../../src/main/services/workflowStore'
@@ -257,17 +256,12 @@ const bothPaths = async (
   return { workflow, direct }
 }
 
-// ── The gate: production really takes the direct path ─────────────────────────────────────────────
-
-describe('Milestone 3 — the production doc takes the direct path', () => {
-  it('the real BUILTIN_DEFAULT_DOC satisfies the shape predicate', () => {
-    // If this ever goes false, every user is silently back on runWorkflow and the whole milestone is
-    // inert in production. It is the single most important assertion in this file.
-    expect(isClassicDirectShape(BUILTIN_DEFAULT_DOC)).toBe(true)
-  })
-})
-
 // ── Parity: the bytes and the persisted state ─────────────────────────────────────────────────────
+//
+// M5a note: the `classicShape` predicate and the `runWorkflow` fallback are gone — generate() now always
+// takes the direct path. This suite survives as a PARITY pin: it still runs the SAME turn through the
+// (still-present, M5b-doomed) engine and through `runClassicTurnDirect` against identical mocked leaves,
+// proving the direct path reproduces the engine byte-for-byte before the engine is deleted.
 
 describe('Milestone 3 — provider-byte and persisted-floor parity', () => {
   it('sends the IDENTICAL ordered message array and sampler params', async () => {

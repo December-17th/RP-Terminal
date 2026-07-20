@@ -1,9 +1,10 @@
 // Classic Narrator first execution plan — Milestone 3, at the REAL entry point.
 //
 // classicDirectParity.test.ts proves the two orchestrations agree. This file proves `generate()`
-// actually ROUTES to the direct one for the production doc, that everything generate() owns around the
-// branch still works there (response delivery, run trace, run history, failure surfacing), and that a
-// mid-session edit which flips the path between turns changes nothing the user can see.
+// actually runs the direct one for the production doc, that everything generate() owns around it still
+// works there (response delivery, run trace, run history, failure surfacing), and — after M5a's hard
+// cutover (D4) removed the `classicShape` predicate and the `runWorkflow` fallback — that an edited doc
+// which USED to fall back now stays on the direct path and produces the same result.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getDefaultSettings } from '../../src/main/services/settingsService'
 import { getDefaultPreset } from '../../src/main/types/preset'
@@ -127,7 +128,6 @@ vi.mock('../../src/main/services/workflowEvents', () => ({
 vi.mock('../../src/main/services/runHistoryStore', () => ({ appendRun }))
 
 import { generate } from '../../src/main/services/generationService'
-import { isClassicDirectShape } from '../../src/main/services/generation/classicShape'
 
 /** The seeded production doc, exactly as a profile stores it. */
 const productionDoc = () => buildDefaultMemoryDocV2()
@@ -158,11 +158,6 @@ beforeEach(() => {
 })
 
 describe('generate() — the production doc routes to the direct orchestration', () => {
-  it('the doc under test is the one the predicate admits (the branch really is taken)', () => {
-    expect(isClassicDirectShape(productionDoc())).toBe(true)
-    expect(isClassicDirectShape(editedDoc())).toBe(false)
-  })
-
   it('returns the floor and persists it, with exactly one provider call', async () => {
     const floor = await generate('profile1', 'chat1', 'open the door')
 
@@ -215,14 +210,16 @@ describe('generate() — the production doc routes to the direct orchestration',
   })
 })
 
-describe('generate() — flipping paths mid-session changes nothing the user sees', () => {
-  it('an edit that demotes the doc onto runWorkflow produces the same floor and prompt', async () => {
-    // Turn 1 on the direct path…
+describe('generate() — an edited doc stays on the direct path (M5a hard cutover)', () => {
+  it('a mid-session edit that USED to fall back now produces the same floor and prompt directly', async () => {
+    // Turn 1 on the production doc…
     resolveEffectiveDoc.mockReturnValue({ id: 'wf-seeded', doc: productionDoc(), warnings: [] })
     const first = await generate('profile1', 'chat1', 'open the door')
     const firstPrompt = streamProviderMock.mock.calls[0][1]
 
-    // …the user opens the editor and adds a panel to a spine node. Turn 2 falls back to runWorkflow.
+    // …the user opens the editor and adds a panel to a spine node. Pre-M5a this demoted turn 2 onto
+    // runWorkflow; post-cutover it stays direct. The result is unchanged because the direct path
+    // ignores the panel (it emits none), so the same floor and prompt still come out.
     appended.length = 0
     streamProviderMock.mockClear()
     resolveEffectiveDoc.mockReturnValue({ id: 'wf-seeded', doc: editedDoc(), warnings: [] })
@@ -237,17 +234,17 @@ describe('generate() — flipping paths mid-session changes nothing the user see
 
   it('and flipping BACK is equally invisible', async () => {
     resolveEffectiveDoc.mockReturnValue({ id: 'wf-seeded', doc: editedDoc(), warnings: [] })
-    const viaWorkflow = await generate('profile1', 'chat1', 'open the door')
+    const viaEdited = await generate('profile1', 'chat1', 'open the door')
 
     appended.length = 0
     streamProviderMock.mockClear()
     resolveEffectiveDoc.mockReturnValue({ id: 'wf-seeded', doc: productionDoc(), warnings: [] })
-    const viaDirect = await generate('profile1', 'chat1', 'open the door')
+    const viaProduction = await generate('profile1', 'chat1', 'open the door')
 
-    expect(comparable(viaDirect!)).toEqual(comparable(viaWorkflow!))
+    expect(comparable(viaProduction!)).toEqual(comparable(viaEdited!))
   })
 
-  it('records run history on BOTH paths', async () => {
+  it('records run history for an edited doc too', async () => {
     resolveEffectiveDoc.mockReturnValue({ id: 'wf-seeded', doc: productionDoc(), warnings: [] })
     await generate('profile1', 'chat1', 'open the door')
     await vi.waitFor(() => expect(appendRun).toHaveBeenCalledTimes(1))
@@ -256,10 +253,10 @@ describe('generate() — flipping paths mid-session changes nothing the user see
     await generate('profile1', 'chat1', 'open the door')
     await vi.waitFor(() => expect(appendRun).toHaveBeenCalledTimes(2))
 
-    const [, direct] = appendRun.mock.calls[0] as [string, any]
-    const [, workflow] = appendRun.mock.calls[1] as [string, any]
-    expect(direct.origin).toBe(workflow.origin)
-    expect(direct.trace.nodes.length).toBe(workflow.trace.nodes.length)
-    expect(direct.trace.ok).toBe(workflow.trace.ok)
+    const [, production] = appendRun.mock.calls[0] as [string, any]
+    const [, edited] = appendRun.mock.calls[1] as [string, any]
+    expect(production.origin).toBe(edited.origin)
+    expect(production.trace.nodes.length).toBe(edited.trace.nodes.length)
+    expect(production.trace.ok).toBe(edited.trace.ok)
   })
 })

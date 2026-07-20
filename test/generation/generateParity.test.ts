@@ -94,6 +94,10 @@ vi.mock('../../src/main/services/chatService', () => ({
   getChatLorebookIds: () => null,
   getChatMode: () => 'explore',
   isYuzuMode: () => yuzuFlag.on,
+  // M5a: generate() is now single-path direct, which always runs the table-export stage — it reads
+  // getChatTableTemplateId (null ⇒ no table memory, empty projection). NARRATOR_SPINE_DOC has no
+  // table.export node, so the pre-M5a workflow path never reached this; the direct path always does.
+  getChatTableTemplateId: () => null,
   getChatWorkflowId: () => null,
   getCachedWorldInfo: () => null,
   setCachedWorldInfo: () => {},

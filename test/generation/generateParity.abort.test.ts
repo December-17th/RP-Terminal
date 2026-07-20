@@ -79,6 +79,8 @@ vi.mock('../../src/main/services/chatService', () => ({
   getChatLorebookIds: () => null,
   getChatMode: () => 'explore',
   isYuzuMode: () => false,
+  // M5a single-path direct: the table-export stage always runs and reads this (null ⇒ empty).
+  getChatTableTemplateId: () => null,
   getChatWorkflowId: () => null,
   getCachedWorldInfo: () => null,
   setCachedWorldInfo: () => {},
