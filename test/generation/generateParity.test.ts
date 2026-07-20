@@ -130,16 +130,20 @@ vi.mock('../../src/main/services/floorService', () => ({
     capturedSavedFloor = f
   }
 }))
-vi.mock('../../src/main/services/nodes/turnContext', async (orig) => {
-  const actual = await orig<typeof import('../../src/main/services/nodes/turnContext')>()
+// M5c-1: generate() no longer builds a node RunContext — the direct path threads userAction +
+// generationType straight into `buildGenContext`. Capture the forwarded pair there instead.
+vi.mock('../../src/main/services/generation/genContext', async (orig) => {
+  const actual = await orig<typeof import('../../src/main/services/generation/genContext')>()
   return {
     ...actual,
-    buildTurnContext: (args: Parameters<typeof actual.buildTurnContext>[0]) => {
-      generationCalls.push({
-        userAction: args.userAction,
-        generationType: args.generationType
-      })
-      return actual.buildTurnContext(args)
+    buildGenContext: (
+      profileId: string,
+      chatId: string,
+      userAction: string,
+      generationType?: string
+    ) => {
+      generationCalls.push({ userAction, generationType })
+      return actual.buildGenContext(profileId, chatId, userAction, generationType)
     }
   }
 })

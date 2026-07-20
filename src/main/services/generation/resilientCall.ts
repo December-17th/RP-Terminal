@@ -3,7 +3,7 @@ import { GenContext } from './types'
 import { ChatMessage } from '../promptBuilder'
 import { PresetParameters } from '../../types/preset'
 import { DeltaCallback, type ProviderDispatchVia } from '../apiService'
-import { NodeRunFailure } from '../nodes/types'
+import { NodeRunFailure } from './runContext'
 import { log } from '../logService'
 
 /**

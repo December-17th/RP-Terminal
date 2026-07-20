@@ -10,13 +10,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // is genuinely tested, and `composeMaintainerMessages` is spied so "the agent path routes through the
 // SAME shared composer the preview IPC uses" is a structural fact, not a re-implementation.
 
-const mockDoc = vi.hoisted(() => ({
-  nodes: [] as Array<{ type: string; config?: Record<string, unknown> }>
+// M5c-1 scaffold re-home: the bridge no longer reads the workflow doc via resolveEffectiveDoc — it
+// composes from the BUILT-IN default (`DEFAULT_MEMORY_MAINTAIN_CONFIG`, real here) overlaid with the
+// Agent's profile-local `invocation_config.maintain` override, read off the catalog. Drive the override
+// through a stubbed AgentCatalog; `db` is stubbed so no real sqlite loads.
+const overrideState = vi.hoisted(() => ({ value: {} as Record<string, unknown> }))
+vi.mock('../../src/main/services/agentRuntime/catalog', () => ({
+  AgentCatalog: class {
+    get() {
+      return { invocationConfig: { maintain: overrideState.value } }
+    }
+  }
 }))
-const mockWorkflow = vi.hoisted(() => ({
-  resolveEffectiveDoc: vi.fn(() => ({ id: 'doc1', doc: { nodes: mockDoc.nodes }, warnings: [] }))
-}))
-vi.mock('../../src/main/services/workflowService', () => mockWorkflow)
+vi.mock('../../src/main/services/db', () => ({ getDb: vi.fn(() => ({})) }))
 
 const mockGen = vi.hoisted(() => ({
   buildGenContext: vi.fn((profileId: string, chatId: string) => ({ profileId, chatId }))
@@ -34,7 +40,7 @@ const mockCore = vi.hoisted(() => ({
   dueTables: vi.fn<() => string[]>(() => []),
   applyTableEdit: vi.fn(() => ({ applied: 1, changes: 1 }))
 }))
-vi.mock('../../src/main/services/nodes/builtin/memoryCore', () => mockCore)
+vi.mock('../../src/main/services/memory/memoryCore', () => mockCore)
 
 // Real memoryMaintainConfig (a zod schema used with safeParse); composeMaintainerMessages spied. Both
 // now live in `services/memory/maintainerCompose` (execution-plan M5b relocation), so that is the mock
@@ -85,14 +91,11 @@ const bridge = () => {
   return b
 }
 
-const withMaintainDoc = (mode = 'every_turn', apiPresetId?: string): void => {
-  mockDoc.nodes = [
-    {
-      type: 'memory.maintain',
-      config: { messages: [{ role: 'system', content: 'x' }], ...(apiPresetId ? { api_preset_id: apiPresetId } : {}) }
-    },
-    { type: 'control.mode', config: { selected: mode } }
-  ]
+// The bridge's effective maintainer config is DEFAULT ⊕ invocation_config.maintain. Set a `messages`
+// override so the composer receives the same distinctive scaffold this suite asserts on (proving the
+// override overlays the built-in default), exactly where the doc's maintain-node config used to feed it.
+const withMaintainDoc = (): void => {
+  overrideState.value = { messages: [{ role: 'system', content: 'x' }] }
 }
 
 const scope = { profileId: 'p', chatId: 'c1', floor: 7 }
@@ -100,7 +103,7 @@ const scope = { profileId: 'p', chatId: 'c1', floor: 7 }
 beforeEach(() => {
   vi.clearAllMocks()
   epochState.value = 5
-  mockDoc.nodes = []
+  overrideState.value = {}
   mockCore.chatTemplate.mockReturnValue(null)
   mockCore.dueTables.mockReturnValue([])
   mockGen.buildGenContext.mockImplementation((p: string, c: string) => ({ profileId: p, chatId: c }))
@@ -114,13 +117,10 @@ beforeEach(() => {
 })
 
 describe('Memory Maintenance bridge — planDispatch due-gate', () => {
-  it('skips (null) when the doc has no memory.maintain node', () => {
-    mockDoc.nodes = [{ type: 'control.mode', config: { selected: 'every_turn' } }]
-    expect(bridge().planDispatch(scope)).toBeNull()
-  })
-
-  // M5b: the off-switch is now the Agent's `enabled` flag (the trigger runtime skips a disabled Agent
-  // before the bridge is consulted), so the bridge no longer reads the doc's `control.mode` off state.
+  // M5c-1: the maintainer config is now ALWAYS present (the built-in default ⊕ any override), so the
+  // bridge no longer skips for a missing doc/maintain-node — the null skips are template + due only. The
+  // off-switch is the Agent's `enabled` flag (the trigger runtime skips a disabled Agent before the
+  // bridge is consulted), so the bridge reads no doc `control.mode` off state either.
 
   it('skips (null) when no table template is bound', () => {
     withMaintainDoc()

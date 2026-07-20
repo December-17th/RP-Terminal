@@ -3,9 +3,9 @@ import { GenContext } from '../generation/types'
 import { ChatMessage } from '../promptBuilder'
 import { TableTemplate } from '../../types/tableTemplate'
 import { providerShape } from '../generation/providerShape'
-import { interpolate } from '../nodes/builtin/messageNodes'
-import { llmCallConfigSchema } from '../nodes/builtin/generationNodes'
-import { renderTablesBlock, recentTranscript, historyText } from '../nodes/builtin/memoryCore'
+import { interpolate } from '../promptInterpolate'
+import { llmCallConfigSchema } from '../generation/llmCallConfig'
+import { renderTablesBlock, recentTranscript, historyText } from './memoryCore'
 
 /**
  * The SQL-table-memory maintainer-prompt composer + its config schema, relocated OUT of the

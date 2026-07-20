@@ -14,17 +14,9 @@ import { applyEvent } from './generation/foldState'
 import { resetWriteLoopGuard } from './generation/varsWrite'
 import { listVarsOps, VarsOpRow } from './varsOpsService'
 import { floorStateForChat } from './agentRuntime/floorState'
-import { buildTurnContext } from './nodes/turnContext'
-import { builtinRegistry } from './nodes/builtin'
+import { RunContext } from './generation/runContext'
 import { runClassicTurnDirect } from './generation/classicTurn'
-import { resolveEffectiveDoc } from './workflowService'
-import { summarizeRun, derivePackIds } from '../../shared/workflow/trace'
-import { CompositionMeta } from '../../shared/workflow/compose'
-import { notifyWorkflowTrace } from './workflowEvents'
-import { appendRun } from './runHistoryStore'
-import { evaluateTriggers, evaluateDocTriggers } from './headlessRunService'
 import { waitForNextTurnBarriers } from './agentRuntime/InvocationRuntimeService'
-import { randomUUID } from 'crypto'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
@@ -138,58 +130,6 @@ export const generate = async (
   const controller = new AbortController()
   activeControllers.set(chatId, controller)
   try {
-    // Effective doc = the resolved narrator composed with every enabled agent pack (WP1.3). With no
-    // packs enabled this is byte-identical to the narrator (compose's zero-fragments identity).
-    const { id: workflowId, doc, warnings } = resolveEffectiveDoc(profileId, chatId)
-    // Compose warnings are visible, never silent (ADR 0002) — log them via the existing log() sink
-    // (no new UI here; the Agents workspace surfaces them later). Each names the pack + checkpoint.
-    for (const w of warnings)
-      log(
-        'error',
-        `agent-pack compose: pack "${w.packId}" attachment skipped — ${w.reason}${w.checkpoint ? ` at checkpoint "${w.checkpoint}"` : ''}`
-      )
-    // Panel headers for opt-in node output panels (spec D4): node id → its doc panel label.
-    const panelLabels: Record<string, string> = {}
-    for (const n of doc.nodes) if (n.panel?.show && n.panel.label) panelLabels[n.id] = n.panel.label
-    const ctx = buildTurnContext({
-      profileId,
-      chatId,
-      userAction,
-      generationType: genType,
-      workflowId,
-      signal: controller.signal,
-      onDelta,
-      panelLabels
-    })
-    // The turn result comes off the doc's main-output node — by ID FROM THE DOC, not a
-    // hardcoded 'write' (a hand-authored graph names its nodes differently). Validation
-    // guarantees exactly one.
-    const mainId = doc.nodes.find((n) => n.isMainOutput)!.id
-
-    // Deliver at the phase boundary (spec §5/D6): the engine fires onResponseReady right after
-    // the main-output node completes, handing over the outputs so far — the floor returns to the
-    // renderer THEN, and the post-response phase (side jobs, compaction) continues detached,
-    // fail-open. A §11-style background llm.sample can no longer hold the player's turn hostage.
-    let earlyFloor: FloorFile | null = null
-    let ready!: () => void
-    const responseReady = new Promise<void>((resolve) => {
-      ready = resolve
-    })
-    ctx.onResponseReady = (outputs) => {
-      earlyFloor = (outputs?.get(mainId)?.floor as FloorFile | undefined) ?? null
-      ready()
-    }
-
-    const startedAt = Date.now()
-    // SINGLE-PATH CLASSIC (execution-plan M5a, decision D4 = hard cutover). Every Classic turn now takes
-    // the DIRECT orchestration (`runClassicTurnDirect` — eight service calls, no engine). The
-    // `classicShape` predicate and the `runWorkflow` fallback are GONE: edited docs and open pack gates
-    // route direct too, accepting the documented behavior change (a node the user wired downstream of
-    // `write`, or an open pack gate splicing extra nodes, no longer runs on a turn). The workflow engine
-    // still exists this half (deleted in M5b), but no Classic turn reaches it. Everything below — the
-    // detached trace / run-history / trigger chain, the responseReady race, the failure classification —
-    // is unchanged, and `runClassicTurnDirect` resolves the SAME RunResult shape the engine did.
-    //
     // blocksNextTurn barrier (execution-plan M3, decision D5 = fail-open, warned). A required Agent that
     // declared blocksNextTurn holds the NEXT turn until it settles, so the turn's prompt reads the
     // Agent's committed writes. Awaited HERE — before `buildGenContext`/assembly reads variables, and on
@@ -205,69 +145,34 @@ export const generate = async (
         )
       }
     }
-    const runPromise = runClassicTurnDirect(doc, ctx)
-    // Broadcast the run trace when the FULL run settles (post phase included) — ok, aborted,
-    // AND fatal — the trace panel is most useful when a turn just failed (spec §13).
-    void runPromise
-      .then((res) => {
-        const trace = summarizeRun(doc, builtinRegistry.descriptors(), res, {
-          chatId,
-          workflowId,
-          startedAt,
-          durationMs: Date.now() - startedAt
-        })
-        // Live debug panel broadcast — UNCHANGED (WP2.3 does not touch this behavior).
-        notifyWorkflowTrace(trace)
-        // Persist the run to durable history for the phase-3 Runs timeline (WP2.3). SAME detached
-        // promise — never the turn's critical path (the floor already returned via onResponseReady).
-        // origin 'turn'; packIds derived from the effective doc's composition meta (which packs
-        // spliced), no trigger (turns aren't triggered). A persistence failure must NEVER break the
-        // run — swallow it (ADR 0003); the .catch below also covers it.
-        try {
-          const composition = (doc.meta?.composition as CompositionMeta | undefined) ?? undefined
-          appendRun(profileId, {
-            runId: randomUUID(),
-            seq: 0, // assigned by the store
-            origin: 'turn',
-            packIds: derivePackIds(trace, composition),
-            trace
-          })
-        } catch (err) {
-          log('error', `run-history persist (turn) failed — ${(err as Error)?.message || String(err)}`)
-        }
-      })
-      .catch((err) => log('error', `workflow trace failed — ${err?.message || String(err)}`))
-      // Turn-boundary trigger evaluation (agent-packs plan WP2.2; ADR 0004: a turn commit is one of
-      // the two evaluation moments). FIRE-AND-FORGET — chained on the DETACHED trace promise, never
-      // on the turn's critical path (the floor already returned via the onResponseReady race above),
-      // so a turn NEVER waits on headless work (ADR 0003). depth 0: a turn starts a fresh chain.
-      // evaluateTriggers is internally guarded per chat against reentrancy (a turn landing mid-chain
-      // skips — the chain re-evaluates on its own commit).
-      .then(() => evaluateTriggers(profileId, chatId, 'turn', 0))
-      .catch((err) => log('error', `headless trigger eval failed — ${err?.message || String(err)}`))
-      // One-canvas rebuild (WP6.1; ADR 0011): the DOC-DRIVEN trigger evaluation runs at the SAME turn
-      // commit boundary, alongside the pack path (both coexist until WP6.2/6.5). Also fire-and-forget,
-      // guarded per chat, depth-capped. A doc with no trigger.* nodes evaluates nothing.
-      .then(() => evaluateDocTriggers(profileId, chatId, 'turn', 0))
-      .catch((err) => log('error', `headless doc-trigger eval failed — ${err?.message || String(err)}`))
 
-    // Race: on the normal path onResponseReady fires first (before the post phase runs) and the
-    // floor returns immediately. Fatal / aborted / validation-rejected runs never fire it — the
-    // settled result arrives instead and is handled exactly as before.
-    const settled = await Promise.race([
-      responseReady.then(() => null),
-      runPromise as Promise<Awaited<typeof runPromise> | null>
-    ])
-    if (settled) {
-      // A pre-phase node failure (provider error, assembly throw, …) reaches us as a fatal
-      // RESULT, not a rejection — re-surface it (spec §10: unwired + failed ⇒ the turn aborts
-      // with the error surfaced). Without this a hard failure returns null and reads exactly
-      // like a user Stop: no renderer error banner, the action text silently lost.
-      if (settled.error) throw new Error(settled.error.message)
-      if (!settled.ok || settled.aborted) return null
-      return (settled.outputs.get(mainId)?.floor as FloorFile | undefined) ?? null
+    // SINGLE-PATH, WORKFLOW-FREE CLASSIC (execution-plan M5a single-path → M5c-1 workflow-free). Every
+    // Classic turn takes the DIRECT orchestration (`runClassicTurnDirect` — eight awaited service calls,
+    // no engine, no doc, no run-trace/run-history/trigger chain). The detached post-turn chain that fed
+    // the deleted workflow trace / run-history / doc-and-pack trigger evaluation is gone; memory
+    // maintenance now fires from the M3 floor-commit trigger runtime, not `evaluateDocTriggers`. The
+    // turn's evidence is the byte-accurate request/response logs + `gen.executionRecord` persisted by the
+    // stages themselves, unchanged.
+    //
+    // Two-signal abort split: the graph signal (`ctx.signal`, aborted only on abort-with-empty via
+    // `abortGraph`) vs the user's Stop (`ctx.modelSignal` = `controller.signal`, aborts the stream). The
+    // panel / node-state hooks are inert no-ops on this path. `runClassicTurnDirect` returns the persisted
+    // floor, `null` on abort, or throws on a fatal stage (surfaced by the IPC caller as a real error).
+    const graphController = new AbortController()
+    const ctx: RunContext = {
+      profileId,
+      chatId,
+      userAction,
+      generationType: genType,
+      signal: graphController.signal,
+      modelSignal: controller.signal,
+      abortGraph: () => graphController.abort(),
+      streamMain: (delta) => onDelta(delta),
+      emitPanel: () => {},
+      getNodeState: () => undefined,
+      setNodeState: () => {}
     }
-    return earlyFloor
+    return await runClassicTurnDirect(ctx)
   } finally {
     activeTurns.delete(chatId)
     activeControllers.delete(chatId)

@@ -5,15 +5,15 @@ import type { ProviderDispatchVia } from '../apiService'
 import { callModelResilient, ResilienceConfig, withPreset } from './resilientCall'
 import { providerShape } from './providerShape'
 import { harnessDispatchVia } from './harnessDispatch'
-import { NodeRunFailure, type RunContext } from '../nodes/types'
+import { NodeRunFailure, type RunContext } from './runContext'
 import {
   resolveDispatchMessages,
   resolveParams,
   applyDispatchTransforms,
   appendDispatchEntries,
   isPromptArtifact
-} from '../nodes/promptArtifact'
-import { getDispatchHooks } from '../nodes/dispatchHooks'
+} from './promptArtifact'
+import { getDispatchHooks } from './dispatchHooks'
 
 /**
  * The main narrator's ONE sampling call + the model-call core it shares, relocated out of the

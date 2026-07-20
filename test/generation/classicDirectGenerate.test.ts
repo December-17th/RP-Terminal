@@ -1,10 +1,12 @@
-// Classic Narrator first execution plan — Milestone 3, at the REAL entry point.
+// Classic Narrator first execution plan — Milestone 3, at the REAL entry point (byte-level regression net
+// for the direct path after M5c-1 removed the workflow surface from the turn).
 //
-// classicDirectParity.test.ts proves the two orchestrations agree. This file proves `generate()`
-// actually runs the direct one for the production doc, that everything generate() owns around it still
-// works there (response delivery, run trace, run history, failure surfacing), and — after M5a's hard
-// cutover (D4) removed the `classicShape` predicate and the `runWorkflow` fallback — that an edited doc
-// which USED to fall back now stays on the direct path and produces the same result.
+// This file proves `generate()` runs the direct orchestration: it persists the floor, makes exactly one
+// provider call with the provider-bound messages, surfaces a hard failure as a thrown error (never a
+// silent null), and streams deltas. The old run-trace / run-history assertions were removed with the
+// detached post-turn chain (M5c-1) — memory maintenance now fires from the M3 trigger runtime and the
+// turn keeps no workflow run record. The doc mock is inert (generate() no longer reads a doc); the
+// edited-vs-production cases now assert only that output is deterministic and doc-agnostic.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getDefaultSettings } from '../../src/main/services/settingsService'
 import { getDefaultPreset } from '../../src/main/types/preset'
@@ -167,32 +169,6 @@ describe('generate() — the production doc routes to the direct orchestration',
     expect(streamProviderMock).toHaveBeenCalledTimes(1)
   })
 
-  it('still broadcasts a run trace covering every node of the doc', async () => {
-    await generate('profile1', 'chat1', 'open the door')
-
-    await vi.waitFor(() => expect(notifyWorkflowTrace).toHaveBeenCalledTimes(1))
-    const trace = notifyWorkflowTrace.mock.calls[0][0]
-    expect(trace).toMatchObject({ chatId: 'chat1', workflowId: 'wf-seeded', ok: true })
-    expect(trace.nodes).toHaveLength(productionDoc().nodes.length)
-    expect(trace.nodes.find((n: any) => n.nodeType === 'llm.sample')?.status).toBe('ran')
-    // Output previews still never leak the Context bundle.
-    expect(trace.nodes.find((n: any) => n.nodeType === 'input.context')?.outputs).toBeUndefined()
-  })
-
-  it('STILL RECORDS RUN HISTORY — the direct path is not a hole in the timeline', async () => {
-    // A direct path emitting no traces would silently delete Classic run history. generate()'s
-    // existing appendRun block is reached unchanged because the direct path returns a full RunResult.
-    await generate('profile1', 'chat1', 'open the door')
-
-    await vi.waitFor(() => expect(appendRun).toHaveBeenCalled())
-    const [profileId, record] = appendRun.mock.calls[0] as [string, Record<string, unknown>]
-    expect(profileId).toBe('profile1')
-    expect(record.origin).toBe('turn')
-    expect(record.packIds).toEqual([])
-    expect((record.trace as any).chatId).toBe('chat1')
-    expect((record.trace as any).nodes.length).toBe(productionDoc().nodes.length)
-  })
-
   it('surfaces a hard provider failure as a thrown error, not a silent null', async () => {
     streamProviderMock.mockRejectedValue(new Error('provider exploded'))
 
@@ -242,21 +218,5 @@ describe('generate() — an edited doc stays on the direct path (M5a hard cutove
     const viaProduction = await generate('profile1', 'chat1', 'open the door')
 
     expect(comparable(viaProduction!)).toEqual(comparable(viaEdited!))
-  })
-
-  it('records run history for an edited doc too', async () => {
-    resolveEffectiveDoc.mockReturnValue({ id: 'wf-seeded', doc: productionDoc(), warnings: [] })
-    await generate('profile1', 'chat1', 'open the door')
-    await vi.waitFor(() => expect(appendRun).toHaveBeenCalledTimes(1))
-
-    resolveEffectiveDoc.mockReturnValue({ id: 'wf-seeded', doc: editedDoc(), warnings: [] })
-    await generate('profile1', 'chat1', 'open the door')
-    await vi.waitFor(() => expect(appendRun).toHaveBeenCalledTimes(2))
-
-    const [, production] = appendRun.mock.calls[0] as [string, any]
-    const [, edited] = appendRun.mock.calls[1] as [string, any]
-    expect(production.origin).toBe(edited.origin)
-    expect(production.trace.nodes.length).toBe(edited.trace.nodes.length)
-    expect(production.trace.ok).toBe(edited.trace.ok)
   })
 })

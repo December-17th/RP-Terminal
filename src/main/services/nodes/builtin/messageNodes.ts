@@ -1,6 +1,4 @@
 import { z } from 'zod'
-import { expandMacros } from '../../../../shared/macros'
-import { evalTemplate, buildTemplateContext } from '../../templateService'
 import { fitToBudget } from '../../promptBudget'
 import type { ChatMessage } from '../../promptTypes'
 import { providerShape } from '../../generation/providerShape'
@@ -20,12 +18,12 @@ import {
  * more authoring nodes in a later task; keep additions scoped to text.template for now.
  */
 
-/** Stringify a slot value for {{inN}} substitution: strings pass through, objects JSON-encode. */
-const slotText = (v: unknown): string =>
-  v == null ? '' : typeof v === 'string' ? v : typeof v === 'object' ? JSON.stringify(v) : String(v)
-
-/** The four generic upstream-value ports shared by the authoring nodes (plan decision 5). */
-const SLOT_NAMES = ['in1', 'in2', 'in3', 'in4'] as const
+// `interpolate` (+ its private slot helpers) moved to `services/promptInterpolate.ts` (execution-plan
+// M5c-1) so the memory maintainer composer shares it without importing the node engine. Re-imported +
+// re-exported here so this file's authoring nodes and the other node files keep resolving it from
+// `./messageNodes`.
+import { interpolate } from '../../promptInterpolate'
+export { interpolate }
 
 const slotsOf = (inputs: Record<string, unknown>): Record<string, unknown> => ({
   in1: inputs.in1,
@@ -33,49 +31,6 @@ const slotsOf = (inputs: Record<string, unknown>): Record<string, unknown> => ({
   in3: inputs.in3,
   in4: inputs.in4
 })
-
-/**
- * Interpolate an authored template (spec §8): context macros + EJS run FIRST (only when a
- * `gen` Context is wired — they need vars/globals), then the `{{in1}}`-`{{in4}}` upstream-slot
- * placeholders (plus `{{input}}` when the caller supplies an `input` slot — agent.llm's generic
- * payload port) are substituted LAST, so upstream text is always data, never executable
- * template code (an LLM output — or a table block carrying game state — containing `{{…}}`/
- * `<%…%>` must not run). `{{inN}}`/`{{input}}` are not known macros, so expandMacros leaves the
- * placeholders untouched.
- */
-export const interpolate = (
-  text: string,
-  slots: Record<string, unknown>,
-  gen?: GenContext
-): string => {
-  let out = text
-  if (gen) {
-    const charName = gen.card.data.name || 'Character'
-    out = expandMacros(out, {
-      user: gen.userName,
-      char: charName,
-      vars: gen.workingVars,
-      globals: gen.globals
-    })
-    out = evalTemplate(
-      out,
-      buildTemplateContext(gen.workingVars, {
-        globals: gen.globals as Record<string, any>,
-        enabled: gen.settings.templates?.enabled !== false,
-        constants: { userName: gen.userName, charName, assistantName: charName }
-      })
-    )
-  }
-  for (const name of SLOT_NAMES) {
-    out = out.split(`{{${name}}}`).join(slotText(slots[name]))
-  }
-  // agent.llm's dedicated `{{input}}` placeholder (agentNodes.ts): the generic `input` port payload,
-  // substituted here as DATA — last, same invariant as `{{inN}}` — so an upstream table block or an
-  // LLM output can never inject executable template code. Only substituted when the caller wired an
-  // `input` slot, so the other authoring nodes (text.template / prompt.messages) leave it literal.
-  if ('input' in slots) out = out.split('{{input}}').join(slotText(slots.input))
-  return out
-}
 
 const templateConfig = z.object({ template: z.string() })
 

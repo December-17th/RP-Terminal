@@ -29,6 +29,14 @@ export interface AgentSource {
  */
 export interface AgentInvocationConfig {
   apiPresetId?: string
+  /**
+   * Profile-local, non-exported override for the built-in Memory Maintenance Agent's maintainer config
+   * (execution-plan M5c-1, scaffold re-home part 2). The bridge computes its effective maintainer config
+   * as `DEFAULT_MEMORY_MAINTAIN_CONFIG ⊕ maintain`. Held here (not on the portable definition) so a
+   * legacy profile's customized scaffold/lastNFloors/max_rows survives after the workflow doc is deleted,
+   * without ever leaking into a `.rptagent`. Opaque JSON to the catalog (the bridge validates it).
+   */
+  maintain?: Record<string, unknown>
 }
 
 export interface AgentImportPackage {
@@ -660,6 +668,9 @@ export class AgentCatalog {
     const current = this.require(id)
     const normalized: AgentInvocationConfig = {}
     if (config.apiPresetId && config.apiPresetId.trim()) normalized.apiPresetId = config.apiPresetId.trim()
+    // The Memory Maintenance maintainer override (M5c-1): kept as-is when it carries any key; an empty
+    // object is normalized away so "no override" stores nothing.
+    if (config.maintain && Object.keys(config.maintain).length > 0) normalized.maintain = config.maintain
     this.database
       .prepare(
         'UPDATE agent_catalog SET invocation_config = ?, updated_at = ? WHERE profile_id = ? AND id = ?'

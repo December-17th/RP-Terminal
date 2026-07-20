@@ -1,18 +1,21 @@
 import type { PromptMessage } from '../../shared/agentRuntime'
 import {
   setMemoryMaintenanceBridge,
+  MEMORY_MAINTENANCE_AGENT_NAME,
   type MemoryMaintenanceScope
 } from './agentRuntime/memoryMaintenanceSlot'
+import { AgentCatalog } from './agentRuntime/catalog'
+import { getDb } from './db'
 import { buildGenContext } from './generation/genContext'
 import type { GenContext } from './generation/types'
-import { applyTableEdit, chatTemplate, dueTables } from './nodes/builtin/memoryCore'
+import { applyTableEdit, chatTemplate, dueTables } from './memory/memoryCore'
 import { composeMaintainerMessages, memoryMaintainConfig } from './memory/maintainerCompose'
+import { DEFAULT_MEMORY_MAINTAIN_CONFIG } from './memory/maintainerDefaults'
 import { extractTagAll } from '../../shared/memory/tagExtract'
 import { advanceProgress, getProgress } from './tableProgressService'
 import { getFloorCount, transcriptEpoch } from './floorService'
 import { getSettings } from './settingsService'
 import { writeScopeDirective } from './tableMaintenance'
-import { resolveEffectiveDoc } from './workflowService'
 import { log } from './logService'
 import type { TableTemplate } from '../types/tableTemplate'
 import type { z } from 'zod'
@@ -30,35 +33,34 @@ import type { z } from 'zod'
  * and the `transcriptEpoch` staleness fence. The three-way `<TableEdit>` discrimination is copied
  * verbatim from `memoryNodes.ts:216-260`.
  *
- * SETTINGS (execution-plan M5b re-home): the GROUP settings are now the Agent's — the off-switch is the
- * catalog `enabled` flag (a disabled Agent never reaches this bridge), the cadence is the Agent's
+ * SETTINGS (execution-plan M5b/M5c-1 re-home): the GROUP settings are now the Agent's — the off-switch is
+ * the catalog `enabled` flag (a disabled Agent never reaches this bridge), the cadence is the Agent's
  * `trigger.onFloorCommitted.everyNFloors`, and the API-preset is the catalog's profile-local invocation
- * config (read by the trigger dispatch, mapped to `InvocationOptions.apiPresetId`). This bridge reads the
- * still-live doc ONLY for the maintainer SCAFFOLD/table/due content (the prompt itself), which retires
- * with the doc in M5c. It no longer reads the doc's mode or API-preset.
+ * config. As of M5c-1 the maintainer SCAFFOLD config no longer comes from the workflow doc either: the
+ * bridge composes from the BUILT-IN default (`DEFAULT_MEMORY_MAINTAIN_CONFIG`) overlaid with the Agent's
+ * profile-local `invocation_config.maintain` override (seeded once from a legacy customized doc). The
+ * bridge no longer imports `resolveEffectiveDoc` — it touches no workflow surface.
  */
 
 type MemoryMaintainConfig = z.infer<typeof memoryMaintainConfig>
 
 /**
- * Read the chat's effective Table-memory MAINTAINER config from the still-live doc: the maintain node's
- * scaffold messages, lastNFloors, max_rows. `null` when the doc has no `memory.maintain` node or its
- * config is malformed — meaning there is nothing to compose.
- *
- * SETTINGS RE-HOME (execution-plan M5b, task 2d): the bridge no longer reads the doc's GROUP settings —
- * the off-switch (was `control.mode` == 'off') is now the Agent's `enabled` flag (the trigger runtime
- * skips a disabled Agent, so a disabled Agent never reaches this bridge), and the API-preset choice is
- * now the catalog's profile-local invocation config (read by the trigger dispatch, mapped to
- * `InvocationOptions.apiPresetId`). Only the maintainer scaffold/table/due content still lives on the
- * doc — that retires with the doc itself in M5c.
+ * The effective Table-memory MAINTAINER config (execution-plan M5c-1, scaffold re-home): the built-in
+ * default overlaid with the Agent's profile-local `invocation_config.maintain` override. `null` only when
+ * the merged config fails schema validation (a corrupt override) — the default alone is always valid, so
+ * this is effectively always present. Whether a run actually happens is decided downstream by the bound
+ * table template and the DUE set, NOT by this config.
  */
-const resolveLive = (profileId: string, chatId: string): MemoryMaintainConfig | null => {
-  const { doc } = resolveEffectiveDoc(profileId, chatId)
-  const maintainNode = doc.nodes.find((node) => node.type === 'memory.maintain')
-  if (!maintainNode) return null
-  const parsed = memoryMaintainConfig.safeParse(maintainNode.config ?? {})
-  if (!parsed.success) return null
-  return parsed.data
+const resolveMaintainConfig = (profileId: string): MemoryMaintainConfig | null => {
+  let override: Record<string, unknown> = {}
+  try {
+    const agent = new AgentCatalog(profileId, getDb()).get(MEMORY_MAINTENANCE_AGENT_NAME)
+    override = agent?.invocationConfig.maintain ?? {}
+  } catch (cause) {
+    log('error', `Memory Maintenance override read failed — ${errorMessage(cause)}`)
+  }
+  const parsed = memoryMaintainConfig.safeParse({ ...DEFAULT_MEMORY_MAINTAIN_CONFIG, ...override })
+  return parsed.success ? parsed.data : null
 }
 
 /** Compute the DUE tables for this floor exactly as the node does (memoryNodes.ts:171-173). */
@@ -98,7 +100,7 @@ const asPromptMessages = (
 setMemoryMaintenanceBridge({
   planDispatch(scope: MemoryMaintenanceScope) {
     try {
-      const cfg = resolveLive(scope.profileId, scope.chatId)
+      const cfg = resolveMaintainConfig(scope.profileId)
       // No maintain node in the doc / malformed config → nothing to compose. The off-switch is now the
       // Agent's enabled flag (a disabled Agent never reaches this bridge), so mode is no longer read.
       if (!cfg) return null
@@ -119,7 +121,7 @@ setMemoryMaintenanceBridge({
 
   composePrompt(scope: MemoryMaintenanceScope) {
     try {
-      const cfg = resolveLive(scope.profileId, scope.chatId)
+      const cfg = resolveMaintainConfig(scope.profileId)
       if (!cfg) return undefined
       const gen = buildGenContext(scope.profileId, scope.chatId, '')
       const template = chatTemplate(gen)

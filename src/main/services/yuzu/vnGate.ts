@@ -5,7 +5,7 @@ import { parseMvuCommands, type ParsedMvu } from '../../parsers/mvuParser'
 import type { ChatMessage as MainChatMessage } from '../promptBuilder'
 import type { PresetParameters } from '../../types/preset'
 import type { GenContext } from '../generation/types'
-import type { RunContext } from '../nodes/types'
+import type { RunContext } from '../generation/runContext'
 import type { YuzuGateOutcome, YuzuGateAttempt, YuzuGateTrace } from '../../types/chat'
 import {
   parseScene,

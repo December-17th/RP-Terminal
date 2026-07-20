@@ -4,13 +4,13 @@ import { getDefaultPreset } from '../../src/main/types/preset'
 import type { FloorFile } from '../../src/main/types/chat'
 import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from '../fixtures/narratorSpineDoc'
 
-// Proves generate() actually consumes workflowService.resolveEffectiveDoc (rather than a
-// hardcoded 'default' literal + a fixed doc) and threads the resolved id through to
-// buildTurnContext — the wiring Task 5 adds on top of Task 3 (resolver) + Task 4 (ctx arg).
-// (agent-packs plan WP1.3: the single doc-resolution call site moved from resolveWorkflowDoc to
-// resolveEffectiveDoc — the narrator composed with enabled packs. With no packs the effective doc
-// IS the narrator, so this test's behavior is unchanged; only the mocked collaborator name +
-// its return shape { id, doc, warnings } changed.)
+// Post-workflow entry shape (execution-plan M5c-1): `generate()` no longer resolves a workflow doc,
+// builds a node RunContext, broadcasts a run trace, or persists run history — the detached post-turn
+// chain is gone and the turn takes the direct orchestration. The doc-resolution / trace / run-history
+// cases those behaviors pinned were removed here as a deliberate characterization update; the
+// still-valid cases are the ST-faithful serialization + player-preempts-script behaviors `generate()`
+// still owns. The workflow module mocks below are now inert (generate() imports none of them) and are
+// retained only so the file's hoisted stubs load.
 
 const settings = (() => {
   const s = getDefaultSettings()
@@ -156,24 +156,18 @@ describe('generate() — resolves the active workflow', () => {
   })
   afterEach(() => vi.useRealTimers())
 
-  it('calls resolveEffectiveDoc(profileId, chatId) and threads its id into buildTurnContext', async () => {
+  it('runs the turn directly and persists the floor (no doc resolution)', async () => {
     const floor = await generate('profile1', 'chat1', 'open the door')
 
-    expect(resolveEffectiveDoc).toHaveBeenCalledWith('profile1', 'chat1')
-    expect(buildTurnContext).toHaveBeenCalledWith(
-      expect.objectContaining({ workflowId: 'custom-1' })
-    )
     expect(floor).not.toBeNull()
     expect(appendFloorCalled).toBe(true)
     expect(capturedFloor).not.toBeNull()
   })
 
-  // M5a note: two cases were removed here as a deliberate characterization update. `generate()` is now
-  // single-path direct (D4 hard cutover) and no longer runs the workflow engine, so the two behaviors
-  // those cases pinned — resolving a floor by an ARBITRARILY-renamed doc's main-output id, and running a
-  // POST-PHASE side LLM detached from the turn — are workflow-engine features `generate()` no longer
-  // exercises (the direct path addresses the fixed seeded spine and has no post phase). The engine and
-  // those behaviors are deleted wholesale in M5b.
+  // M5c-1 note: the doc-resolution / run-trace / run-history cases were removed as a deliberate
+  // characterization update. `generate()` no longer resolves a workflow doc, builds a node RunContext,
+  // broadcasts a trace, or persists run history — the detached post-turn chain is deleted and memory
+  // maintenance fires from the M3 trigger runtime instead. (M5a already removed two earlier cases.)
 
   it('rejects a SECOND concurrent generate for the same chat (ST-faithful serialization)', async () => {
     vi.useRealTimers() // real promise coordination
@@ -230,45 +224,4 @@ describe('generate() — resolves the active workflow', () => {
     await scriptTurn // the preempted turn settles without throwing
   })
 
-  it('broadcasts the run trace after the turn (spec §13 run/trace panel)', async () => {
-    notifyWorkflowTrace.mockClear()
-    await generate('profile1', 'chat1', 'open the door')
-
-    expect(notifyWorkflowTrace).toHaveBeenCalledTimes(1)
-    const trace = notifyWorkflowTrace.mock.calls[0][0]
-    expect(trace).toMatchObject({ chatId: 'chat1', workflowId: 'custom-1', ok: true })
-    // The default graph's nodes appear with real statuses; the LLM node ran.
-    const llm = trace.nodes.find((n: { nodeType: string }) => n.nodeType === 'llm.sample')
-    expect(llm?.status).toBe('ran')
-    // Output previews never leak the Context bundle.
-    const ctxNode = trace.nodes.find((n: { nodeType: string }) => n.nodeType === 'input.context')
-    expect(ctxNode?.outputs).toBeUndefined()
-  })
-
-  it('persists a run-history record with origin "turn" (WP2.3), packIds [] for a plain narrator', async () => {
-    vi.useRealTimers() // detached persist promise resolves on a microtask, not a timer
-    appendRun.mockClear()
-    await generate('profile1', 'chat1', 'open the door')
-
-    // Persist rides the same DETACHED promise as the trace broadcast — wait for it to settle.
-    await vi.waitFor(() => expect(appendRun).toHaveBeenCalled())
-    const [profileId, record] = appendRun.mock.calls[0] as [string, Record<string, unknown>]
-    expect(profileId).toBe('profile1')
-    expect(record.origin).toBe('turn')
-    // DEFAULT_GRAPH carries no composition meta → no pack nodes → []; no trigger on a turn.
-    expect(record.packIds).toEqual([])
-    expect(record.trigger).toBeUndefined()
-    expect((record.trace as { chatId: string }).chatId).toBe('chat1')
-  })
-
-  it('a run-history persist failure never breaks the turn (WP2.3 fail-safe)', async () => {
-    vi.useRealTimers()
-    appendRun.mockImplementation(() => {
-      throw new Error('db down')
-    })
-    // The floor still returns normally despite the persist throw (caught + logged on the detached path).
-    const floor = await generate('profile1', 'chat1', 'open the door')
-    expect(floor).not.toBeNull()
-    expect(appendFloorCalled).toBe(true)
-  })
 })

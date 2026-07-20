@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import { buildGenContext } from '../../generation/genContext'
 import { matchWorldInfo, assemblePrompt } from '../../generation/assemble'
 import { parseResponse, computeMetrics } from '../../generation/parseResponse'
@@ -147,35 +146,12 @@ export const promptAssemble: NodeImpl = {
  *  re-exported here so the side-call nodes keep importing it from this module. */
 export type { LlmCallConfig }
 
-/** The zod schema for LlmCallConfig — llm.sample uses it directly; agent.llm extends it. */
-export const llmCallConfigSchema = z.object({
-  stream: z.boolean().optional(),
-  api_preset_id: z.string().optional(),
-  retries: z.number().int().min(0).max(5).optional(),
-  retry_delay_s: z.number().min(0).max(300).optional(),
-  fallback_preset_id: z.string().optional(),
-  validator: z.enum(['none', 'non_empty', 'regex', 'json']).optional(),
-  validator_pattern: z.string().optional(),
-  validator_retries: z.number().int().min(0).max(3).optional(),
-  corrective_nudge: z.string().optional()
-})
-
-/** Assemble the `LlmCallConfig` from a parsed config carrying the `llmCallConfigSchema` fields — the
- *  conditional-spread the side-call nodes share. `agent.llm` and `memory.maintain` are side calls, so
- *  `stream` defaults to false here (a maintenance/agent reply must not pollute the player stream); pass
- *  a config whose `stream` is `true` to opt into streaming. Factored so the provider-call plumbing is
- *  built ONE way (both nodes already share `runLlmCall`). */
-export const buildLlmCallConfig = (cfg: z.infer<typeof llmCallConfigSchema>): LlmCallConfig => ({
-  stream: cfg.stream === true,
-  ...(cfg.api_preset_id ? { api_preset_id: cfg.api_preset_id } : {}),
-  ...(cfg.retries != null ? { retries: cfg.retries } : {}),
-  ...(cfg.retry_delay_s != null ? { retry_delay_s: cfg.retry_delay_s } : {}),
-  ...(cfg.fallback_preset_id ? { fallback_preset_id: cfg.fallback_preset_id } : {}),
-  ...(cfg.validator ? { validator: cfg.validator } : {}),
-  ...(cfg.validator_pattern ? { validator_pattern: cfg.validator_pattern } : {}),
-  ...(cfg.validator_retries != null ? { validator_retries: cfg.validator_retries } : {}),
-  ...(cfg.corrective_nudge ? { corrective_nudge: cfg.corrective_nudge } : {})
-})
+// `llmCallConfigSchema` + `buildLlmCallConfig` moved to `generation/llmCallConfig.ts` (execution-plan
+// M5c-1) so the memory maintainer composer shares them without importing the node engine. Imported +
+// re-exported here so this file's nodes (`configSchema` below) and `memoryNodes.ts` keep resolving them
+// from `./generationNodes`.
+import { llmCallConfigSchema, buildLlmCallConfig } from '../../generation/llmCallConfig'
+export { llmCallConfigSchema, buildLlmCallConfig }
 
 /** The preset's sampler params with an optional per-call temperature override — the shared params shape
  *  a side call builds (`agent.llm` / `memory.maintain`). No FSM cap: a side call is budgeted by its own

@@ -107,12 +107,9 @@ vi.mock('../../src/main/services/presetService', () => ({
 }))
 
 import { runClassicTurnDirect } from '../../src/main/services/generation/classicTurn'
-import { BUILTIN_DEFAULT_DOC } from '../../src/main/services/workflowStore'
-import { RunContext } from '../../src/main/services/nodes/types'
+import { RunContext } from '../../src/main/services/generation/runContext'
 import { VN_MODE_FRAMING } from '../../src/main/services/yuzu/vnPrompt'
 import { YUZU_DEFAULT_MAX_TOKENS } from '../../src/main/services/settingsService'
-
-const productionDoc = () => structuredClone(BUILTIN_DEFAULT_DOC)
 
 const turnCtx = (): RunContext => {
   const graph = new AbortController()
@@ -147,7 +144,7 @@ beforeEach(() => {
 describe('Yuzu vnMode rides the direct Classic path', () => {
   it('vnMode ON carries the VN overlay and the Yuzu token budget', async () => {
     yuzuState.on = true
-    await runClassicTurnDirect(productionDoc(), turnCtx())
+    await runClassicTurnDirect(turnCtx())
 
     expect(promptText()).toContain(VN_MODE_FRAMING)
     expect(params().max_tokens).toBe(YUZU_DEFAULT_MAX_TOKENS)
@@ -155,7 +152,7 @@ describe('Yuzu vnMode rides the direct Classic path', () => {
 
   it('vnMode OFF carries NEITHER — byte-classic assembly', async () => {
     yuzuState.on = false
-    await runClassicTurnDirect(productionDoc(), turnCtx())
+    await runClassicTurnDirect(turnCtx())
 
     expect(promptText()).not.toContain(VN_MODE_FRAMING)
     expect(params().max_tokens).toBe(getDefaultPreset().parameters.max_tokens)
