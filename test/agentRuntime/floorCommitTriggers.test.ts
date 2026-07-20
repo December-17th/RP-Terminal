@@ -111,7 +111,8 @@ describe('floor-commit cadence trigger', () => {
       whenReady: () => Promise.resolve()
     })
 
-    evaluate('p', 'chat', commitEvent(0))
+    // Floor 1 (a real turn) — floor 0 is the greeting commit and is skipped entirely (Finding 6).
+    evaluate('p', 'chat', commitEvent(1))
     expect(dispatched).toEqual(['Live'])
   })
 
@@ -128,13 +129,13 @@ describe('floor-commit cadence trigger', () => {
       whenReady: () => gate.promise
     })
 
-    evaluate('p', 'chat', commitEvent(0))
+    evaluate('p', 'chat', commitEvent(1))
     expect(dispatched).toEqual([]) // engine not ready — held, not fired open
 
     gate.resolve()
     await gate.promise
     await Promise.resolve()
-    expect(dispatched).toEqual([0])
+    expect(dispatched).toEqual([1])
   })
 })
 

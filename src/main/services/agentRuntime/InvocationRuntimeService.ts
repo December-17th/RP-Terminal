@@ -17,6 +17,9 @@ import {
   type InvocationSourceSnapshot,
   type NextTurnBarrierState
 } from './invocation'
+import { log } from '../logService'
+import { withMemoryMaintenanceApply } from './memoryMaintenanceApply'
+import { memoryMaintenanceBridge } from './memoryMaintenanceSlot'
 import { createAgentPromptPlanner } from './prompt'
 import { createProviderDispatch } from './provider'
 import { agentRunStore } from './runs/AgentRunStore'
@@ -227,7 +230,7 @@ export const initializeInvocationRuntime = (): InvocationRuntime => {
     providerDispatch: createProviderDispatch(),
     toolRegistry: createCompositeToolRegistry(createToolRegistry(), cardToolRegistry)
   })
-  runtime = createInvocationRuntime({
+  const base = createInvocationRuntime({
     catalog: {
       get(profileId, name) {
         let catalog = catalogs.get(profileId)
@@ -245,6 +248,13 @@ export const initializeInvocationRuntime = (): InvocationRuntime => {
     // renderer for a messages Agent, assembled messages for a preset Agent. Neither the Invocation
     // Runtime nor the Harness imports the engine or the assembler.
     promptRenderer: createAgentPromptPlanner()
+  })
+  // Final-review Finding 1: the built-in Memory Maintenance Agent's durable `<TableEdit>` apply is
+  // hooked HERE, at the single point every entry path (floor-commit trigger, manual Workspace run,
+  // card transport) funnels through, so a successful run applies exactly once regardless of caller.
+  runtime = withMemoryMaintenanceApply(base, {
+    bridge: () => memoryMaintenanceBridge(),
+    warn: (message) => log('error', message)
   })
   const active = runtime
   disposeBeforeDelete = agentRunStore.onBeforeDeleteFromFloor((chatId, fromFloor) => {

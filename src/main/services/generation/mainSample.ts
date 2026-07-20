@@ -23,9 +23,10 @@ import { getDispatchHooks } from './dispatchHooks'
  * byte-identical, and `generationNodes.ts` re-exports both so its node runs (and the other side-call
  * nodes that share `runLlmCall`) resolve them unchanged.
  *
- * Transitional imports THIS SLICE: `LlmCallConfig` (type-only, so no runtime cycle), the `promptArtifact`
- * dispatch helpers, and the `dispatchHooks` registry are still read from their current `nodes/` homes —
- * they are pure model/registry modules M5c relocates as part of its collapse (they define no NodeImpl).
+ * The `promptArtifact` dispatch helpers and the `dispatchHooks` registry now live beside this file in
+ * `generation/` (relocated out of the deleted `nodes/` homes as part of the M5c collapse); they are
+ * pure model/registry modules that define no NodeImpl. `LlmCallConfig` is defined here (type-only) so
+ * nothing cycles back through a node module.
  */
 
 /** The shared config surface for a model call: streaming + the chosen api_preset + the resilience

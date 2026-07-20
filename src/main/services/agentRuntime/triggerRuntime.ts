@@ -67,6 +67,11 @@ export const createFloorCommitTriggerRuntime = (
   deps: FloorCommitTriggerDeps
 ): ((profileId: string, chatId: string, event: CardFloorCommit) => void) => {
   return (profileId, chatId, event) => {
+    // Floor 0 is the greeting commit (chatService.appendFloor seeds `first_mes` as floor 0), NOT a
+    // player turn. Evaluating cadence here would fire an everyNFloors:1 Agent at chat creation — a
+    // boundary the deleted post-turn evaluation never had (final-review Finding 6). Skip it so cadence
+    // first fires on the floor its N implies, counting from the first real turn (floor 1 onward).
+    if (event.floor === 0) return
     for (const agent of deps.catalogAgents(profileId)) {
       const cadence = agent.trigger?.onFloorCommitted
       if (!agent.enabled || !cadence) continue
@@ -114,23 +119,24 @@ export interface TriggerDispatchRequest {
 export interface TriggerDispatchDeps {
   /** Dispatch through the identity path (production: `invocationRuntime().run`). */
   run(request: InvocationRequest): Promise<InvocationOutcome>
-  /** The Memory Maintenance bridge, or undefined (lightweight/test compositions). */
+  /** The Memory Maintenance bridge's DUE-GATE, or undefined (lightweight/test compositions). */
   memoryBridge(): {
     planDispatch(scope: { profileId: string; chatId: string; floor: number }): {
       apiPresetId?: string
     } | null
-    applyResult(scope: { profileId: string; chatId: string; floor: number }, result: unknown): void
   } | undefined
   warn(message: string): void
 }
 
 /**
  * The per-Agent dispatch decision, factored out of the wiring so the M4 memory gating is unit-testable
- * without the live runtime. The API-preset now rides the request from the catalog's profile-local
- * invocation config (execution-plan M5b) — it is NO LONGER read off the memory doc. For the built-in
- * Memory Maintenance Agent it still consults the bridge's INTERNAL due-gate BEFORE `run()` — a `null`
- * plan means nothing is due, so the dispatch is skipped and no empty Run Record forms — and applies the
- * parsed `<TableEdit>` AFTER a successful run. Every other Agent dispatches fire-and-forget.
+ * without the live runtime. The API-preset rides the request from the catalog's profile-local
+ * invocation config (execution-plan M5b). For the built-in Memory Maintenance Agent it consults the
+ * bridge's INTERNAL due-gate BEFORE `run()` — a `null` plan means nothing is due, so the dispatch is
+ * skipped and no empty Run Record forms. The durable `<TableEdit>` apply is NO LONGER done here: it is
+ * the single-owner completion seam at the composition root (`withMemoryMaintenanceApply`, final-review
+ * Finding 1), so it runs for ANY successful invocation and this path never double-applies. Every Agent
+ * dispatches fire-and-forget.
  */
 export const createTriggerDispatch = (
   deps: TriggerDispatchDeps
@@ -163,24 +169,10 @@ export const createTriggerDispatch = (
     }
     const runRequest: InvocationRequest = options ? { ...identity, options } : { ...identity }
     // Fire-and-forget: the turn never waits here (a blocksNextTurn Agent gates the NEXT turn via the
-    // barrier). `run()` never throws, but the outcome promise is observed so nothing goes unhandled.
+    // barrier). `run()` never throws, but the outcome promise is observed so nothing goes unhandled;
+    // a successful memory run applies via the composition-root seam, not here.
     void deps
       .run(runRequest)
-      .then((outcome) => {
-        if (isMemory && outcome.status === 'succeeded') {
-          try {
-            // The Agent's own writes are NONE; the durable table write happens HERE, after the run,
-            // through the bridge's `applyTableEdit` — bracketed by the epoch fence it captured at
-            // compose time. A moved transcript drops the batch inside the bridge.
-            bridge!.applyResult(
-              { profileId: request.profileId, chatId: request.chatId, floor: request.floor },
-              outcome.result
-            )
-          } catch (cause) {
-            deps.warn(`Memory Maintenance apply failed — ${errorMessage(cause)}`)
-          }
-        }
-      })
       .catch((cause: unknown) => deps.warn(`triggered Agent run failed — ${errorMessage(cause)}`))
   }
 }

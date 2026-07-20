@@ -333,12 +333,10 @@ export const createInvocationRuntime = ({
     return map
   }
 
-  const startBarrier = (
-    item: QueuedInvocation,
-    required: boolean,
-    blocksNextTurn: boolean
-  ): Barrier | undefined => {
-    if (!blocksNextTurn) return undefined
+  // Finding 5: a blocksNextTurn barrier is registered at ENQUEUE (see `enqueue`), not when `runQueued`
+  // starts, so an invocation still QUEUED behind its lane predecessor is already visible to the next
+  // turn's barrier check. Callers gate on blocksNextTurn before calling this.
+  const startBarrier = (item: QueuedInvocation, required: boolean): void => {
     let settle!: () => void
     const barrier: Barrier = {
       invocationId: item.invocationId,
@@ -349,7 +347,6 @@ export const createInvocationRuntime = ({
       settle: () => settle()
     }
     barrierMap(item.request.chatId).set(item.invocationId, barrier)
-    return barrier
   }
 
   const finishBarrier = (
@@ -377,7 +374,6 @@ export const createInvocationRuntime = ({
           reservedRetry: boolean
         }
       | undefined
-    let barrier: Barrier | undefined
     let required: boolean = INVOCATION_DEFAULTS.required
     const disposeRequestSignal = linkSignal(item.request.signal, item.controller)
     try {
@@ -405,11 +401,8 @@ export const createInvocationRuntime = ({
           item.request.options?.required ??
           resolvedAgent.effective.defaults.required ??
           INVOCATION_DEFAULTS.required
-        barrier ??= startBarrier(
-          item,
-          required,
-          item.request.options?.blocksNextTurn ?? resolvedAgent.effective.defaults.blocksNextTurn
-        )
+        // The blocksNextTurn barrier was already registered at enqueue time (Finding 5); nothing to
+        // create here. `finishBarrier` (via pumpLane) settles/clears it on every terminal path.
 
         let source: InvocationSourceSnapshot
         try {
@@ -774,6 +767,23 @@ export const createInvocationRuntime = ({
     while (index < queue.length && queue[index].request.floor <= request.floor) index += 1
     queue.splice(index, 0, item)
     lanes.set(lane, queue)
+    // Finding 5: register the blocksNextTurn barrier NOW, while the invocation may still be queued
+    // behind a lane predecessor, so the next turn's barrier check already sees it (not only once
+    // `runQueued` starts). The effective flags come from the invocation options, else the resolved
+    // Agent's defaults — the same resolution `runQueued` uses. Cancellation-while-queued, completion,
+    // and floor deletion all clear it on their existing terminal paths.
+    const resolvedForBarrier = catalog.get(request.profileId, request.agent)
+    const blocksNextTurn =
+      request.options?.blocksNextTurn ??
+      resolvedForBarrier?.effective.defaults.blocksNextTurn ??
+      false
+    if (blocksNextTurn) {
+      const required =
+        request.options?.required ??
+        resolvedForBarrier?.effective.defaults.required ??
+        INVOCATION_DEFAULTS.required
+      startBarrier(item, required)
+    }
     pumpLane(lane)
     return promise
   }
@@ -932,9 +942,17 @@ export const createInvocationRuntime = ({
       return false
     },
     async waitForNextTurnBarriers(chatId) {
-      const current = [...(barriers.get(chatId)?.values() ?? [])]
-      await Promise.all(current.map((barrier) => barrier.settled))
-      return getNextTurnBarrier(chatId)
+      const map = barriers.get(chatId)
+      const observed = [...(map?.values() ?? [])]
+      await Promise.all(observed.map((barrier) => barrier.settled))
+      const state = getNextTurnBarrier(chatId)
+      // Finding 2: a failed required barrier has now been observed/released by this turn (the ONE D5
+      // fail-open warning is logged by generationService against `state`). Clear it so later turns in
+      // the same chat don't re-observe the same failure — and re-log it — forever. A still-pending
+      // barrier (never in `state.failures`) is left untouched; floor deletion still clears via
+      // cancelFloors.
+      if (map) for (const barrier of observed) if (barrier.failure) map.delete(barrier.invocationId)
+      return state
     },
     shutdown() {
       if (shutDown) return

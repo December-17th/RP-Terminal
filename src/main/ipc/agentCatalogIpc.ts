@@ -9,7 +9,7 @@ import type {
   AgentUpgradePreview,
   AgentUpgradeResolution
 } from '../../shared/agentRuntime'
-import { AGENT_CATALOG_CHANNELS } from '../../shared/agentRuntime'
+import { AGENT_CATALOG_CHANNELS, normalizeAgentName } from '../../shared/agentRuntime'
 import {
   AgentCatalog,
   syncAgentFolder,
@@ -17,6 +17,10 @@ import {
   type CatalogAgent
 } from '../services/agentRuntime/catalog'
 import { invocationRuntime } from '../services/agentRuntime/InvocationRuntimeService'
+import {
+  MEMORY_MAINTENANCE_AGENT_NAME,
+  memoryMaintenanceBridge
+} from '../services/agentRuntime/memoryMaintenanceSlot'
 import { getAllFloors } from '../services/floorService'
 import { resolveProfileId } from '../services/sessionDbService'
 import { gate } from './ipcGuards'
@@ -364,6 +368,15 @@ export const registerAgentCatalogIpc = (ipcMain: IpcMain): void => {
         const floor = getAllFloors(profileId, chatId).at(-1)?.floor
         if (floor === undefined) {
           return { ok: false, error: 'No committed Invocation Floor exists' }
+        }
+        // Final-review Finding 1: a manual "Run now" of Memory Maintenance respects the SAME due-gate
+        // the trigger path uses, so nothing-due never bills a pointless provider call. `null` from the
+        // bridge means no tables are due — surface a distinct "nothing due" outcome, not a fake success.
+        if (normalizeAgentName(agent) === normalizeAgentName(MEMORY_MAINTENANCE_AGENT_NAME)) {
+          const bridge = memoryMaintenanceBridge()
+          if (bridge && bridge.planDispatch({ profileId, chatId, floor }) === null) {
+            return { ok: true, status: 'skipped' }
+          }
         }
         try {
           const outcome = await invocationRuntime().run({

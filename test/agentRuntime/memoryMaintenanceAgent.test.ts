@@ -83,7 +83,13 @@ import {
   createTriggerDispatch,
   type TriggerDispatchRequest
 } from '../../src/main/services/agentRuntime/triggerRuntime'
-import type { InvocationOutcome, InvocationRequest } from '../../src/main/services/agentRuntime/invocation'
+import { withMemoryMaintenanceApply } from '../../src/main/services/agentRuntime/memoryMaintenanceApply'
+import type {
+  InvocationOutcome,
+  InvocationPromise,
+  InvocationRequest,
+  InvocationRuntime
+} from '../../src/main/services/agentRuntime/invocation'
 
 const bridge = () => {
   const b = memoryMaintenanceBridge()
@@ -264,7 +270,7 @@ describe('createTriggerDispatch — memory gating + result handling', () => {
     expect(mem.applyResult).not.toHaveBeenCalled()
   })
 
-  it('due → runs with the request API-preset option (from invocation config) and applies on success', async () => {
+  it('due → runs with the request API-preset option (from invocation config); apply is the runtime seam, not here', async () => {
     const run = vi.fn<(r: InvocationRequest) => Promise<InvocationOutcome>>(() =>
       Promise.resolve(succeeded('<TableEdit></TableEdit>'))
     )
@@ -279,13 +285,13 @@ describe('createTriggerDispatch — memory gating + result handling', () => {
     expect(run.mock.calls[0][0].options).toEqual({ apiPresetId: 'preset-9' })
     // The apiPresetId is consumed into options and does NOT leak onto the identity request.
     expect((run.mock.calls[0][0] as { apiPresetId?: string }).apiPresetId).toBeUndefined()
-    expect(mem.applyResult).toHaveBeenCalledWith(
-      { profileId: 'p', chatId: 'c1', floor: 7 },
-      '<TableEdit></TableEdit>'
-    )
+    // Final-review Finding 1: the trigger dispatch no longer applies. Apply is the single-owner
+    // completion seam at the composition root (`withMemoryMaintenanceApply`) so it runs for the manual
+    // path too and never double-applies here.
+    expect(mem.applyResult).not.toHaveBeenCalled()
   })
 
-  it('abort/cancel → run happened but applyResult is NOT called (no apply on a non-success)', async () => {
+  it('nothing here calls applyResult even on a cancelled run (apply is not this path\'s job)', async () => {
     const cancelled: InvocationOutcome = { invocationId: 'i', status: 'cancelled', sourceRestarts: 0, required: false }
     const run = vi.fn<(r: InvocationRequest) => Promise<InvocationOutcome>>(() => Promise.resolve(cancelled))
     const mem = makeBridge({})
@@ -307,5 +313,70 @@ describe('createTriggerDispatch — memory gating + result handling', () => {
     expect(mem.planDispatch).not.toHaveBeenCalled()
     expect(run).toHaveBeenCalledTimes(1)
     expect(run.mock.calls[0][0].options).toBeUndefined()
+  })
+})
+
+describe('withMemoryMaintenanceApply — single-owner apply seam (Finding 1)', () => {
+  const flush = () => new Promise<void>((r) => setTimeout(r, 0))
+  const succeeded = (result: unknown): InvocationOutcome => ({
+    invocationId: 'i',
+    status: 'succeeded',
+    result: result as never,
+    sourceRestarts: 0,
+    required: false
+  })
+  // A minimal base runtime whose `run` resolves to a chosen outcome; only `run` is exercised.
+  const fakeBase = (outcome: InvocationOutcome): InvocationRuntime =>
+    ({
+      run: () => {
+        const p = Promise.resolve(outcome) as InvocationPromise
+        Object.defineProperty(p, 'invocationId', { value: outcome.invocationId })
+        return p
+      }
+    }) as unknown as InvocationRuntime
+  const memReq: InvocationRequest = { profileId: 'p', chatId: 'c1', floor: 7, agent: 'Memory Maintenance' }
+
+  it('applies once after ANY successful Memory Maintenance run (trigger OR manual funnel here)', async () => {
+    const applyResult = vi.fn()
+    const runtime = withMemoryMaintenanceApply(fakeBase(succeeded('<TableEdit></TableEdit>')), {
+      bridge: () => ({ applyResult }),
+      warn: () => {}
+    })
+    await runtime.run(memReq)
+    await flush()
+    expect(applyResult).toHaveBeenCalledTimes(1)
+    expect(applyResult).toHaveBeenCalledWith(
+      { profileId: 'p', chatId: 'c1', floor: 7 },
+      '<TableEdit></TableEdit>'
+    )
+  })
+
+  it('does NOT apply on a failed or cancelled run', async () => {
+    const applyResult = vi.fn()
+    const failed: InvocationOutcome = {
+      invocationId: 'i',
+      status: 'failed',
+      failure: { code: 'X', message: 'boom', retryable: false },
+      sourceRestarts: 0,
+      required: false
+    }
+    const runtime = withMemoryMaintenanceApply(fakeBase(failed), {
+      bridge: () => ({ applyResult }),
+      warn: () => {}
+    })
+    await runtime.run(memReq)
+    await flush()
+    expect(applyResult).not.toHaveBeenCalled()
+  })
+
+  it('never consults the bridge for a non-memory Agent', async () => {
+    const applyResult = vi.fn()
+    const runtime = withMemoryMaintenanceApply(fakeBase(succeeded('x')), {
+      bridge: () => ({ applyResult }),
+      warn: () => {}
+    })
+    await runtime.run({ ...memReq, agent: 'Some Other Agent' })
+    await flush()
+    expect(applyResult).not.toHaveBeenCalled()
   })
 })

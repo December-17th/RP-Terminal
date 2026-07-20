@@ -133,7 +133,9 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
     setSaving(false)
     setNotice(
       result.ok
-        ? t('agents.run.started', { status: result.status, id: result.invocationId })
+        ? 'invocationId' in result
+          ? t('agents.run.started', { status: result.status, id: result.invocationId })
+          : t('agents.run.nothingDue')
         : result.error
     )
     await refreshRuns()

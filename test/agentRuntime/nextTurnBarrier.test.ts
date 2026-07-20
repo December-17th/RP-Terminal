@@ -135,6 +135,54 @@ describe('next-turn barrier (blocksNextTurn wiring)', () => {
     await expect(runtime.waitForNextTurnBarriers('c')).resolves.toMatchObject({ status: 'clear' })
   })
 
+  it('clears a failed required barrier once a turn observes it, so later turns see clear (Finding 2)', async () => {
+    const { runtime, execute, run } = setup()
+    execute.mockResolvedValue(failure())
+
+    const invocation = run(true)
+    // The FIRST turn observes the failure — this is the one D5 fail-open warning generationService logs.
+    await expect(runtime.waitForNextTurnBarriers('c')).resolves.toMatchObject({
+      status: 'failed',
+      failures: [{ code: 'AGENT_FAILED' }]
+    })
+    await invocation
+
+    // Cleared on observation: a later turn (and the read-only liveness probe) sees a clean barrier
+    // rather than re-observing — and re-logging — the same stale failure on every subsequent turn.
+    expect(runtime.getNextTurnBarrier('c')).toMatchObject({ status: 'clear' })
+    await expect(runtime.waitForNextTurnBarriers('c')).resolves.toMatchObject({ status: 'clear' })
+  })
+
+  it('registers the barrier at ENQUEUE so a still-queued blocksNextTurn invocation is visible (Finding 5)', async () => {
+    const gate = deferred<HarnessExecutionResult>()
+    const { runtime, execute } = setup()
+    execute.mockImplementation(() => gate.promise) // the first run stays in flight
+
+    // Two runs for the SAME (chat, Agent) at different floors share a lane: the first runs, the second
+    // queues behind it. Both must be visible to the next turn's barrier check immediately.
+    const first = runtime.run({
+      profileId: 'p',
+      chatId: 'c',
+      floor: 12,
+      agent: 'A',
+      options: { blocksNextTurn: true }
+    })
+    const second = runtime.run({
+      profileId: 'p',
+      chatId: 'c',
+      floor: 13,
+      agent: 'A',
+      options: { blocksNextTurn: true }
+    })
+
+    expect(runtime.getNextTurnBarrier('c')).toMatchObject({ status: 'pending', pending: 2 })
+
+    gate.resolve(success('ok'))
+    await first
+    await second
+    expect(runtime.getNextTurnBarrier('c')).toMatchObject({ status: 'clear' })
+  })
+
   it('releases the barrier when the Agent is Stopped mid-run', async () => {
     const gate = deferred<HarnessExecutionResult>()
     const { runtime, execute, run } = setup()

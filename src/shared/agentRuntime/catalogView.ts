@@ -71,9 +71,12 @@ export type AgentMutationResult =
   | { ok: true; agent: AgentCatalogSummary }
   | { ok: false; error: string; code?: string; details?: unknown }
 
-/** Outcome of a Manual Invocation started from the Workspace (design §12). */
+/** Outcome of a Manual Invocation started from the Workspace (design §12). The `skipped` variant is
+ *  Memory Maintenance's due-gate declining to bill a run when nothing is due (final-review Finding 1) —
+ *  a real non-outcome, distinct from a run that succeeded. */
 export type AgentManualRunResult =
   | { ok: true; invocationId: string; status: string; result?: unknown }
+  | { ok: true; status: 'skipped' }
   | { ok: false; error: string }
 
 export const AGENT_CATALOG_CHANNELS = {

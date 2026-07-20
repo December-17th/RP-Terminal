@@ -17,6 +17,7 @@ import { floorStateForChat } from './agentRuntime/floorState'
 import { RunContext } from './generation/runContext'
 import { runClassicTurnDirect } from './generation/classicTurn'
 import { waitForNextTurnBarriers } from './agentRuntime/InvocationRuntimeService'
+import { ABORTED_BY_SIGNAL, raceAbortSignal } from './generation/abortRace'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
@@ -135,8 +136,11 @@ export const generate = async (
     // Agent's committed writes. Awaited HERE — before `buildGenContext`/assembly reads variables, and on
     // the seam that covers normal generate, regenerate, and swipe (all funnel through generate()).
     // Policy is fail-open: a failed/cancelled required Agent releases the barrier and the turn proceeds;
-    // a Stop cancels the invocation, which also releases it.
-    const barrier = await waitForNextTurnBarriers(chatId)
+    // a Stop cancels the invocation, which also releases it. The wait is RACED against this turn's own
+    // abort (Finding 3) so a hung blocksNextTurn run can never pin the next turn with no escape — a Stop
+    // during the barrier exits the turn down its normal abort path (return null, no floor).
+    const barrier = await raceAbortSignal(waitForNextTurnBarriers(chatId), controller.signal)
+    if (barrier === ABORTED_BY_SIGNAL) return null
     if (barrier.status === 'failed') {
       for (const failure of barrier.failures) {
         log(

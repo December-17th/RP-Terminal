@@ -286,6 +286,26 @@ commit, not silently ignored.
 
 ## 7. Implementation log
 
+### 2026-07-19 — Final review and fixes
+
+A fresh-context reviewer audited the whole span (`c7df7f9..e97ee4b`) against this plan and returned
+**MERGE-READY WITH FIXES**: six findings, all now fixed in the same day's closing commit. (1)
+CONFIRMED blocker — the memory-maintenance apply step was attached only to the trigger dispatch, so
+a manual Run now billed the provider and silently discarded its `<TableEdit>`; the apply now lives
+in one composition-root seam (`withMemoryMaintenanceApply`) covering every entry path, and a manual
+run with nothing due returns a visible "nothing due" skip instead of a fake success. (2) CONFIRMED —
+a failed required barrier was never cleared, re-logging the D5 warning every turn forever; observed
+failed barriers now clear after one warning. (3) the barrier wait now races the turn's abort signal,
+so Stop escapes a hung `blocksNextTurn` run. (5) barriers now register at enqueue, so a queued
+`blocksNextTurn` invocation behind its lane predecessor is no longer invisible to the next turn.
+(6) floor-0 greeting commits no longer evaluate triggers (the old post-turn boundary never saw
+them). (4) the deleted parity suite's hazard pins are restored as
+`test/generation/classicTurnHazards.test.ts` (workingVars by-reference into the persisted floor,
+executionRecord identity, floor-0 baseline). Reviewer-verified holds worth keeping on record: no
+double-fire path, three-way tag discrimination with the epoch fence, seed cannot clobber user
+edits, preview/run byte-parity, rewind-correct cadence, prompt bytes untouched by the barrier
+await. Closing gate: typecheck / check:deps 507 modules / **3011 tests green**.
+
 ### 2026-07-19 — M6 implemented (living docs, residue, merge gate)
 
 **Residue cleanup.** Purged the dead React-Flow / WorkflowEditor selectors from

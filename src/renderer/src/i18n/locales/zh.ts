@@ -246,6 +246,7 @@ const zh: Record<string, string> = {
   'agents.run.running': '运行中…',
   'agents.run.needsChat': '请先打开一个会话 — 运行需要一个已提交的楼层来归属其结果。',
   'agents.run.started': '运行 {{id}} 已结束，状态：{{status}}。',
+  'agents.run.nothingDue': '当前无需维护 —— 没有到期的表格，因此未启动运行。',
   'agents.run.history': '运行历史（{{count}}）',
   'agents.run.noRuns': '此会话尚无运行记录。',
   'agents.run.floor': '楼层 {{floor}}',
