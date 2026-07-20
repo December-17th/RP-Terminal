@@ -146,4 +146,7 @@ export const registerChatIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('set-chat-mode', (_, profileId, chatId, mode) =>
     chatService.setChatMode(profileId, chatId, mode)
   )
+  ipcMain.handle('set-vn-mode', (_, profileId, chatId, on) =>
+    chatService.setVnMode(profileId, chatId, on)
+  )
 }

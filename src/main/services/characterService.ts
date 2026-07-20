@@ -382,13 +382,17 @@ export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
 }
 
 /**
- * True when the card's `panel_ui` declares any `card-code:` slot/overlay entry — i.e. its panels are
- * served from the extracted PNG cartridge and are dead (404) unless the cartridge installs.
+ * True when the card declares any `card-code:` UI entry — panel slot, overlay, or Yuzu takeover
+ * surface — that is dead (404) unless the PNG cartridge installs.
  */
 export const cardDeclaresCardCode = (card: RPTerminalCard): boolean => {
-  const ui = getRpExt(card)?.panel_ui
+  const rpt = getRpExt(card)
+  const ui = rpt?.panel_ui
   const entries = [...(ui?.slots ?? []), ...(ui?.overlays ?? [])]
-  return entries.some((e) => typeof e?.entry === 'string' && e.entry.startsWith('card-code:'))
+  return (
+    entries.some((e) => typeof e?.entry === 'string' && e.entry.startsWith('card-code:')) ||
+    rpt?.yuzu?.surface?.entry.startsWith('card-code:') === true
+  )
 }
 
 /** True when a card carries enough of a bundle to warrant the install confirm. */
@@ -567,8 +571,8 @@ const installBundleArtifacts = (
     }
   }
 
-  // A card whose panel_ui points at `card-code:` entries NEEDS the cartridge — record (don't swallow)
-  // any install failure so the import summary can warn, instead of the panels 404ing later with no clue.
+  // A card whose UI points at `card-code:` entries NEEDS the cartridge — record (don't swallow) any
+  // install failure so the import summary can warn, instead of its surfaces 404ing later with no clue.
   const needsCartridge = cardDeclaresCardCode(card)
   let cartridgeError: string | undefined
   if (path.extname(filePath).toLowerCase() === '.png') {
