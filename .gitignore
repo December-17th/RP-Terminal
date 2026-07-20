@@ -50,3 +50,4 @@ test/yuzu/p0/results/
 !/docs/workflows/
 !/docs/workflows/**
 /.worktrees/
+/test-agents/
