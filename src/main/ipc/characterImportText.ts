@@ -31,6 +31,7 @@ export type BundleKind =
   | 'regexScripts'
   | 'presets'
   | 'scripts'
+  | 'cardCodeSurfaces'
   | 'uiWidgets'
   | 'workflows'
   | 'tableTemplates'
@@ -42,6 +43,7 @@ const englishKinds: Record<BundleKind, string> = {
   regexScripts: 'regex scripts',
   presets: 'presets',
   scripts: 'card scripts',
+  cardCodeSurfaces: 'card-code UI surfaces',
   uiWidgets: 'UI widgets',
   workflows: 'workflows',
   tableTemplates: 'memory table templates',
@@ -85,6 +87,7 @@ const english: CharacterImportText = {
 }
 
 const chineseKinds: Record<BundleKind, string> = {
+  cardCodeSurfaces: '个卡片代码界面',
   loreEntries: '条世界书条目',
   lorebooks: '本额外世界书',
   regexScripts: '个正则脚本',

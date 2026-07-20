@@ -196,7 +196,9 @@ export const RPTerminalExtSchema = z
         opening: z.string().optional(),
         surface: z
           .object({
-            entry: z.string().min(1)
+            entry: z.string().min(1),
+            /** Presentation and generation are orthogonal. Opt in only when this UI consumes YSS. */
+            enable_vn_mode: z.boolean().optional()
           })
           .catchall(z.any())
           .optional()

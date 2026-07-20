@@ -95,9 +95,9 @@ export const useCharacterStore = create<CharacterState>((set) => ({
       // Scripts manager so they show up under the new world.
       if (s.scripts) await useScriptsStore.getState().load(profileId)
       if (s.presets) await usePresetStore.getState().load(profileId)
-      // A world that ships scripts asks for TRUST consent at import time (a proper modal that WCV
-      // panels can't occlude), and the decision persists so the run-time hosts never re-prompt.
-      if (s.scripts > 0) {
+      // Executable scripts and cartridge-backed UI share the same trust grant. Ask before a WCV can
+      // occlude the modal; the decision persists so all run-time hosts use the same gate.
+      if (s.requiresTrust) {
         useUiStore.getState().openTrustPrompt({ profileId, cardId: res.id, cardName: s.name })
       }
     }

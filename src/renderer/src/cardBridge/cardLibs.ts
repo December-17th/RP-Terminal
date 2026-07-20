@@ -18,8 +18,7 @@ import {
   JQUERY_UI_JS_URL,
   JQUERY_UI_THEME_CSS_URL,
   JQUERY_UI_TOUCH_PUNCH_URL,
-  MOTION_JS_URL,
-  TAILWIND_CDN_URL
+  MOTION_JS_URL
 } from '../../../shared/cardEnv'
 
 const cssTag = (href: string): string => `<link rel="stylesheet" href="${href}">`
@@ -42,24 +41,6 @@ export function buildInlineLibTags(): string {
     jsTag(vueUrl),
     jsTag(vueRouterUrl),
     jsTag(piniaUrl),
-    jsTag(MOTION_JS_URL)
-  ].join('')
-}
-
-/**
- * The assumed-lib tags for a WCV card. The WCV preload already provides Vue/jQuery/Pinia/VueRouter as
- * lazy window globals, so only the NEW assumed libs are injected here — and all from CDN, because the
- * vendored Tailwind `?url` asset is renderer-origin and unreachable from the WCV page. jQuery-UI and
- * touch-punch bind to the preload's lazy `window.jQuery` when they execute (contextIsolation:false, so
- * the doc scripts and the preload share one window).
- */
-export function buildWcvLibTags(): string {
-  return [
-    cssTag(FONTAWESOME_CSS_URL),
-    cssTag(JQUERY_UI_THEME_CSS_URL),
-    jsTag(TAILWIND_CDN_URL),
-    jsTag(JQUERY_UI_JS_URL),
-    jsTag(JQUERY_UI_TOUCH_PUNCH_URL),
     jsTag(MOTION_JS_URL)
   ].join('')
 }

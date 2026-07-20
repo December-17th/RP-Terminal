@@ -7,7 +7,7 @@ import path from 'path'
  * {@link wcvManager} so the routing, MIME, traversal-guard and trust decisions are unit-testable in
  * plain Node (no electron `session`/`net`/`Response`). `wcvManager` owns the electron glue: it
  * registers the handler, maintains the origin-token registry, injects the trust getter, and turns a
- * {@link CardServeResult} into an electron `Response` (`net.fetch` for file bodies so they stream).
+ * {@link CardServeResult} into an electron `Response` (environment-injected HTML; streamed assets).
  *
  * Two hosts, one scheme:
  *  - host **`card`** → the legacy shared-origin per-slot inline document (`rpt-card://card/<slotId>`),
@@ -175,7 +175,8 @@ export const serveCardCode = (rawUrl: string, deps: CardServeDeps): CardServeRes
     return { kind: 'error', status: 404, message }
   }
   const contentType = mimeForPath(abs)
-  // HTML documents keep the card CSP; sub-resources are served with their true MIME (no forced html).
+  // HTML documents keep the card CSP and receive the WCV environment in wcvManager; sub-resources are
+  // served with their true MIME (no forced html).
   return {
     kind: 'file',
     absPath: abs,

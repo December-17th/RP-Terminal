@@ -112,6 +112,7 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
           summary.regexScripts && text.bundleItem(summary.regexScripts, 'regexScripts'),
           summary.presets && text.bundleItem(summary.presets, 'presets'),
           summary.scripts && text.bundleItem(summary.scripts, 'scripts'),
+          summary.cardCodeSurfaces && text.bundleItem(summary.cardCodeSurfaces, 'cardCodeSurfaces'),
           summary.uiWidgets && text.bundleItem(summary.uiWidgets, 'uiWidgets'),
           summary.workflows && text.bundleItem(summary.workflows, 'workflows'),
           summary.tableTemplates && text.bundleItem(summary.tableTemplates, 'tableTemplates'),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildCardDoc } from '../src/renderer/src/components/cardDoc'
+import { buildCardDoc } from '../src/shared/cardDoc'
 
 // A SillyTavern beautification card as emitted by the example regex scripts: a full
 // `<!doctype html>` document whose <style> and font <link> live in <head>, with the

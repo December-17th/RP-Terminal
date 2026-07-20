@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildCardDoc } from '../src/renderer/src/components/cardDoc'
+import { buildCardDoc } from '../src/shared/cardDoc'
 
 describe('buildCardDoc', () => {
   it('injects headInject at the start of an existing <head>, preserving styles/links', () => {

@@ -33,7 +33,10 @@ afterEach(() => {
 })
 
 describe('Yuzu full-card surface MVP', () => {
-  it('enables VN generation before mounting the unrestricted WCV', async () => {
+  it.each([
+    ['classic generation', false],
+    ['Yuzu generation', true]
+  ])('selects %s before mounting the unrestricted WCV', async (_label, enableVnMode) => {
     const { YuzuCardSurface } =
       await import('../../src/renderer/src/components/yuzu/YuzuCardSurface')
     await act(async () => {
@@ -41,13 +44,14 @@ describe('Yuzu full-card surface MVP', () => {
         createElement(YuzuCardSurface, {
           profileId: 'p1',
           chatId: 'c1',
-          entry: 'card-code:yuzu/index.html'
+          entry: 'card-code:yuzu/index.html',
+          enableVnMode
         })
       )
     })
 
     expect(container?.querySelector('[data-testid="wcv"]')).toBeNull()
-    expect(setVnMode).toHaveBeenCalledWith('p1', 'c1', true)
+    expect(setVnMode).toHaveBeenCalledWith('p1', 'c1', enableVnMode)
 
     await act(async () => resolveVnMode?.())
     const wcv = container?.querySelector('[data-testid="wcv"]')

@@ -387,11 +387,11 @@ export default function App(): React.ReactElement {
 
   // An RPT-native card can declare its own static, card-determined layout (rp_terminal.panel_ui); else the
   // resizable workspace. (ST-compat cards' UIs are inline regex by default, promotable to panels by the user.)
-  const cardPanelUi = activeCharacter?.card?.data?.extensions?.rp_terminal?.panel_ui
+  const cardExt = activeCharacter?.card?.data?.extensions?.rp_terminal
+  const cardPanelUi = cardExt?.panel_ui
   const staticLayout =
     cardPanelUi?.mode === 'static' && cardPanelUi.slots?.length ? cardPanelUi : null
-  const yuzuSurfaceEntry =
-    activeCharacter?.card?.data?.extensions?.rp_terminal?.yuzu?.surface?.entry
+  const yuzuSurface = cardExt?.yuzu?.surface
 
   return (
     <>
@@ -418,11 +418,12 @@ export default function App(): React.ReactElement {
             className="ws-overlay-root"
             style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}
           >
-            {yuzuSurfaceEntry && activeChatId ? (
+            {yuzuSurface?.entry && activeChatId ? (
               <YuzuCardSurface
                 profileId={activeProfile.id}
                 chatId={activeChatId}
-                entry={yuzuSurfaceEntry}
+                entry={yuzuSurface.entry}
+                enableVnMode={yuzuSurface.enable_vn_mode === true}
               />
             ) : staticLayout ? (
               <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />

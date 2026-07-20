@@ -7,12 +7,17 @@ describe('Yuzu full-card surface schema', () => {
       yuzu: {
         version: 1,
         opening: '<| bg room |>\n<| end |>',
-        surface: { entry: 'card-code:yuzu/index.html', futureSurfaceField: true },
+        surface: {
+          entry: 'card-code:yuzu/index.html',
+          enable_vn_mode: true,
+          futureSurfaceField: true
+        },
         futureYuzuField: true
       }
     })
 
     expect(ext.yuzu?.surface?.entry).toBe('card-code:yuzu/index.html')
+    expect(ext.yuzu?.surface?.enable_vn_mode).toBe(true)
     expect(ext.yuzu?.surface?.futureSurfaceField).toBe(true)
     expect(ext.yuzu?.futureYuzuField).toBe(true)
   })

@@ -9,6 +9,8 @@ interface CharacterImportDialogResult {
     regexScripts: number
     loreEntries: number
     scripts: number
+    cardCodeSurfaces: number
+    requiresTrust: boolean
     uiWidgets: number
     presets: number
     lorebooks: number

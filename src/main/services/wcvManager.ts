@@ -2,6 +2,7 @@ import { WebContentsView, BrowserWindow, session, net, webFrameMain } from 'elec
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { createHash } from 'crypto'
+import { readFile } from 'fs/promises'
 import { log } from './logService'
 import { serveAssetRequest, ASSET_SCHEME } from './worldAssetProtocol'
 import { getGrants } from './pluginService'
@@ -18,6 +19,7 @@ import { createOverlayController, type OverlayDecl } from './wcvOverlay'
 import { shouldOpenWcvDevTools } from './wcvDevTools'
 import type { VarsOrigin, CardChatScope } from '../../shared/thRuntime/types'
 import { CARD_CSP } from '../../shared/cardCsp'
+import { buildWcvSurfaceDocument } from '../../shared/cardEnv'
 import { attachWcvUnsquashCompat } from './wcvUnsquashCompat'
 
 // Card UI panels run in their own session partition. jsDelivr serves `/gh/` HTML as text/plain (to
@@ -45,8 +47,8 @@ const ensureSession = (): void => {
   // rpt-card:// routing (A2). Host `card` → the legacy shared-origin per-slot inline doc (unchanged);
   // any other host → a per-card origin token: trust-gated, traversal-guarded file serving from that
   // card's extracted cartridge code. `serveCardCode` decides; this glue turns the decision into a
-  // Response — file bodies stream via `net.fetch` but with the MIME FORCED to §5 (net.fetch's file
-  // content-type is unreliable, and a wrong type hard-fails ES module loads).
+  // Response — HTML receives the shared WCV environment before card scripts; assets stream through
+  // `net.fetch` with the MIME forced to §5 (a wrong type hard-fails ES module loads).
   ses.protocol.handle(CARD_SCHEME, async (req) => {
     const r = serveCardCode(req.url, cardServeDeps)
     if (r.kind === 'inline') {
@@ -56,6 +58,12 @@ const ensureSession = (): void => {
     }
     if (r.kind === 'error') return new Response(r.message, { status: r.status })
     try {
+      if (r.csp) {
+        const html = await readFile(r.absPath, 'utf-8')
+        return new Response(buildWcvSurfaceDocument(html), {
+          headers: { 'content-type': r.contentType, 'content-security-policy': r.csp }
+        })
+      }
       const resp = await net.fetch(pathToFileURL(r.absPath).toString())
       const headers = new Headers()
       headers.set('content-type', r.contentType)
