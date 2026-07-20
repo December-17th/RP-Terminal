@@ -5,6 +5,7 @@ import { useChatStore } from '../stores/chatStore'
 import { useUiStore, type SettingsSection } from '../stores/uiStore'
 import { useT } from '../i18n'
 import { maintenanceSummary, type TableStatusLike } from './workspace/memoryPaneModel'
+import { AgentRunActivityToggle, AgentRunStatusStrip } from './AgentRunActivity'
 
 const api = (): any => (window as unknown as { api: any }).api
 
@@ -78,10 +79,23 @@ export function TopStrip({
 }): React.ReactElement {
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const activePresetName = usePresetStore((s) => s.preset?.name)
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const [runStatusDisclosure, setRunStatusDisclosure] = React.useState<{
+    chatId: string | null
+    open: boolean
+  }>({ chatId: null, open: false })
   const t = useT()
 
   const worldName = activeCharacter?.card.data.name || t('nav.session')
   const openSettings = (section: SettingsSection): void => useUiStore.getState().openSettings(section)
+  const runsOpen =
+    !!activeChatId &&
+    runStatusDisclosure.chatId === activeChatId &&
+    runStatusDisclosure.open
+  const setRunsOpen = React.useCallback(
+    (open: boolean): void => setRunStatusDisclosure({ chatId: activeChatId, open }),
+    [activeChatId]
+  )
 
   return (
     <div className="tstrip">
@@ -126,7 +140,9 @@ export function TopStrip({
         </button>
       </div>
 
-      <span className="tstrip-spacer" title={`${profileName} · ${activePresetName || ''}`} />
+      <div className="tstrip-spacer" title={`${profileName} · ${activePresetName || ''}`}>
+        {runsOpen && activeChatId ? <AgentRunStatusStrip chatId={activeChatId} /> : null}
+      </div>
 
       <div className="tstrip-menus">
         <button
@@ -176,6 +192,15 @@ export function TopStrip({
         >
           {t('nav.agents')}
         </button>
+
+        {activeChatId ? (
+          <AgentRunActivityToggle
+            key={activeChatId}
+            chatId={activeChatId}
+            open={runsOpen}
+            onOpenChange={setRunsOpen}
+          />
+        ) : null}
 
         <MemoryChip profileId={profileId} />
 

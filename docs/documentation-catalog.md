@@ -2,7 +2,7 @@
 
 **Status:** Living catalogue. Update in place whenever documentation is added, removed, renamed, or changes
 lifecycle state.
-**As of:** 2026-07-19
+**As of:** 2026-07-20
 
 This catalogue answers two questions: which document is authoritative for a subject, and whether a file is
 living, implemented history, planned work, deferred work, superseded, or a point-in-time snapshot.
@@ -36,7 +36,7 @@ map.
 | [Plugin API](plugin-api.md)                                                                                               | `rpt.v1` card-script and standalone-plugin API               | Living stable contract.                                |
 | [Compatibility comparison](compat-comparison.md)                                                                          | RPT vs TavernHelper vs ST-Prompt-Template                    | Living compatibility summary.                          |
 | [Table templates](sdk/table-templates.md)                                                                                 | SQL-table memory import/edit/write/export/backfill contract  | Living; implemented except documented deferred items.  |
-| [Workflow module format](sdk/workflow-module-format.md)                                                                   | Legacy creator-facing workflow/module format                 | Superseded by ADR 0020; workflow runtime removed on `agent-system`. Retained for history. |
+| [Workflow module format](sdk/workflow-module-format.md)                                                                   | Legacy creator-facing workflow/module format                 | Current removal tombstone; workflow/module format unsupported under ADR 0020. |
 | [World Card design](world-card-design.md)                                                                                 | Bundle/container format and phase status                     | Partial; status header and phase table are living.     |
 | [Runtime theme API](runtime-theme-api-design.md)                                                                          | Card-callable play/message theming                           | Implemented contract; maintain with `rpt-api.md`.      |
 | [Agent issue tracker](agents/issue-tracker.md), [triage labels](agents/triage-labels.md), [domain docs](agents/domain.md) | Local project-process conventions                            | Living.                                                |
@@ -122,6 +122,7 @@ map.
 | [0018 — Lossless preset envelopes](adr/0018-presets-persist-as-lossless-envelopes-edited-in-place.md)  | Accepted.                                           |
 | [0020 — Agent Runtime cutover](adr/0020-agent-runtime-replaces-workflow-system.md)                       | Accepted; implemented on `agent-system` (workflow surface deleted). |
 | [0021 — Agents assemble through the engine](adr/0021-agents-assemble-prompts-through-the-existing-engine.md) | Accepted; implemented on `agent-system`.        |
+| [0022 — Stateful Agent Host Facet and Session](adr/0022-agent-host-uses-a-stateful-facet-and-session.md) | Accepted; implemented. Amends ADR 0013 for `AgentHost` only. |
 
 Implementation code may be reused behind the new runtime, but workflow concepts and formats do not
 survive the ADR 0020 cutover.

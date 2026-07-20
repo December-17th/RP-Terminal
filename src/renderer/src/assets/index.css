@@ -27,6 +27,10 @@
   --rpt-app-bg-primary: #121212;
   --rpt-app-text-primary: #e0e0e0;
   --rpt-app-border: #333333;
+  --rpt-app-danger: #e74c3c;
+  --rpt-app-success: #4caf72;
+  --rpt-app-warning: #e0a23c;
+  --rpt-app-warning-soft: rgba(224, 162, 60, 0.14);
   --rpt-danger: #e74c3c;
   --rpt-success: #4caf72;
   --rpt-warning: #e0a23c;
@@ -893,8 +897,8 @@ details[open] > .stat-group-title::before {
 }
 
 .agent-run-activity {
-  margin: 4px 0 6px;
-  padding: 7px 9px;
+  margin: 0;
+  padding: 12px;
   color: var(--rpt-text-secondary);
   background: var(--rpt-surface-2, rgba(127, 127, 127, 0.08));
   border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
@@ -902,7 +906,6 @@ details[open] > .stat-group-title::before {
   font-size: 12px;
 }
 .agent-run-activity__heading,
-.agent-run-row,
 .agent-run-row__identity,
 .agent-run-row__details {
   display: flex;
@@ -911,7 +914,7 @@ details[open] > .stat-group-title::before {
 .agent-run-activity__heading {
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 .agent-run-activity__heading h2 {
   margin: 0;
@@ -922,20 +925,23 @@ details[open] > .stat-group-title::before {
 .agent-run-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .agent-run-row {
-  min-height: 28px;
-  gap: 10px;
-  padding: 3px 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 32px;
+  gap: 12px;
+  padding: 8px 0;
   border-top: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.18));
 }
 .agent-run-row__identity {
-  min-width: 160px;
-  gap: 7px;
+  min-width: 0;
+  gap: 8px;
 }
 .agent-run-row__identity strong {
   min-width: 0;
@@ -949,7 +955,7 @@ details[open] > .stat-group-title::before {
   min-width: 0;
   flex: 1;
   flex-wrap: wrap;
-  gap: 4px 10px;
+  gap: 4px 12px;
   font-variant-numeric: tabular-nums;
 }
 .agent-run-status {
@@ -1003,17 +1009,17 @@ details[open] > .stat-group-title::before {
 .agent-run-activity__error {
   color: var(--rpt-danger, #d9534f);
 }
-@media (max-width: 720px) {
+@container (max-width: 560px) {
   .agent-run-row {
     align-items: flex-start;
-    flex-wrap: wrap;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
   .agent-run-row__identity {
-    flex: 1;
+    min-height: 24px;
   }
   .agent-run-row__details {
-    flex-basis: 100%;
-    order: 3;
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2881,11 +2887,155 @@ select {
 }
 .tstrip-spacer {
   flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  container-type: inline-size;
 }
 .tstrip-menus {
   display: flex;
   align-items: center;
   gap: 1px;
+}
+.tstrip-agent-runs {
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+}
+.tstrip-agent-runs__toggle {
+  padding-inline: 8px;
+}
+.tstrip-agent-runs__indicator {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--rpt-app-warning);
+}
+.tstrip-agent-runs__indicator.tone-success {
+  background: var(--rpt-app-success);
+}
+.tstrip-agent-runs__indicator.tone-failure {
+  background: var(--rpt-app-danger);
+}
+.tstrip-agent-runs__indicator.is-running {
+  animation: rpt-pulse 1.2s ease-in-out infinite;
+}
+.tstrip-agent-runs__count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--rpt-app-text-primary);
+  background: color-mix(in srgb, var(--rpt-accent) 18%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.tstrip-agent-status {
+  min-width: 0;
+  max-width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--rpt-app-text-primary) 72%, transparent);
+  font-family: var(--rpt-font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.tstrip-agent-status__item,
+.tstrip-agent-status__items {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.tstrip-agent-status__items {
+  max-width: 100%;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+}
+.tstrip-agent-status__item {
+  flex: 0 1 auto;
+  gap: 4px;
+  overflow: hidden;
+}
+.tstrip-agent-status__dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--rpt-app-text-primary) 45%, transparent);
+}
+.tstrip-agent-status__item--running .tstrip-agent-status__dot {
+  background: var(--rpt-accent);
+  animation: rpt-pulse 1.2s ease-in-out infinite;
+}
+.tstrip-agent-status__item--succeeded .tstrip-agent-status__dot {
+  background: var(--rpt-app-success);
+}
+.tstrip-agent-status__item--failed .tstrip-agent-status__dot,
+.tstrip-agent-status__item--cancelled .tstrip-agent-status__dot {
+  background: var(--rpt-app-danger);
+}
+.tstrip-agent-status__item--degraded .tstrip-agent-status__dot {
+  background: var(--rpt-app-warning);
+}
+.tstrip-agent-status__name {
+  min-width: 0;
+  max-width: 14ch;
+  overflow: hidden;
+  color: var(--rpt-app-text-primary);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.tstrip-agent-status__state,
+.tstrip-agent-status__floor,
+.tstrip-agent-status__more,
+.tstrip-agent-status__message,
+.tstrip-agent-status__compact {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tstrip-agent-status__floor {
+  color: color-mix(in srgb, var(--rpt-app-text-primary) 55%, transparent);
+}
+.tstrip-agent-status__more {
+  flex: 0 0 auto;
+}
+.tstrip-agent-status__compact {
+  display: none;
+}
+@container (max-width: 360px) {
+  .tstrip-agent-status__floor {
+    display: none;
+  }
+}
+@container (max-width: 260px) {
+  .tstrip-agent-status__state {
+    display: none;
+  }
+}
+@container (max-width: 160px) {
+  .tstrip-agent-status__items {
+    display: none;
+  }
+  .tstrip-agent-status__compact {
+    display: block;
+  }
+}
+@media (max-width: 1180px) {
+  .tstrip-agent-runs__label {
+    display: none;
+  }
 }
 /* Shared button on the strip — the direct settings buttons and the breadcrumb pills. */
 .tmenu-btn {
@@ -2930,6 +3080,12 @@ select {
 .tstrip .tmenu-btn,
 .tstrip-menus {
   -webkit-app-region: no-drag;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tstrip-agent-runs__indicator.is-running,
+  .tstrip-agent-status__item--running .tstrip-agent-status__dot {
+    animation: none;
+  }
 }
 
 /* World settings popup — Regex/Scripts tabs hosting the existing managers. */

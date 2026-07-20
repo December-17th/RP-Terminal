@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { recentAgentRuns, useAgentRunStore } from '../../src/renderer/src/stores/agentRunStore'
+import {
+  agentRunIndicatorState,
+  latestRunPerAgent,
+  recentAgentRuns,
+  useAgentRunStore
+} from '../../src/renderer/src/stores/agentRunStore'
 import type { AgentRunEvent, AgentRunSummary } from '../../src/shared/agentRuntime'
 
 const run = (invocationId: string, status: AgentRunSummary['status']): AgentRunSummary => ({
@@ -33,6 +38,50 @@ describe('agentRunStore renderer read model', () => {
       hydrationByChat: {}
     })
   )
+
+  const indicator = (): ReturnType<typeof agentRunIndicatorState> => {
+    const state = useAgentRunStore.getState()
+    return agentRunIndicatorState(state.byChat, state.revisionByChat, 'c1')
+  }
+
+  it('tracks the six session-local indicator states without treating hydration as a new run', () => {
+    useAgentRunStore.setState({
+      byChat: { c1: { persisted: run('persisted', 'succeeded') } },
+      revisionByChat: {}
+    })
+    expect(indicator()).toEqual({ tone: 'idle', running: false })
+
+    useAgentRunStore.getState().apply({ type: 'started', run: run('first', 'running') })
+    expect(indicator()).toEqual({ tone: 'idle', running: true })
+
+    useAgentRunStore.getState().apply({
+      type: 'finished',
+      run: { ...run('first', 'succeeded'), finishedAt: '2026-07-18T12:01:00.000Z' }
+    })
+    expect(indicator()).toEqual({ tone: 'success', running: false })
+
+    useAgentRunStore.getState().apply({
+      type: 'started',
+      run: { ...run('second', 'running'), startedAt: '2026-07-18T12:02:00.000Z' }
+    })
+    expect(indicator()).toEqual({ tone: 'success', running: true })
+
+    useAgentRunStore.getState().apply({
+      type: 'finished',
+      run: {
+        ...run('second', 'degraded'),
+        startedAt: '2026-07-18T12:02:00.000Z',
+        finishedAt: '2026-07-18T12:03:00.000Z'
+      }
+    })
+    expect(indicator()).toEqual({ tone: 'failure', running: false })
+
+    useAgentRunStore.getState().apply({
+      type: 'started',
+      run: { ...run('third', 'running'), startedAt: '2026-07-18T12:04:00.000Z' }
+    })
+    expect(indicator()).toEqual({ tone: 'failure', running: true })
+  })
 
   it('keeps quiet invocations visible while running and recent after completion', () => {
     useAgentRunStore.getState().apply({ type: 'started', run: run('quiet', 'running') })
@@ -82,6 +131,36 @@ describe('agentRunStore renderer read model', () => {
     const visible = recentAgentRuns(useAgentRunStore.getState().byChat, 'c1')
     expect(visible.filter((item) => item.status === 'running')).toHaveLength(7)
     expect(visible.filter((item) => item.status !== 'running')).toHaveLength(5)
+  })
+
+  it('selects one quick-view run per agent, preferring active work then the latest result', () => {
+    const byChat = {
+      c1: {
+        'curator-old': {
+          ...run('curator-old', 'succeeded'),
+          startedAt: '2026-07-18T12:03:00.000Z'
+        },
+        'curator-active': {
+          ...run('curator-active', 'running'),
+          startedAt: '2026-07-18T12:01:00.000Z'
+        },
+        'director-old': {
+          ...run('director-old', 'failed'),
+          agentName: 'story.director',
+          startedAt: '2026-07-18T12:00:00.000Z'
+        },
+        'director-latest': {
+          ...run('director-latest', 'succeeded'),
+          agentName: 'story.director',
+          startedAt: '2026-07-18T12:02:00.000Z'
+        }
+      }
+    }
+
+    expect(latestRunPerAgent(byChat, 'c1')).toMatchObject([
+      { invocationId: 'curator-active', agentName: 'memory.curator', status: 'running' },
+      { invocationId: 'director-latest', agentName: 'story.director', status: 'succeeded' }
+    ])
   })
 
   it('merges starts, finishes, and snapshot-absent runs received during hydration', () => {

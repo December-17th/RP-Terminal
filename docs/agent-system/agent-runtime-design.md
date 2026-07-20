@@ -1,15 +1,8 @@
 # Agent Runtime design
 
-**Status:** Approved design; **the cutover is complete on `agent-system`.** Sessions 0–7 and 10, the
-[Classic Narrator first execution plan](classic-narrator-first-execution-plan.md)'s six milestones,
-[ADR 0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md)'s prompt/preset
-assembly, and the [execution plan v2 (2026-07-19)](execution-plan-2026-07-19.md) Milestones 0–5 are all
-implemented and committed: a declarative cadence trigger owns unattended runs, `memory.maintain` is a
-built-in Agent, `blocksNextTurn` is live (fail-open), and the entire workflow surface is deleted
-(ADR 0020). M6 (living docs + merge gate) is in progress; the remaining work is **owner review and
-merge**. ADR 0021 extends §3 and §10 of this document (Agent prompts now render through the template
-engine and may bundle a preset); those sections have not yet been rewritten to match — the ADR wins
-where they differ.
+**Status:** Approved and implemented on `agent-system`. Sessions 0–7 and 10, the Classic Narrator
+cutover, ADR 0021 prompt/preset assembly, and execution plan v2 Milestones 0–6 are complete. The
+workflow surface is deleted under ADR 0020; the remaining branch work is owner review and merge.
 **Decision date:** 2026-07-18.
 **Supersedes:** the workflow/node authoring and execution model, ADR 0011, the unshipped
 tool-loop portions of `docs/agentic-mode-design.md`, and the future-facing contract in
@@ -21,8 +14,8 @@ one provider-neutral Harness. Cards decide when background work is useful; RP Te
 durable asynchronous execution, bounded tool use, floor ownership, transactional state changes, and
 deterministic replay.
 
-This document specifies the target system. The current workflow implementation remains the shipped
-behavior until the atomic cutover described in [§20](#20-workflow-removal-and-atomic-cutover).
+This document specifies the implemented Agent Runtime. The atomic workflow cutover described in
+[§20](#20-workflow-removal-and-atomic-cutover) is complete on `agent-system`.
 
 ## 1. Why replace the workflow system
 
@@ -156,24 +149,17 @@ Plain string content is valid for static role messages; messages containing Prom
 content segments. RP Terminal normalizes both forms before validation and execution. There is no
 shorthand for variable or Result Slot paths.
 
-> **Reconciled with [ADR 0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md)
-> (the ADR wins where this section is narrower).** Two facts extend the shape above:
->
-> - **Every Agent's `prompt` messages render through RP Terminal's existing template engine** (EJS +
->   macros + the TH shim in the quickjs sandbox) before dispatch — there is no opt-in flag, because a
->   prompt containing `<%` is already broken if sent verbatim. Assembly happens *before* the Harness;
->   the Harness still receives finished messages (§5.1's "the Harness assembles" is superseded — it
->   receives, it does not assemble).
-> - **A definition may carry an optional inline `preset` bundle.** When present it turns on full
->   `assemblePrompt` assembly against the owning floor's real `GenContext` (character card, persona,
->   world info), with the `prompt` messages appended as the Agent's task instruction. Chat history is
->   opt-in via a declared History Policy (§5.3); the bundle may also select which lorebooks and which
->   entries feed assembly. The bundle is a lossless ST preset envelope
->   ([ADR 0018](../adr/0018-presets-persist-as-lossless-envelopes-edited-in-place.md)) that carries **no
->   connection or model** (§10 portability) and may carry generation-parameter overrides (§10). A
->   guaranteed-inert envelope is rejected at save time. Assembly failure is **fail-open but recorded** —
->   the invocation proceeds with the un-assembled prompt, and the reason is written to the Run Record's
->   warnings and shown as a "Degraded" badge, never dropped silently.
+Every Agent's authored `prompt` text renders through RP Terminal's template engine before dispatch;
+there is no opt-in flag. A definition may also carry an inline, lossless `preset` bundle. That bundle
+contains a prompt preset and optional generation-parameter overrides, never a connection, model, or
+user-local API-preset id. It assembles character, persona, world info, selected lorebooks, and opt-in
+history against the owning floor's `GenContext`, then appends the Agent's authored prompt as the task
+instruction.
+
+Prompt preparation happens before the Harness. The Harness receives finished messages and never owns
+ST prompt assembly. Guaranteed-inert preset envelopes are rejected at save time. Assembly failure is
+fail-open but recorded on the Run Record and shown as Degraded, as specified by
+[ADR 0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md).
 
 ### 3.2 Names and collisions
 
@@ -235,18 +221,24 @@ validator, or replay operation rather than reporting a generic generation failur
 
 ### 5.1 Prompt stack
 
-The Harness assembles this ordered stack:
+Prompt policy is prepared outside the Harness:
+
+- a messages Agent has its authored text rendered through the template engine;
+- a preset Agent receives a complete `assemblePrompt` result for the owning floor, with its authored
+  task messages appended;
+- prepared messages substitute for `definition.prompt` and are not rendered a second time.
+
+The Harness then forms the provider log in this order:
 
 1. fixed Harness policy;
-2. the Agent Definition's role-message prompt;
-3. rendered dynamic Prompt Bindings;
-4. the invocation input; and
+2. the prepared messages (or the rendered definition prompt);
+3. resolved dynamic Prompt Bindings;
+4. serialized invocation input; and
 5. an optional invocation addendum.
 
 Imported prompt messages may use `system`, `user`, and `assistant` roles. Pre-authored `tool` messages
-are forbidden because tool messages must correspond to real calls made in the current attempt. An
-invocation may append input or a bounded addendum but may not replace the Agent prompt. Materially
-different behavior is a separately named Agent.
+are forbidden because tool messages must correspond to real calls made in the current attempt.
+Materially different behavior remains a separately named Agent.
 
 ### 5.2 Cache boundary and Harness Context
 

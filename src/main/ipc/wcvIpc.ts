@@ -28,6 +28,7 @@ import {
   invocationRuntime,
   liveCardToolRegistry
 } from '../services/agentRuntime/InvocationRuntimeService'
+import { AgentHostSession, agentToolRequestSender } from '../services/agentRuntime/AgentHostSession'
 // The Host-member channels are registered THROUGH the shared Channel Spec (ADR 0013): a member-keyed
 // `WcvHostImpls` map, typed against `WcvSpecMember`, drives `registerHostChannels` — so a spec member with
 // no main-side implementation is a COMPILE error, not a runtime gap. The channel strings + call kinds come
@@ -194,11 +195,8 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   type AgentSender = IpcMainInvokeEvent['sender']
   const agentSenders = new Map<
     number,
-    { sender: AgentSender; subscribed: boolean; cleanup: () => void }
+    { sender: AgentSender; session: AgentHostSession; cleanup: () => void }
   >()
-  const pendingAgentRuns = new Map<string, { senderId: number; kind: 'run' | 'plan'; id: string }>()
-  const pendingAgentRunKey = (senderId: number, requestId: string): string =>
-    senderId + ':' + requestId
 
   const agentScope = (senderId: number) => {
     const ctx = wcvManager.contextFor(senderId)
@@ -208,24 +206,31 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     return characterId ? { profileId: ctx.profileId, chatId: ctx.chatId, characterId } : null
   }
 
-  const ensureAgentSender = (sender: AgentSender) => {
+  const ensureAgentSender = (
+    sender: AgentSender,
+    scope: NonNullable<ReturnType<typeof agentScope>>
+  ) => {
     const current = agentSenders.get(sender.id)
     if (current) return current
     const cleanup = (): void => {
       const state = agentSenders.get(sender.id)
       if (!state) return
       agentSenders.delete(sender.id)
-      liveCardToolRegistry().unregisterSender(sender.id)
-      for (const [requestId, pending] of pendingAgentRuns) {
-        if (pending.senderId !== sender.id) continue
-        if (pending.kind === 'run') invocationRuntime().cancelInvocation(pending.id)
-        else invocationRuntime().cancelPlan(pending.id)
-        pendingAgentRuns.delete(requestId)
-      }
+      state.session.close()
       sender.removeListener?.('destroyed', cleanup)
       sender.removeListener?.('did-start-navigation', cleanup)
     }
-    const state = { sender, subscribed: false, cleanup }
+    const session = new AgentHostSession({
+      scope,
+      senderId: sender.id,
+      runtime: invocationRuntime(),
+      tools: liveCardToolRegistry(),
+      latestFloor: () => floorService.getAllFloors(scope.profileId, scope.chatId).at(-1)?.floor,
+      sendTool: agentToolRequestSender((channel, payload) => sender.send(channel, payload)),
+      toolAuthority: 'sender',
+      cancelInvocationsOnClose: true
+    })
+    const state = { sender, session, cleanup }
     agentSenders.set(sender.id, state)
     sender.once?.('destroyed', cleanup)
     sender.once?.('did-start-navigation', cleanup)
@@ -474,29 +479,9 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         code: 'AGENT_RUN_SCOPE_REJECTED'
       })
     }
-    ensureAgentSender(event.sender)
+    const session = ensureAgentSender(event.sender, scope).session
     const rawOptions = (request as { options?: CardAgentRunOptions }).options
-    const { signal: _signal, ...options } = rawOptions ?? {}
-    const latest = floorService.getAllFloors(scope.profileId, scope.chatId).at(-1)?.floor
-    const floor = options.floor ?? latest
-    if (floor === undefined) throw new Error('No committed Invocation Floor exists')
-    const running = invocationRuntime().run({
-      ...scope,
-      floor,
-      agent: name,
-      options,
-      toolScope: scope
-    })
-    pendingAgentRuns.set(pendingAgentRunKey(event.sender.id, requestId), {
-      senderId: event.sender.id,
-      kind: 'run',
-      id: running.invocationId
-    })
-    try {
-      return await running
-    } finally {
-      pendingAgentRuns.delete(pendingAgentRunKey(event.sender.id, requestId))
-    }
+    return session.run({ requestId, name, options: rawOptions })
   })
 
   ipcMain.handle(WCV_AGENT_CHANNELS.runPlan, async (event, request: unknown) => {
@@ -513,30 +498,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         code: 'AGENT_RUN_SCOPE_REJECTED'
       })
     }
-    ensureAgentSender(event.sender)
-    const latest = floorService.getAllFloors(scope.profileId, scope.chatId).at(-1)?.floor
-    const floor = typeof plan.floor === 'number' ? plan.floor : latest
-    if (floor === undefined) throw new Error('No committed Invocation Floor exists')
-    const running = invocationRuntime().runPlan({ ...scope, floor, plan, toolScope: scope })
-    pendingAgentRuns.set(pendingAgentRunKey(event.sender.id, requestId), {
-      senderId: event.sender.id,
-      kind: 'plan',
-      id: running.planId
-    })
-    try {
-      return await running
-    } finally {
-      pendingAgentRuns.delete(pendingAgentRunKey(event.sender.id, requestId))
-    }
+    return ensureAgentSender(event.sender, scope).session.runPlan({ requestId, plan })
   })
 
   ipcMain.handle(WCV_AGENT_CHANNELS.cancel, (event, requestId: unknown) => {
     if (typeof requestId !== 'string') return false
-    const pending = pendingAgentRuns.get(pendingAgentRunKey(event.sender.id, requestId))
-    if (!pending || pending.senderId !== event.sender.id) return false
-    return pending.kind === 'run'
-      ? invocationRuntime().cancelInvocation(pending.id)
-      : invocationRuntime().cancelPlan(pending.id)
+    return agentSenders.get(event.sender.id)?.session.cancel(requestId) ?? false
   })
 
   ipcMain.handle(WCV_AGENT_CHANNELS.registerTool, (event, binding: CardAgentToolBinding) => {
@@ -546,21 +513,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         code: 'CARD_TOOL_UNMOUNTED'
       })
     }
-    ensureAgentSender(event.sender)
-    liveCardToolRegistry().register({
-      scope: { ...scope, senderId: event.sender.id },
-      binding,
-      send: (channel, payload) => event.sender.send(channel, payload)
-    })
-    return true
+    return ensureAgentSender(event.sender, scope).session.registerTool(binding)
   })
   ipcMain.handle(WCV_AGENT_CHANNELS.unregisterTool, (event, name: unknown) =>
     typeof name === 'string'
-      ? liveCardToolRegistry().unregister(
-          event.sender.id,
-          name,
-          agentScope(event.sender.id) ?? undefined
-        )
+      ? (agentSenders.get(event.sender.id)?.session.unregisterTool(name) ?? false)
       : false
   )
   ipcMain.on(WCV_AGENT_CHANNELS.toolResult, (event, result: unknown) => {
@@ -568,28 +525,27 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     try {
       const scope = agentScope(event.sender.id)
       if (!scope) return
-      liveCardToolRegistry().complete({ ...(result as any), senderId: event.sender.id, scope })
+      ensureAgentSender(event.sender, scope).session.completeTool(result as any)
     } catch (cause) {
       log('error', 'wcv agent tool result', cause instanceof Error ? cause.message : String(cause))
     }
   })
   ipcMain.handle(WCV_AGENT_CHANNELS.floorSubscribe, (event) => {
-    if (!agentScope(event.sender.id)) return false
-    ensureAgentSender(event.sender).subscribed = true
+    const scope = agentScope(event.sender.id)
+    if (!scope) return false
+    ensureAgentSender(event.sender, scope).session.subscribeFloors((floor) =>
+      event.sender.send(WCV_AGENT_CHANNELS.floorCommitted, floor)
+    )
     return true
   })
   ipcMain.handle(WCV_AGENT_CHANNELS.floorUnsubscribe, (event) => {
     const state = agentSenders.get(event.sender.id)
-    if (state) state.subscribed = false
+    state?.session.unsubscribeFloors()
     return !!state
   })
   onCardFloorCommitted((profileId, chatId, event) => {
     for (const state of agentSenders.values()) {
-      if (!state.subscribed) continue
-      const scope = agentScope(state.sender.id)
-      if (scope?.profileId === profileId && scope.chatId === chatId) {
-        state.sender.send(WCV_AGENT_CHANNELS.floorCommitted, event)
-      }
+      state.session.deliverFloor(profileId, chatId, event)
     }
   })
 

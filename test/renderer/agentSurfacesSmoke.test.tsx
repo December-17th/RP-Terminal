@@ -1,16 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
-import React from 'react'
+import { cleanup, fireEvent, render } from '@testing-library/react'
 
 /**
  * Renderer smoke-mount seam (execution-plan M2 §2).
  *
  * The rest of the suite pins `environment: 'node'` with no DOM, so no test can mount a React tree.
- * That blind spot let commit `2ce4277` ship: AgentRunActivity (mounted by ChatView on session
- * entry) subscribed to an unstable store snapshot, re-rendered forever, and tore the WHOLE app
+ * That blind spot let commit `2ce4277` ship: AgentRunActivity subscribed to an unstable store
+ * snapshot, re-rendered forever, and tore the WHOLE app
  * down — a blank window past 4000+ green tests. This file actually MOUNTS the two Agent-Runtime
- * render surfaces (ChatView → AgentRunActivity, and the Agent Workspace popup) so a top-level
+ * render surfaces (TopStrip → AgentRunActivity, and the Agent Workspace popup) so a top-level
  * render crash — a throw during mount OR an unstable-snapshot render loop ("Maximum update depth
  * exceeded") — fails the gate.
  *
@@ -67,9 +66,9 @@ async function seedActiveSession(): Promise<string> {
     error: null,
     activeChatMode: 'explore'
   })
-  // A running row exercises the AgentRunActivity list body, not just its empty branch — the
-  // original loop reproduced regardless, but rendering an item is the fuller path.
+  // A running row exercises the title-strip AgentRunActivity disclosure, not just its empty branch.
   useAgentRunStore.setState({
+    revisionByChat: {},
     byChat: {
       [chatId]: {
         'run-1': {
@@ -98,7 +97,7 @@ async function seedActiveSession(): Promise<string> {
 }
 
 describe('Agent-Runtime renderer surfaces mount without crashing', () => {
-  it('ChatView mounts with a session open (AgentRunActivity render loop would blank the app)', async () => {
+  it('ChatView mounts with a session open', async () => {
     await seedActiveSession()
     const { ChatView } = await import('../../src/renderer/src/components/ChatView')
     const { container } = render(<ChatView profileId="p1" />)
@@ -110,6 +109,29 @@ describe('Agent-Runtime renderer surfaces mount without crashing', () => {
     const { AgentRunActivity } = await import('../../src/renderer/src/components/AgentRunActivity')
     const { container } = render(<AgentRunActivity profileId="p1" chatId={chatId} />)
     expect(container).toBeTruthy()
+  })
+
+  it('toggles Agent status inside the title-strip spacer without an overlay', async () => {
+    await seedActiveSession()
+    const { TopStrip } = await import('../../src/renderer/src/components/TopStrip')
+    const view = render(<TopStrip profileId="p1" profileName="Player" />)
+    const toggle = view.getByRole('button', { name: /show agent activity/i })
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByText('memory.curator')).toBeNull()
+    expect(view.container.querySelector('.tstrip-agent-runs__popover')).toBeNull()
+
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByText('memory.curator')).toBeTruthy()
+    expect(
+      view.container.querySelector('.tstrip-spacer > #agent-run-status-strip')
+    ).toBeTruthy()
+    expect(view.container.querySelector('.tstrip-agent-runs__popover')).toBeNull()
+
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByText('memory.curator')).toBeNull()
   })
 
   it('AgentWorkspace popup mounts (flat library + editor surface)', async () => {

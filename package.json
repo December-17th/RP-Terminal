@@ -15,6 +15,7 @@
     "check:package": "node scripts/verify-package.mjs",
     "check:release": "node scripts/verify-package.mjs --require-artifact",
     "check:release:mac": "node scripts/verify-package.mjs --mac --require-artifact",
+    "verify": "npm run typecheck && npm run check:deps && npm run test",
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "electron-vite preview",

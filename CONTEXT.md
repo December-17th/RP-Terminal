@@ -378,6 +378,17 @@ A named capability slice of the Host interface (VarsHost, WorldbookHost, …). E
 belongs to exactly one facet; a new capability has one obvious home.
 _Avoid_: sub-interface, section
 
+**Agent Host Facet**:
+The Host Facet through which a card invokes Agents and Invocation Plans, supplies Tool Bindings, and
+observes Floor Commit Events. Its behavior is identical across the inline and WCV Transports.
+_Avoid_: Card Agent Host, Agent bridge
+
+**Agent Host Session**:
+The lifetime binding one authoritative card realm to its Agent invocations, Tool Bindings, and Floor
+Commit Event observation. It ends with its owning Transport context and retains that Transport's
+established teardown behavior.
+_Avoid_: Agent connection, sender session
+
 **Channel Spec**:
 The shared table mapping each Host member to its WCV transport channel (name, call kind, fallback).
 Both sides of the transport derive from it, so they cannot drift apart.

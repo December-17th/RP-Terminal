@@ -1,29 +1,23 @@
 # Table templates — the chatSheets v2 import surface (SQL-table memory)
 
-**Status:** 🟢 complete (issues 02–06: import + per-chat enablement + the Tables view (read + hand
-editing) + SQL write path + op-log/rewind + prompt projection (`table.export`) + the maintenance
-pipeline (`table.gate` / `table.read` / `table.query`) + template EXPORT (chatSheets v2, round-trip) +
-per-table last-maintained indicator all built). Structural fields (DDL / columns / tables) are now
-editable via `table-structure-apply` with bound-chat migration (Memory-Manager WP4a — backend only;
-the editor UI is WP4b). World Cards can embed templates in
-`data.extensions.rp_terminal.table_templates[]`; import adds them to the profile library without
+**Status:** Current contract. chatSheets v2 import, per-chat enablement, the Tables view, validated SQL
+writes, op-log/rewind, direct Classic prompt projection, built-in Agent maintenance, template export,
+structural migration, refill, and per-table progress are implemented. World Cards may embed templates
+in `data.extensions.rp_terminal.table_templates[]`; import adds them to the profile library without
 auto-assigning them to a chat.
 
-The **Tables view** now also shows and edits each table's per-table template prompts inline (the five
-per-op prompts + the injection `exportConfig`) via `table-template-update` — structural fields
-(DDL/headers/rows) change ONLY through `table-structure-apply` (below). Each table's **`updateFrequency`** is edited from an always-visible
-per-table cadence control in the table header (global / off / custom — manual-pass issue 04), not the
-collapsible prompt panel.
+The **Tables view** edits each table's five per-operation prompts, `exportConfig`, `injectionPolicy`,
+and `updateFrequency` through `table-template-update`. Structural fields (DDL, columns, and tables)
+change only through `table-structure-apply`.
 
-RP Terminal's memory system is **SQL-table memory** (the 数据库-plugin model): each chat maintains a
-set of relational tables, the LLM edits them via SQL (later issues), and the tables project back into
-the prompt as worldbook-like entries (later issues). The _schema_ of those tables is a **table
-template** — a portable, file-based artifact (like presets/lorebooks), importable from the plugin's
-**chatSheets v2** export format.
+RP Terminal's memory system is **SQL-table memory**: each chat maintains relational tables in a
+per-chat sandbox. Models update them through the validated, op-logged SQL path; current rows return to
+the narrative prompt through the direct Classic entry projection and the compact memory-tail injection.
+The schema is a portable, file-based **table template**, importable from chatSheets v2.
 
 This doc is the contract for that importer: what subset we accept, the field-by-field mapping, and
 the defaults applied to the plugin's `-1` sentinels. Behavioral claims cite the file they were
-verified against (`CLAUDE.md` grounding rule).
+verified against (`AGENTS.md` grounding rule).
 
 ## Artifacts & storage
 
@@ -105,10 +99,10 @@ silently create duplicates. Importing the card as a new world still installs its
 | `sourceData.note`                            | `note`                                | Table-definition prompt.                                                                                                                                                                                        |
 | `sourceData.{init,insert,update,delete}Node` | `{init,insert,update,delete}Node`     | Per-op AI instructions; default `''`.                                                                                                                                                                           |
 | `updateConfig.updateFrequency`               | `updateFrequency`                     | `-1`/absent → **`-1` = use the global default** `settings.tables.default_update_frequency` (default 3); `0` = **off** (excluded from auto-maintenance); positive ints kept. `<= -2` clamped to `-1` (issue 04). |
-| `exportConfig.*`                             | `exportConfig.*`                      | Verbatim (see below); projected into the prompt by `table.export` (issue 04).                                                                                                                                   |
+| `exportConfig.*`                             | `exportConfig.*`                      | Verbatim (see below); projected by `generation/classicStages.ts` through the direct Classic prompt path.                                                                                                                                   |
 | `mate.globalInjectionConfig`                 | `TableTemplate.globalInjection`       | `readableEntryPlacement` / `wrapperPlacement`.                                                                                                                                                                  |
 
-### `exportConfig` mapping (projected by `table.export`, issue 04)
+### `exportConfig` mapping (direct Classic projection)
 
 `enabled`, `splitByRow`, `entryName`, `entryType` (`'constant'|'keyword'`, non-`keyword` → `constant`),
 `keywords`, `injectionTemplate`, `extraIndexEnabled`, `extraIndexEntryName`, `extraIndexColumns`,
@@ -120,11 +114,11 @@ silently create duplicates. Importing the card as a new world still installs its
 ## Main-prompt memory injection — `injectionPolicy` (WS4 / D10)
 
 Each table carries a **native** `injectionPolicy` (`src/main/types/tableTemplate.ts`
-`TableInjectionPolicySchema`) that controls how its **current rows** are injected into the **main
-narrative prompt** each turn — the block the storyteller model reads, distinct from the maintainer
-side-call. This is the **simple capped block**; the rich `exportConfig` above stays **UNCONSUMED for
-injection** (a deliberate reconciliation — exportConfig-driven worldbook-style injection is a later item
-gated on the vector/summary engine).
+`TableInjectionPolicySchema`) controlling a simple capped block in the main narrative prompt. The rich
+chatSheets `exportConfig` is also active: the direct Classic path turns enabled table rows into
+worldbook-style entries, qualifies them through the lorebook matcher, and supplies them to
+`assemblePrompt`. These are separate, cumulative surfaces: `injectionPolicy` controls the compact
+memory-tail block; `exportConfig` controls entry activation and placement.
 
 | field  | values                                       | meaning                                                                                               |
 | ------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -143,12 +137,11 @@ gated on the vector/summary engine).
 - **`'summary'` is DEFERRED** (LLM-condensed rows): it needs the future vector/summary engine and is
   **not a valid mode yet**. The truncation marker is the reserved seam that will carry it — nothing else
   is reserved.
-- **Injection seam:** the block is folded into the **same memory tail** as recall / pack blocks
-  (`buildPrompt`'s `memoryBlock` splice), computed at assembly time by
-  `tablesInjectionService.renderChatTablesInjectionBlock` (called from `generation/assemble.ts`), so it
-  reaches every workflow **without** consuming the `prompt-assembly` checkpoint's `block`/`entries`
-  anchor lanes (those stay free for pack rejoin). FAIL-OPEN: no template / nothing to inject / any read
-  error → `''` (prompt unchanged).
+- **Injection seams:** `tablesInjectionService.renderChatTablesInjectionBlock`, called by
+  `generation/assemble.ts`, adds the compact `injectionPolicy` block to the memory tail. Separately,
+  `generation/classicTurn.ts` calls `exportTableEntries`, then concatenates the qualified
+  `exportConfig` entries with matched lorebook entries before `assemblePrompt`. Both paths fail open:
+  no template, no eligible rows, or a read failure leaves the corresponding prompt contribution empty.
 - **Round-trip:** `injectionPolicy` is **RPT-native** — it has no chatSheets analogue, so it is **NOT**
   written by `exportChatSheets` and an import re-applies the schema default (`{ mode:'recent' }`). That
   keeps `parseChatSheets(exportChatSheets(tpl))` lossless-for-the-model (the reader never emits a
@@ -188,10 +181,8 @@ accepts `-1` (global), `0` (off), or a positive int; `<= -2` is a `templateBadPa
 merge is the pure
 `tableTemplateService.applyTemplatePatch` (unknown table `uid` → `{ error: 'tables.templateUnknownTable' }`;
 malformed patch → `{ error: 'tables.templateBadPatch' }`; missing template → `{ error:
-'tables.templateNotFound' }`), then `saveTableTemplate` overwrites the SAME id. A template is shared:
-edits apply to every chat assigned to it and are **picked up on the next maintenance pass** (`table.gate`
-/ `table.read` re-read the template each pass — no sandbox rebuild).
-
+'tables.templateNotFound' }`), then `saveTableTemplate` overwrites the SAME id. A template is shared: edits apply to every assigned chat and are read on the next prompt assembly or
+Memory Maintenance pass; there is no runtime graph or sandbox rebuild for prompt/config changes.
 `chat-tables-read` returns each row's SQLite `rowid` (`rowids[]`, 1:1 with `rows`;
 `tableDbService.readOne` selects `rowid AS __rid, *` and slices the alias off so `rows`/`columns` stay
 data-only + positional — no other `TableRead` consumer changes). Columns are unified onto the
@@ -222,7 +213,7 @@ Algorithm — a **strict ordering** so a mid-way failure can never leave a half-
    the new columns (surviving/renamed columns keep their label, new columns default to the column
    name); `initialRows` remap positionally (surviving values kept, dropped columns removed, added
    columns filled `''`); `exportConfig` (`keywords` / `extraIndexColumns` / `extraIndexColumnModes`)
-   remaps by the rename map and drops references to dropped columns. Per-op node **prose is NOT
+   remaps by the rename map and drops references to dropped columns. Per-op prompt **prose is NOT
    rewritten** — a reference to a renamed/dropped column becomes a `warnings[]` advisory.
 4. **Migrate each bound chat, one at a time.** Apply the `ALTER/CREATE/DROP` to its live sandbox in
    an OPEN transaction, read the migrated rows on that same (uncommitted) handle to build the
@@ -359,11 +350,9 @@ auto-maintain by the stale expiry:
   lease) and the template delete/assign paths (`removeTableTemplateIdFromChats`, which scans every bound
   chat before unbinding any). The refill heartbeat above is what lets these probes trust the busy
   reading even while a long refill sits inside a >120s model await.
-- `tryBeginTableWrite(chatId): boolean` / `endTableWrite(chatId)` — thin wrappers for the three
-  SHORT-HOLD callers (`memory.maintain`/`table.apply` via `applyTableEdit`, backfill, hand-edit) that
-  complete well inside 120s. `table.apply` and `rebuildSandbox` take it; a busy chat surfaces as class-B
-  `busy` (retry next turn).
-
+- `tryBeginTableWrite(chatId): boolean` / `endTableWrite(chatId)` — thin wrappers for short-hold
+  callers (`applyTableEdit`, backfill, hand-edit, and sandbox rebuild) that complete well inside 120s.
+  A busy chat yields a recoverable `busy` result so automatic maintenance can retry later.
 ### Refill engine (`tableRefillService.ts` — the chunk-committed regenerate)
 
 `startRefill(profileId, chatId, { tables?, fromFloor?, extraHint?, apiPresetId?, retries?, batchSize? })`
@@ -471,49 +460,17 @@ with durable state. `test/tableRefill.test.ts` retains focused pure coverage for
 hard edge matrices such as chained cutpoint widening, progress adjustment, terminal precedence, and
 heartbeat-gap detection.
 
-### Nodes (`src/main/services/nodes/builtin/`)
+## Prompt projection
 
-- **`parse.extract`** (`parseNodes.ts`, generic — NOT table-specific): tag/regex extractor. Inputs
-  `text: Text`, `when: Signal`; outputs `first: Text`, `all: Any` (string[]), `found: Signal` (fires
-  only on ≥1 match). Config `{ mode: 'tag'|'regex' (default 'tag'), tag?, pattern?, flags? }`. Tag
-  mode matches `<tag>…</tag>` (non-greedy, dotall, case-insensitive); regex mode captures group 1
-  when present else the whole match. A bad user regex → class-B `bad-pattern`; blank input → empty
-  outputs, no `found`.
-- **`table.apply`** (`tableNodes.ts`): the SQL write node. Inputs `gen: Context`, `sql: Text`,
-  `when: Signal`; outputs `results: Any` (`{applied, changes}`), `done: Any` (ordering-only, emitted
-  only on a completed apply — wire into a downstream `context.refresh`'s `after`), `error: Error`.
-  Config `{ max_changes?: 1..5000 }`. It's a POST-response side branch and **fail-open**: blank sql
-  → silent no-op; no template → class-B `no-template`; lock busy → `busy`; validation/exec failure →
-  `bad-sql`; all route on the `error` port and never abort the turn. On success it appends ops at
-  `floors.length - 1` (clamped ≥0 — the just-persisted floor).
+`generation/classicTurn.ts` calls `exportTableEntries(gen, {})` directly before prompt assembly. The
+service resolves the chat's assigned template, reads current table rows, calls `synthesizeEntries`,
+qualifies the resulting `LorebookEntry[]` through `lorebookService.matchAcross`, and concatenates the
+qualified entries with normal world-info matches. No template or no qualified entries is a silent
+empty projection. There is no node, port, wiring recipe, or selectable workflow path.
 
-## Prompt projection (issue 04)
-
-The READ-into-the-prompt half. `table.export` turns a chat's table rows into **real `LorebookEntry`
-objects** per each table's `exportConfig`, then qualifies them through the SAME world-info matcher
-(`lorebookService.matchAcross`) and placement machinery lorebook entries use — no new injection path.
-
-### Nodes / ports
-
-- **`table.export`** (`tableNodes.ts`): inputs `gen: Context`, `when: Signal`; outputs `entries: Any`
-  (the qualified `LorebookEntry[]`), `block: Text` (plain-text rendering of the qualified NULL-depth /
-  top-block entries, `'\n\n'`-joined — for composed prompts that want text), `error: Error`. Config
-  `{ tables?: string (comma-separated sqlNames narrowing which tables project; unset = all),
-max_rows?: 1..500 (per-table cap on projected DATA rows, keeps the NEWEST-last rows) }`. **No table
-  template assigned → SILENT empty** (`{ entries: [], block: '' }`), NOT an error — export is a read;
-  a chat without table memory simply projects nothing (contrast `table.apply`'s `no-template` class-B
-  failure). It does **not** auto-inject anywhere; projection reaches the prompt only through wiring.
-- **`prompt.assemble` / `prompt.preset`** gain an optional **`entries` input port** (`Any`). Wired
-  `LorebookEntry[]` are **concatenated onto the scanned matches** before assembly. Unwired = empty
-  concat = **byte-identical** to before (the parity gate, `test/generation/generateParity*.test.ts`).
-  On `prompt.preset`, a wired `worldInfo` override still skips the keyword scan (`matched = []`), but
-  wired `entries` are **still appended** — they're explicit author intent, whereas the scan is implicit.
-
-### Wiring recipe
-
-`table.export.gen ← input.context.gen`; `prompt.assemble.entries ← table.export.entries` (or
-`prompt.preset.entries`). The default graph does **not** auto-wire this (issue 05's example workflow
-demonstrates it).
+The internal `ExportEntriesConfig` may narrow by comma-separated `sqlName` and cap each table to its
+newest rows. Classic uses the default empty config, so every enabled `exportConfig` table participates
+without a row cap.
 
 ### Synthesis (`src/main/services/tableExportService.ts`, pure)
 
@@ -557,141 +514,47 @@ whole-table entry, `extraIndexPlacement` for the index entry):
 Qualification uses the real matcher: **constant entries always survive; keyword entries fire only on a
 scan hit** against `gen.scanText` (recursion honored via `gen.maxRecursion`).
 
-## Maintenance pipeline (issue 05)
+## Automatic maintenance
 
-The nodes that make **table maintenance an authorable post-response workflow** — a gated side-call
-that reads the due tables, prompts a maintainer LLM, and applies the emitted SQL. All three live in
-`src/main/services/nodes/builtin/tableNodes.ts` and are registered in `builtin/index.ts`.
+Automatic table maintenance is the built-in **Memory Maintenance** Agent (`source_key =
+memory-maintenance`), not an authorable workflow. Its profile-local Agent settings own the enabled
+switch, `trigger.onFloorCommitted.everyNFloors`, API preset, and maintainer overrides. The Memory
+sheet's Maintenance strip edits those settings; manual **Run now** and cadence-triggered runs use the
+same configured API preset and Invocation Runtime path.
 
-### `table.gate` — the update-frequency cadence gate
+### Dispatch and due set
 
-Fires `due` once any watched table's effective update-frequency window has elapsed. Inputs `gen:
-Context`, `floor: Any` (**ORDERING-ONLY** — wire from `output.writeFloor.floor`; its value is ignored,
-it exists to sequence the gate AFTER the reply floor is persisted). Outputs `due: Signal`, `tables:
-Any` (the due `sqlName[]`), `span: Any` (`{ from, to }`, the aged floor range). Config `{ tables?:
-string (comma-separated sqlNames narrowing which tables to watch; unset = all template tables),
-every?: 1..500 }`.
+`agentRuntime/triggerRuntime.ts` observes the single new-floor commit event and evaluates the Agent's
+cadence. Before dispatch, `memoryMaintenanceAgentBridge.planDispatch` resolves the assigned template
+and calls `memory/memoryCore.dueTables`:
 
-- **Cadence resolution order (issue 04):** `every` (the gate override) **>** the per-table
-  `updateFrequency` **resolved against the app global default** (`resolveUpdateFrequency` in
-  `tableStatusService.ts`, pure + tested): `-1` → `settings.tables.default_update_frequency` (default 3),
-  `0` → **off** (null; the table is never due and the gate skips it), `N>=1` → `N`.
-- **`every` — the global cadence override** (`tableNodes.ts` gate run(); post-merge cadence fix): when
-  set, EVERY watched table's effective frequency becomes `every`, so the whole maintenance pass runs
-  at most once every N floors. It **overrides everything, including an off (`0`) table** — `every` is the
-  workflow author's explicit knob, so it re-includes an off table. This is also the player's knob for
-  imported chatSheets templates whose tables carry `-1` (= use-global). Unset = the per-table resolved
-  frequencies. The Tables view's 下次维护 prediction honors both the override and the global-default
-  resolution (`tableStatusService.effectiveFrequencies`, pure + tested — several overriding gates on one
-  table: the lowest `every` wins; an off table is omitted unless an override re-includes it).
+- `updateFrequency: -1` uses `settings.tables.default_update_frequency` (default 3);
+- `0` disables automatic maintenance for that table;
+- `N >= 1` is the table's floor cadence;
+- a table is due when `currentFloor - (progress[sqlName] ?? -1) >= frequency`.
 
-- **Floor source:** the gate re-reads the floor count FROM DISK via `getAllFloors(profileId,
-chatId).length - 1` (`currentFloor`, clamped ≥0). `gen.floors` is the PRE-turn snapshot
-  `input.context` took, so the just-persisted reply floor is missing from it — the disk read is
-  mandatory for the cadence to advance.
-- **Due rule:** the last-processed pointer lives in the **chat-level `table_progress` store**
-  (`tableProgressService.getProgress` → `Record<sqlName, lastFloor>`, missing = `-1`), shared with the
-  manual backfill and the Tables display — **NOT per-workflow node state** (issue 07 retired that,
-  including its `at` rewind discriminator). A table is due when `currentFloor - (progress[t] ?? -1) >=
-updateFrequency` (freq `1` = every turn). No template / no due tables → `{ outputs: {} }` (no signal;
-  a chat without table memory is a silent no-op).
-- **AT-MOST-ONCE / FAIL-OPEN:** when the gate fires it **advances the store for every due table to
-  `currentFloor` IMMEDIATELY** (`advanceProgress`, MAX-semantics upsert), before any downstream node
-  runs. If the maintainer chain then fails, that span is simply skipped — worst case one missed batch.
-  `span.from = min(progress[t] over due tables) + 1`, `span.to = currentFloor`.
+An empty due set skips the invocation completely: no provider call and no Run Record. The last
+processed floor lives in `table_progress`; floor truncation clamps it and template reassignment resets
+it.
 
-### Auto due-set gating in the consolidated `memory.maintain` node (WS3)
+### Prompt and write contract
 
-The all-in-one `memory.maintain` node (which folds gate → read → apply into one self-seeding node)
-applies the **same per-table due rule internally**, so an automatic pass only maintains the tables that
-are DUE this turn instead of all-every-turn:
+For a due pass, `memoryMaintenanceAgentBridge.composePrompt` builds the owning floor's `GenContext`,
+renders all template tables for context through the shared `composeMaintainerMessages`, and prepends a
+write-scope directive naming only the due tables. The same composer and effective maintainer config
+power `memory-maintain-preview`, so preview and execution stay aligned.
 
-- **Due set (pure `dueTables` in `nodes/builtin/memoryCore.ts`):** a table is due when its resolved
-  cadence is not `null` **and** `currentFloor - (progress[t] ?? -1) >= resolvedFreq` (`>=`, so exactly
-  at the threshold is due). `updateFrequency 0 → null → 手动维护`, never auto-due; `-1 →` the global
-  default. `currentFloor` is re-read from disk (`getAllFloors().length - 1`), matching `table.gate`.
-- **Empty due set ⇒ NO model call.** The node runs every turn (the cadence gate), but returns
-  `report: 'no tables due'` **without** an LLM call when nothing is due — the pass only pays for a model
-  call when at least one table is due.
-- **Full-context render, scoped writes (D5).** When it DOES run, **all** template tables still render in
-  the maintainer prompt (deliberate — the model sees the whole state for context), and the shared
-  write-scope directive (`tableMaintenance.writeScopeDirective`, the SAME `【本次只更新以下表】…` block the
-  refill prompt uses) names only the due tables. Statements the model emits against non-due tables are
-  **dropped** by the shared filter (`tableSql.partitionBySelected`, re-exported by `tableRefillService`
-  so auto + manual refill share ONE filter) and counted in the report (`dropped N out-of-scope`).
-- **Advance only the due tables.** `applyTableEdit`'s `advanceProgress` advances **only** the due
-  pointers (`advanceTables` opt); a non-due table's backlog stands until its own cadence turn. Callers
-  that pass neither `writeScope` nor `advanceTables` (the `table.apply` node, hand edits) keep the
-  pre-WS3 behavior byte-for-byte (write anything registered, advance all template tables).
+A successful result is consumed once by `withMemoryMaintenanceApply`:
 
-### `table.read` — the maintainer-prompt ingredients
+- no `<TableEdit>` tag is malformed output: apply nothing and advance nothing;
+- an empty `<TableEdit></TableEdit>` is a compliant no-change result and advances only the due tables
+  when the transcript epoch is still current;
+- SQL is filtered to the due-table write scope, validated, applied transactionally by `applyTableEdit`,
+  appended to the floor op log, and advances only the due tables after success;
+- a changed transcript epoch drops the result without applying or advancing.
 
-Renders the "here are the tables, here is what you may do" block. Inputs `gen: Context`, `tables: Any`
-(the gate's due `sqlName[]`, or a comma-separated string; **unwired/empty = ALL template tables**),
-`when: Signal`. Outputs `block: Text`, `tables: Any` (passthrough of the rendered scope). Config
-`{ include_rules?: boolean (default true), max_rows?: 1..500 (per-table cap, keeps NEWEST-last rows) }`.
-No template / no selected tables → **SILENT empty** (`{ block: '', tables: [] }`), never an error (the
-`table.export` read precedent). Per-table block format:
-
-```
-## <displayName> (<sqlName>) — 每 N 轮维护
-【建表语句】<ddl>             (with rules; the CREATE TABLE — REAL SQL column names + zh mapping in comments)
-【表定义】<note>              (with rules)
-【初始化规则】<initNode>       (with rules; ONLY when the table has 0 rows)
-【插入规则】<insertNode>       (with rules)
-【更新规则】<updateNode>       (with rules)
-【删除规则】<deleteNode>       (with rules)
-【当前数据】
-<renderWholeTable(sqlColumns, rows)>
-```
-
-The `【建表语句】` and the `【当前数据】` header line use the DDL's **real** column names
-(`chatSheetsParser.parseDdlColumnNames`), **not** `template.headers` (which are the zh DISPLAY labels,
-e.g. 人物名称) — so the maintainer writes SQL against the actual columns (e.g. `name`) instead of the
-display labels, which SQLite rejects (`table … has no column named 人物名称`). Rows are positional in
-DDL order (== the sandbox `SELECT *` order), so the real-name header aligns 1:1; falls back to
-`template.headers` only when the DDL yields no parsable columns. Empty rule strings are omitted.
-`include_rules: false` drops `【建表语句】` + the definition + all rules (the whole "ingredients" set),
-rendering just the `##` header + `【当前数据】` data. Blocks are `'\n\n'`-joined.
-
-### `table.query` — a validated read for planner / 剧情推进 branches
-
-Inputs `gen: Context`, `query: Text`, `when: Signal`. Outputs `rows: Any` (positional row arrays,
-better-sqlite3 `.raw().all()` aligned to the result columns), `block: Text` (`renderWholeTable` of the
-result), `error: Error`. **Validation (pure, exported as `validateReadQuery` in `tableSql.ts`,
-unit-tested):** the query must be EITHER a bare **registered** `sqlName` (→ `SELECT * FROM "t"`) OR a
-**single** statement (`splitSqlStatements` length 1) whose head is `SELECT` (case-insensitive, after
-comment strip). Everything else — **`WITH` (a CTE head hides read-vs-write; out of contract)**, PRAGMA,
-INSERT/UPDATE/DELETE, an unknown bare name, multi-statement text — is a class-B `bad-query`. Execution
-(`executeReadQuery`) opens the sandbox `{ readonly: true }` (defense in depth behind the head check).
-A blank query, no template, or a missing sandbox → **SILENT empty** (`{ rows: [], block: '' }`); a
-SQLite runtime error → class-B `bad-query` carrying SQLite's message.
-
-### Example workflow — `docs/workflows/table-memory-default.rptflow`
-
-A shipped, importable example (the `decomposed-default.rptflow` convention — there is **no in-app
-seeding mechanism**; authors import the file). **Main path:** the builtin default with `table.export`
-wired into `prompt.assemble`'s `entries` port, so a chat's tables project into the prompt. **Post-
-response maintenance** (reworked in the cadence fix): `table.gate` (gen from `ctx`, floor from
-`write.floor`, config `{ every: 3 }` — the whole pass runs every 3 floors; edit/delete `every` to
-change the cadence) → `table.read` (`tables` from `gate.tables`, `when` from `gate.due`) →
-`prompt.messages` framing a **zh 数据库表格维护** prompt from `{{in1}}` = `read.block` and `{{in2}}` =
-the EXACT aged-in transcript: a `context.refresh` (ordered after `write.floor`) feeds
-`context.history`, whose `span` input is wired from `gate.span`, so the maintenance covers precisely
-the floors since the last pass — including the just-persisted turn — with no gaps or overlap
-(`count: 6` is only the dead-span fallback) → a NON-STREAMING `llm.sample` (`stream: false`,
-`retries: 1`, **no `api_preset_id`** so it runs out-of-the-box on the active connection) →
-`parse.extract` (tag `TableEdit`) → `table.apply` (`sql` from `sql.first`, `when` from `sql.found`).
-`side.error` and `tableapply.error` route to two `util.log` nodes (fail-open). The maintainer prompt
-instructs **exactly ONE `<TableEdit>` block** with all statements (so `sql.first` captures
-everything), only INSERT/UPDATE/DELETE on the listed tables, the 一次交互 batch rule (纪要表 gains
-exactly ONE row per pass), an empty tag when nothing changed, and the **record-only rule** (tables are
-a historical archive: only facts that explicitly happened; no inventing, predicting, or advancing the
-plot — `tableMaintenance.MAINTAINER_RULES` rule 5, shared with the backfill). Its `description` field
-documents: assign a template in the Tables view (else the branch is a silent no-op), the `every` knob,
-how to point `side` at a cheap model via `api_preset_id`, and how to chain a second staged pass
-(世界推进 before 剧情推进) with an ordering edge (first `table.apply.done` → second `gate.floor`).
-Validated by `test/workflow/tableMemoryExample.test.ts`.
+Failures remain due for a later commit. Triggered, manual Workspace, and card-transport entry paths all
+share the same single-owner apply wrapper, preventing both discarded manual results and double apply.
 
 ## Hand editing (issue 06)
 
@@ -724,7 +587,7 @@ rowid = N`. `sqlColumn` is the **real sandbox column name** (never a renderer st
 `applyEdit(profileId, chatId, template, op)` builds the SQL, takes the per-chat write lock
 (`tryBeginTableWrite`; busy → `{ error }`), runs it through **`applySqlBatch`** (the same validate +
 execute-in-one-transaction path as AI writes), then **`appendOps`** at `getAllFloors().length - 1`
-(clamped ≥0 — the just-persisted floor, same attribution `table.apply` uses). Returns
+(clamped ≥0 — the just-persisted floor, same attribution automatic maintenance uses). Returns
 `{ ok, changes } | { error }`; CHECK / NOT NULL constraint violations surface as the `{ error }`
 message (renderer toast) — never a crash. There is **no second write path and no unlogged write**.
 
@@ -761,25 +624,23 @@ re-parse as a defined `globalInjection` and break the round-trip) + one `sheet_<
 - **Export with data:** `dataRows` (a `Map<sqlName, string[][]>`) embeds current rows as `content[1..]`
   (cells stringified, `null → ''`); absent → the template's own `initialRows`. Orchestrated by
   `tableTemplateService.exportTableTemplateToFile` (reads live rows via `readAllTables` when a `chatId`
-  is passed) behind `table-template-export-dialog` (a `showSaveDialog`, mirroring workflowIpc's
-  `export-workflow-dialog`).
+  is passed) behind `table-template-export-dialog` (a native `showSaveDialog`).
 
 ## Backfill & progress (issue 07)
 
-### The progress store (`table_progress`, chat-level — replaces the gate's node-state pointer)
+### The progress store (`table_progress`, chat-level automatic-maintenance cursor)
 
 A single **chat-level** last-processed pointer per `(chat, table)` lives in the app-DB table
 `table_progress (chat_id, sql_name, last_floor)` (`db.ts` SCHEMA; FK-cascade on chat delete), managed
 by `src/main/services/tableProgressService.ts`. `last_floor` is the 0-based floor index a table was
 last processed through. It is:
 
-- **advanced** (`advanceProgress`, MAX-semantics upsert) by `table.gate` on fire AND by every applied
-  backfill batch,
+- **advanced** (`advanceProgress`, MAX-semantics upsert) after a successful or compliant-empty Memory
+  Maintenance result and by every applied backfill batch;
 - **clamped** (`clampProgress` → `last_floor = fromFloor - 1 WHERE last_floor >= fromFloor`) on floor
-  truncation — the **explicit rewind hook** in `chatService.truncateFloors`, right next to the ops
-  clamp (no `at`-discriminator inference; the issue-05 gate node-state pointer + its `at` field are
-  **retired**),
-- **reset** (`resetProgress`, rows deleted) on template (re)assignment/unassignment in
+  truncation by the explicit rewind hook in `chatService.truncateFloors`, with no legacy node-state or
+  `at`-discriminator inference;
+- **reset** (`resetProgress`, rows deleted) on template assignment or removal in
   `chatService.setChatTableTemplateId`.
 
 The pure `computeTableProgress(lastFloor, updateFrequency, currentFloor)` derives the three display
@@ -800,8 +661,8 @@ number | 'all', batchSize, apiPresetId?, retries })`. Scope = the last X floors 
 tested), processed in ASCENDING batches of Y floors, each treated as ONE 交互 (纪要表 gains exactly one
 row; other tables maintained normally). Per batch: render the tables block over ALL template tables
 (current data — state advances batch by batch) → build the shared maintainer prompt
-(`tableMaintenance.backfillMaintainerPrompt`, the SAME contract as the example workflow's `frame`
-system prompt + the batch rule) → one non-streaming `callModelResilient` pass → `extractTagAll(raw,
+(`tableMaintenance.backfillMaintainerPrompt`, the SAME contract as the built-in Memory Maintenance
+Agent's maintainer prompt + the batch rule) → one non-streaming `callModelResilient` pass → `extractTagAll(raw,
 'TableEdit')` → apply through the **ONE write path** (write lock → `applySqlBatch` → `appendOps` at the
 batch's **LAST floor** → `advanceProgress`). Ops attributed to `to` mean a later rewind past that floor
 rolls the batch back.
@@ -819,5 +680,5 @@ state` exposes `{ running, batchIndex, batchCount, span, failures[] }` for view 
 
 ## Deferred
 
-Card-embedded templates (a template shipped inside a character card). Everything else in the
-table-memory surface is built.
+`injectionPolicy.mode: 'summary'` and vector/summary-backed projection remain deferred. Card-embedded
+table templates are implemented through `data.extensions.rp_terminal.table_templates[]`.

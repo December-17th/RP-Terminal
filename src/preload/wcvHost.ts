@@ -14,13 +14,11 @@
 // capability = a spec row + this stays untouched (ADR 0013).
 import { ipcRenderer } from 'electron'
 import type { Host, CardCtx } from '../shared/thRuntime/types'
-import type {
-  CardAgentRunOptions,
-  CardAgentToolBinding,
-  CardAgentToolHandler,
-  CardFloorCommit,
-  InvocationPlan
-} from '../shared/agentRuntime'
+import {
+  createAgentHostFacet,
+  type AgentToolCompletion,
+  type AgentToolRequest
+} from '../shared/thRuntime/agentHostFacet'
 import type { VarsOrigin } from '../shared/thRuntime/types'
 import {
   WCV_AGENT_CHANNELS,
@@ -65,73 +63,57 @@ export function createWcvHost(deps: Deps): Host {
     generated[member] = buildMember(WCV_CHANNEL_SPEC[member])
   }
 
-  const toolHandlers = new Map<string, CardAgentToolHandler>()
-  const pendingTools = new Map<string, { name: string; controller: AbortController }>()
-  const floorHandlers = new Set<(event: CardFloorCommit) => void>()
-
-  const toolReadiness = new Map<string, Promise<void>>()
-  const toolRegistrationErrors = new Map<string, unknown>()
-  const awaitToolReadiness = async (): Promise<void> => {
-    await Promise.all(toolReadiness.values())
-    const error = toolRegistrationErrors.values().next().value
-    if (error !== undefined) throw error
-  }
-
-  ipcRenderer.on('wcv-agent-tool-request', (_event, request) => {
-    const handler = toolHandlers.get(String(request?.name ?? ''))
-    if (!handler || typeof request?.requestId !== 'string') return
-    const controller = new AbortController()
-    pendingTools.set(request.requestId, { name: request.name, controller })
-    void Promise.resolve(handler(request.input ?? {}, { signal: controller.signal }))
-      .then((execution) => {
-        if (!controller.signal.aborted) {
-          ipcRenderer.send(WCV_AGENT_CHANNELS.toolResult, {
-            requestId: request.requestId,
-            ...execution
-          })
+  const agentHost = createAgentHostFacet<void>({
+    invocation: {
+      run: ({ kind: _kind, ...command }) => ipcRenderer.invoke(WCV_AGENT_CHANNELS.run, command),
+      runPlan: ({ kind: _kind, ...command }) =>
+        ipcRenderer.invoke(WCV_AGENT_CHANNELS.runPlan, command),
+      cancel: (requestId) => ipcRenderer.invoke(WCV_AGENT_CHANNELS.cancel, requestId)
+    },
+    tools: {
+      register: (binding) =>
+        ipcRenderer.invoke(WCV_AGENT_CHANNELS.registerTool, binding).then(() => undefined),
+      unregister: (name) => ipcRenderer.invoke(WCV_AGENT_CHANNELS.unregisterTool, name),
+      complete: (_lease, completion: AgentToolCompletion) => {
+        const { result: _result, ...errorCompletion } = completion
+        ipcRenderer.send(
+          WCV_AGENT_CHANNELS.toolResult,
+          completion.error ? errorCompletion : completion
+        )
+      },
+      onRequest: (handler: (request: AgentToolRequest) => void) => {
+        const listener = (_event: unknown, request: AgentToolRequest): void => handler(request)
+        ipcRenderer.on('wcv-agent-tool-request', listener)
+        return () => ipcRenderer.removeListener('wcv-agent-tool-request', listener)
+      },
+      onAbort: (handler: (requestId: string) => void) => {
+        const listener = (_event: unknown, request: { requestId?: unknown }): void => {
+          if (typeof request?.requestId === 'string') handler(request.requestId)
         }
-      })
-      .catch((cause) => {
-        if (controller.signal.aborted) return
-        ipcRenderer.send(WCV_AGENT_CHANNELS.toolResult, {
-          requestId: request.requestId,
-          error: cause instanceof Error ? cause.message : String(cause)
-        })
-      })
-      .finally(() => pendingTools.delete(request.requestId))
-  })
-  ipcRenderer.on('wcv-agent-tool-abort', (_event, request) => {
-    if (typeof request?.requestId === 'string')
-      pendingTools.get(request.requestId)?.controller.abort()
-  })
-  ipcRenderer.on(WCV_AGENT_CHANNELS.floorCommitted, (_event, event: CardFloorCommit) => {
-    for (const handler of floorHandlers) handler(event)
-  })
-
-  const invokeAbortable = async <T>(
-    channel: string,
-    payload: Record<string, unknown>,
-    signal?: AbortSignal
-  ): Promise<T> => {
-    const requestId = crypto.randomUUID()
-    if (toolReadiness.size > 0) await awaitToolReadiness()
-    if (signal?.aborted) throw new DOMException('Agent invocation was aborted', 'AbortError')
-    const abort = (): void => {
-      void ipcRenderer.invoke(WCV_AGENT_CHANNELS.cancel, requestId)
+        ipcRenderer.on('wcv-agent-tool-abort', listener)
+        return () => ipcRenderer.removeListener('wcv-agent-tool-abort', listener)
+      }
+    },
+    floors: {
+      subscribe: (handler) => {
+        const listener = (_event: unknown, event: Parameters<typeof handler>[0]): void =>
+          handler(event)
+        void ipcRenderer.invoke(WCV_AGENT_CHANNELS.floorSubscribe)
+        ipcRenderer.on(WCV_AGENT_CHANNELS.floorCommitted, listener)
+        return () => {
+          ipcRenderer.removeListener(WCV_AGENT_CHANNELS.floorCommitted, listener)
+          void ipcRenderer.invoke(WCV_AGENT_CHANNELS.floorUnsubscribe)
+        }
+      }
     }
-    signal?.addEventListener('abort', abort, { once: true })
-    try {
-      return await ipcRenderer.invoke(channel, { requestId, ...payload })
-    } finally {
-      signal?.removeEventListener('abort', abort)
-    }
-  }
+  })
 
   const wbNames = (): any => ipcRenderer.sendSync(WCV_RESIDUE_CHANNELS.worldbookNames)
 
   // Hand-written residue (same bodies as before) spread over the generated members.
   return {
     ...(generated as unknown as Host),
+    ...agentHost,
     ctx: deps.ctx,
     // Worldbook getters normalize main's response shape (not a static fallback ⇒ residue).
     worldbookNames: () => {
@@ -164,46 +146,6 @@ export function createWcvHost(deps: Deps): Host {
       const l = (_e: any, d: any): void => d && d.name && cb(d.name, d.payload)
       ipcRenderer.on('wcv-event', l)
       return () => ipcRenderer.removeListener('wcv-event', l)
-    },
-    runAgent: (name, options: CardAgentRunOptions = {}) => {
-      const { signal, ...transportOptions } = options
-      return invokeAbortable(WCV_AGENT_CHANNELS.run, { name, options: transportOptions }, signal)
-    },
-    runAgentPlan: (plan: InvocationPlan, signal?: AbortSignal) =>
-      invokeAbortable(WCV_AGENT_CHANNELS.runPlan, { plan }, signal),
-    registerAgentTool: (binding: CardAgentToolBinding, handler: CardAgentToolHandler) => {
-      if (toolHandlers.has(binding.name)) {
-        throw Object.assign(new Error('Card tool is already registered: ' + binding.name), {
-          code: 'CARD_TOOL_DUPLICATE'
-        })
-      }
-      toolHandlers.set(binding.name, handler)
-      toolRegistrationErrors.delete(binding.name)
-      const ready = ipcRenderer.invoke(WCV_AGENT_CHANNELS.registerTool, binding).then(
-        () => undefined,
-        (cause) => {
-          toolHandlers.delete(binding.name)
-          toolRegistrationErrors.set(binding.name, cause)
-        }
-      )
-      toolReadiness.set(binding.name, ready)
-      return () => {
-        if (!toolHandlers.delete(binding.name)) return
-        toolRegistrationErrors.delete(binding.name)
-        for (const pending of pendingTools.values()) {
-          if (pending.name === binding.name) pending.controller.abort()
-        }
-        void ready.then(() => ipcRenderer.invoke(WCV_AGENT_CHANNELS.unregisterTool, binding.name))
-        toolReadiness.delete(binding.name)
-      }
-    },
-    onFloorCommitted: (handler) => {
-      if (floorHandlers.size === 0) void ipcRenderer.invoke(WCV_AGENT_CHANNELS.floorSubscribe)
-      floorHandlers.add(handler)
-      return () => {
-        floorHandlers.delete(handler)
-        if (floorHandlers.size === 0) void ipcRenderer.invoke(WCV_AGENT_CHANNELS.floorUnsubscribe)
-      }
     },
     evalTemplate: deps.evalTemplate,
     evalTemplateError: deps.evalTemplateError,

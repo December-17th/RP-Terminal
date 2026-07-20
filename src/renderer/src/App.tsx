@@ -186,7 +186,7 @@ export default function App(): React.ReactElement {
     // Agent Runtime activity is keyed by Invocation ID, so overlapping calls in one chat remain
     // independently visible and stoppable. Notification policy never gates this activity edge. (M5c-2:
     // the legacy `workflow-activity`/`workflow-trace`/`workflow-panel` feeds were removed with the
-    // workflow system — this agent-run feed is now the sole activity source ChatView reads.)
+    // workflow system — this agent-run feed is now the sole activity source the title strip reads.)
     const unsubAgentRuns = window.api.onAgentRunEvent((event) => {
       useAgentRunStore.getState().apply(event)
       if (event.type === 'started') {

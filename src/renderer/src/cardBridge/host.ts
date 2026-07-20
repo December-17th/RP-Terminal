@@ -15,13 +15,13 @@ import { categoryForType } from '../../../shared/worldAssets/types'
 import type { AssetType } from '../../../shared/worldAssets/types'
 import type { Host, CardCtx, FloorLike, HostPresetView } from '../../../shared/thRuntime/types'
 import type { VarOp } from '../../../shared/thRuntime/ops'
-import type {
-  CardAgentRunOptions,
-  CardAgentToolBinding,
-  CardAgentToolHandler,
-  CardFloorCommit,
-  InvocationPlan
-} from '../../../shared/agentRuntime'
+import {
+  createAgentHostFacet,
+  type AgentToolCompletion,
+  type AgentToolRequest,
+  type CardAgentToolBinding,
+  type CardFloorCommit
+} from '../../../shared/thRuntime/agentHostFacet'
 
 // Global vars are per-PROFILE, so ALL inline card hosts in this renderer realm share ONE cache per profile
 // (each card iframe builds its own createInlineHost, but they all run in the same parent renderer realm).
@@ -136,138 +136,58 @@ export function createInlineHost(ctx: CardCtx): Host {
     chatId: ctx.chatId,
     characterId: cardCharacterId()
   })
-  const toolReadiness = new Map<string, Promise<void>>()
-  const toolRegistrationErrors = new Map<string, unknown>()
-  const awaitToolReadiness = async (): Promise<void> => {
-    await Promise.all(toolReadiness.values())
-    const error = toolRegistrationErrors.values().next().value
-    if (error !== undefined) throw error
-  }
-  const invokeAgent = async <T>(
-    kind: 'run' | 'plan',
-    payload: Record<string, unknown>,
-    signal?: AbortSignal
-  ): Promise<T> => {
-    const requestId = crypto.randomUUID()
-    if (toolReadiness.size > 0) await awaitToolReadiness()
-    if (signal?.aborted) throw new DOMException('Agent invocation was aborted', 'AbortError')
-    const abort = (): void => {
-      void window.api.cardAgentCancel(requestId)
-    }
-    signal?.addEventListener('abort', abort, { once: true })
-    try {
-      const request = { ...scope(), requestId, ...payload }
-      return kind === 'run'
-        ? await window.api.cardAgentRun(request)
-        : await window.api.cardAgentRunPlan(request)
-    } finally {
-      signal?.removeEventListener('abort', abort)
-    }
-  }
-  const toolHandlers = new Map<string, CardAgentToolHandler>()
-  const toolCompletionCapabilities = new Map<string, string>()
-  const pendingTools = new Map<string, { name: string; controller: AbortController }>()
-  let stopToolRequest: (() => void) | null = null
-  let stopToolAbort: (() => void) | null = null
-  const ensureToolListeners = (): void => {
-    if (stopToolRequest) return
-    stopToolRequest = window.api.onCardAgentToolRequest((request: any) => {
-      const requestScope = request?.scope
-      if (
-        requestScope?.profileId !== ctx.profileId ||
-        requestScope?.chatId !== ctx.chatId ||
-        requestScope?.characterId !== cardCharacterId()
-      )
-        return
-      const handler = toolHandlers.get(String(request?.name ?? ''))
-      if (!handler || typeof request?.requestId !== 'string') return
-      const completionCapability = toolCompletionCapabilities.get(request.name)
-      if (!completionCapability) return
-      const controller = new AbortController()
-      pendingTools.set(request.requestId, { name: request.name, controller })
-      void Promise.resolve(handler(request.input ?? {}, { signal: controller.signal }))
-        .then((execution) => {
-          if (!controller.signal.aborted) {
-            window.api.cardAgentToolResult({
-              ...scope(),
-              completionCapability,
-              requestId: request.requestId,
-              ...execution
-            })
-          }
-        })
-        .catch((cause) => {
-          if (controller.signal.aborted) return
-          window.api.cardAgentToolResult({
-            ...scope(),
-            completionCapability,
-            requestId: request.requestId,
-            result: null,
-            error: cause instanceof Error ? cause.message : String(cause)
-          })
-        })
-        .finally(() => pendingTools.delete(request.requestId))
-    })
-    stopToolAbort = window.api.onCardAgentToolAbort((request: { requestId: string }) => {
-      pendingTools.get(request.requestId)?.controller.abort()
-    })
-  }
-  return {
-    ctx,
-    runAgent: (name: string, options: CardAgentRunOptions = {}) => {
-      const { signal, ...transportOptions } = options
-      return invokeAgent('run', { name, options: transportOptions }, signal)
+  const agentHost = createAgentHostFacet<string>({
+    invocation: {
+      run: ({ kind: _kind, ...command }) => window.api.cardAgentRun({ ...scope(), ...command }),
+      runPlan: ({ kind: _kind, ...command }) =>
+        window.api.cardAgentRunPlan({ ...scope(), ...command }),
+      cancel: (requestId) => window.api.cardAgentCancel(requestId)
     },
-    runAgentPlan: (plan: InvocationPlan, signal?: AbortSignal) =>
-      invokeAgent('plan', { plan }, signal),
-    registerAgentTool: (binding: CardAgentToolBinding, handler: CardAgentToolHandler) => {
-      if (toolHandlers.has(binding.name)) {
-        throw Object.assign(new Error('Card tool is already registered: ' + binding.name), {
-          code: 'CARD_TOOL_DUPLICATE'
-        })
-      }
-      ensureToolListeners()
-      toolHandlers.set(binding.name, handler)
-      toolRegistrationErrors.delete(binding.name)
-      const ready = window.api.cardAgentRegisterTool({ ...scope(), binding }).then(
-        (registration: { completionCapability?: unknown }) => {
-          if (typeof registration?.completionCapability !== 'string')
-            throw new Error('Card tool registration did not return a completion capability')
-          toolCompletionCapabilities.set(binding.name, registration.completionCapability)
-        },
-        (cause) => {
-          toolHandlers.delete(binding.name)
-          toolRegistrationErrors.set(binding.name, cause)
-          toolCompletionCapabilities.delete(binding.name)
+    tools: {
+      register: async (binding: CardAgentToolBinding) => {
+        const registration = await window.api.cardAgentRegisterTool({ ...scope(), binding })
+        if (typeof registration?.completionCapability !== 'string') {
+          throw new Error('Card tool registration did not return a completion capability')
         }
-      )
-      toolReadiness.set(binding.name, ready)
-      return () => {
-        if (!toolHandlers.delete(binding.name)) return
-        toolRegistrationErrors.delete(binding.name)
-        toolCompletionCapabilities.delete(binding.name)
-        for (const pending of pendingTools.values()) {
-          if (pending.name === binding.name) pending.controller.abort()
-        }
-        void ready.then(() =>
-          window.api.cardAgentUnregisterTool({ ...scope(), name: binding.name })
+        return registration.completionCapability
+      },
+      unregister: (name) => window.api.cardAgentUnregisterTool({ ...scope(), name }),
+      complete: (completionCapability: string, completion: AgentToolCompletion) =>
+        window.api.cardAgentToolResult({
+          ...scope(),
+          completionCapability,
+          ...completion
+        }),
+      onRequest: (handler: (request: AgentToolRequest) => void) =>
+        window.api.onCardAgentToolRequest((request: any) => {
+          const requestScope = request?.scope
+          if (
+            requestScope?.profileId !== ctx.profileId ||
+            requestScope?.chatId !== ctx.chatId ||
+            requestScope?.characterId !== cardCharacterId()
+          )
+            return
+          handler(request)
+        }),
+      onAbort: (handler: (requestId: string) => void) =>
+        window.api.onCardAgentToolAbort((request: { requestId: string }) =>
+          handler(request.requestId)
         )
-        toolReadiness.delete(binding.name)
-        if (toolHandlers.size === 0) {
-          stopToolRequest?.()
-          stopToolAbort?.()
-          stopToolRequest = null
-          stopToolAbort = null
-        }
-      }
     },
-    onFloorCommitted: (handler: (event: CardFloorCommit) => void) =>
-      window.api.onCardFloorCommitted(
-        (payload: { profileId: string; chatId: string; event: CardFloorCommit }) => {
-          if (payload.profileId === ctx.profileId && payload.chatId === ctx.chatId)
-            handler(payload.event)
-        }
-      ),
+    floors: {
+      subscribe: (handler: (event: CardFloorCommit) => void) =>
+        window.api.onCardFloorCommitted(
+          (payload: { profileId: string; chatId: string; event: CardFloorCommit }) => {
+            if (payload.profileId === ctx.profileId && payload.chatId === ctx.chatId) {
+              handler(payload.event)
+            }
+          }
+        )
+    }
+  })
+  return {
+    ...agentHost,
+    ctx,
     statData: () => statOf(),
     floors: () => floorsOf(),
     charData: () => cardOf(),

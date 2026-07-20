@@ -158,11 +158,10 @@ export const WCV_RESIDUE_CHANNELS = {
   formatRegex: 'wcv-host-format-regex'
 } as const satisfies Partial<Record<WcvResidueMember, string>>
 
-
 /**
- * AgentHost is intentionally hand-written rather than generated from the flat Host table: these calls
- * carry AbortSignals, callback functions, and event subscriptions that cannot cross Electron IPC
- * directly. Main still derives profile/chat/card identity from the calling WCV sender.
+ * AgentHost uses the stateful Facet/Session contract from ADR 0022 rather than the flat Host table:
+ * these calls carry AbortSignals, callback functions, acknowledgements, and event subscriptions that
+ * cannot cross Electron IPC directly. Main still derives profile/chat/card identity from the WCV sender.
  */
 export const WCV_AGENT_CHANNELS = {
   run: 'wcv-host-agent-run',

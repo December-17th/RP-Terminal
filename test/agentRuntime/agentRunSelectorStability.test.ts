@@ -6,7 +6,8 @@ import type { AgentRunSummary } from '../../src/shared/agentRuntime'
 /**
  * Regression guard for the blank-screen-on-session-entry bug.
  *
- * AgentRunActivity mounts as soon as a chat is opened. React's useSyncExternalStore requires every
+ * The title-strip Agent activity toggle mounts as soon as a chat is opened. React's
+ * useSyncExternalStore requires every
  * store subscription to return a value that is Object.is-stable while the store is unchanged; an
  * unstable snapshot re-renders forever and tears the whole tree down — the title strip goes with it.
  *
@@ -38,7 +39,7 @@ const summary = (invocationId: string, status: AgentRunSummary['status']): Agent
 })
 
 describe('AgentRunActivity store subscription stability', () => {
-  // The exact subscriptions AgentRunActivity makes, in the same order.
+  // The exact stable store slices used by the title-strip Agent activity surfaces.
   const subscriptions = [
     (state: ReturnType<typeof useAgentRunStore.getState>) => state.byChat,
     (state: ReturnType<typeof useAgentRunStore.getState>) => state.loadingByChat['chat-1'] ?? false,

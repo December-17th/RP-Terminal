@@ -191,6 +191,8 @@ export function chromeTokensFor(
   bgPrimary: string
   text: string
   border: string
+  danger: string
+  success: string
   warning: string
   warningSoft: string
 } {
@@ -202,9 +204,10 @@ export function chromeTokensFor(
     bgPrimary: src['--rpt-bg-primary'],
     text: src['--rpt-text-primary'],
     border: src['--rpt-border'],
-    // Chrome-level status tint (the top-strip memory chip's backlog pill): the play-root
-    // `--rpt-warning*` can be shadowed by a card palette, which would strand a card-colored pill on
-    // the app-colored strip — chrome elements must read the app-scoped pair instead.
+    // Chrome-level status tints: play-root semantic colors can be shadowed by a card palette, which
+    // would strand card-colored indicators on the app-colored strip.
+    danger: src['--rpt-danger'],
+    success: src['--rpt-success'],
     warning: src['--rpt-warning'],
     warningSoft: src['--rpt-warning-soft']
   }
@@ -223,6 +226,8 @@ export function applyChromeScheme(themeId: string | undefined, scheme: 'light' |
   root.style.setProperty('--rpt-app-bg-primary', c.bgPrimary)
   root.style.setProperty('--rpt-app-text-primary', c.text)
   root.style.setProperty('--rpt-app-border', c.border)
+  root.style.setProperty('--rpt-app-danger', c.danger)
+  root.style.setProperty('--rpt-app-success', c.success)
   root.style.setProperty('--rpt-app-warning', c.warning)
   root.style.setProperty('--rpt-app-warning-soft', c.warningSoft)
 }

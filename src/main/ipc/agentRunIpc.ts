@@ -15,6 +15,7 @@ import {
   invocationRuntime,
   liveCardToolRegistry
 } from '../services/agentRuntime/InvocationRuntimeService'
+import { AgentHostSession, agentToolRequestSender } from '../services/agentRuntime/AgentHostSession'
 import { resolveProfileId } from '../services/sessionDbService'
 import { gate } from './ipcGuards'
 
@@ -71,55 +72,49 @@ const resolveCardScope = (request: unknown): CardScope | null => {
 
 const rejectScope = (): Promise<never> => Promise.reject(new AgentRunScopeRejectedError())
 
-interface LiveToolRegistration {
-  scope: CardScope
-  binding: CardAgentToolBinding
-  sender: IpcMainInvokeEvent['sender']
-  completionCapability: string
-}
+const agentSessions = new Map<string, { senderId: number; session: AgentHostSession }>()
+const agentSenderCleanup = new Map<number, () => void>()
+const agentSessionKey = (senderId: number, scope: CardScope): string =>
+  `${senderId}\u0000${scope.profileId}\u0000${scope.chatId}\u0000${scope.characterId}`
 
-const toolRegistrations = new Map<number, Map<string, LiveToolRegistration>>()
-const toolCompletionCapabilities = new Map<string, LiveToolRegistration>()
-const pendingTransportRuns = new Map<string, { kind: 'run' | 'plan'; id: string }>()
-
-const toolSenderCleanup = new Map<number, () => void>()
-const ensureToolSenderLifecycle = (sender: IpcMainInvokeEvent['sender']): void => {
-  if (toolSenderCleanup.has(sender.id)) return
+const ensureAgentSenderLifecycle = (sender: IpcMainInvokeEvent['sender']): void => {
+  if (agentSenderCleanup.has(sender.id)) return
   const cleanup = (): void => {
-    toolSenderCleanup.delete(sender.id)
-    for (const registration of toolRegistrations.get(sender.id)?.values() ?? [])
-      toolCompletionCapabilities.delete(registration.completionCapability)
-    toolRegistrations.delete(sender.id)
-    liveCardToolRegistry().unregisterSender(sender.id)
+    agentSenderCleanup.delete(sender.id)
+    for (const [key, state] of agentSessions) {
+      if (state.senderId !== sender.id) continue
+      state.session.close()
+      agentSessions.delete(key)
+    }
     sender.removeListener?.('destroyed', cleanup)
   }
-  toolSenderCleanup.set(sender.id, cleanup)
+  agentSenderCleanup.set(sender.id, cleanup)
   sender.once?.('destroyed', cleanup)
 }
 
-const registerLiveTool = (registration: LiveToolRegistration): void => {
-  liveCardToolRegistry().register({
-    scope: { ...registration.scope, senderId: registration.sender.id },
-    binding: registration.binding,
-    send: (channel, payload) =>
-      registration.sender.send(channel, { ...payload, scope: registration.scope })
+const ensureAgentSession = (
+  sender: IpcMainInvokeEvent['sender'],
+  scope: CardScope
+): AgentHostSession => {
+  const key = agentSessionKey(sender.id, scope)
+  const current = agentSessions.get(key)
+  if (current) return current.session
+  const session = new AgentHostSession({
+    scope,
+    senderId: sender.id,
+    runtime: invocationRuntime(),
+    tools: liveCardToolRegistry(),
+    latestFloor: () => floorService.getAllFloors(scope.profileId, scope.chatId).at(-1)?.floor,
+    sendTool: agentToolRequestSender(
+      (channel, payload) => sender.send(channel, payload),
+      (payload) => ({ ...(payload as object), scope })
+    ),
+    toolAuthority: 'completion-capability',
+    cancelInvocationsOnClose: false
   })
-}
-
-const toolRegistrationKey = (scope: CardScope, name: string): string =>
-  `${scope.profileId}\u0000${scope.chatId}\u0000${scope.characterId}\u0000${name}`
-
-const unregisterLiveTool = (senderId: number, scope: CardScope, name: string): boolean => {
-  const senderTools = toolRegistrations.get(senderId)
-  if (!senderTools) return false
-  const key = toolRegistrationKey(scope, name)
-  const registration = senderTools.get(key)
-  if (!registration) return false
-  senderTools.delete(key)
-  toolCompletionCapabilities.delete(registration.completionCapability)
-  liveCardToolRegistry().unregister(senderId, name, scope)
-  if (senderTools.size === 0) toolRegistrations.delete(senderId)
-  return true
+  agentSessions.set(key, { senderId: sender.id, session })
+  ensureAgentSenderLifecycle(sender)
+  return session
 }
 
 export const registerAgentRunIpc = (ipcMain: IpcMain): void => {
@@ -166,24 +161,8 @@ export const registerAgentRunIpc = (ipcMain: IpcMain): void => {
       const name = stringField((request as { name?: unknown }).name)
       const requestId = stringField((request as { requestId?: unknown }).requestId)
       if (!name || !requestId) return rejectScope()
-      const rawOptions = (request as { options?: CardAgentRunOptions }).options
-      const { signal: _signal, ...options } = rawOptions ?? {}
-      const latest = floorService.getAllFloors(scope.profileId, scope.chatId).at(-1)?.floor
-      const floor = options.floor ?? latest
-      if (floor === undefined) throw new Error('No committed Invocation Floor exists')
-      const running = invocationRuntime().run({
-        ...scope,
-        floor,
-        agent: name,
-        options,
-        toolScope: scope
-      })
-      pendingTransportRuns.set(requestId, { kind: 'run', id: running.invocationId })
-      try {
-        return await running
-      } finally {
-        pendingTransportRuns.delete(requestId)
-      }
+      const options = (request as { options?: CardAgentRunOptions }).options
+      return ensureAgentSession(_.sender, scope).run({ requestId, name, options })
     })
   )
 
@@ -195,35 +174,19 @@ export const registerAgentRunIpc = (ipcMain: IpcMain): void => {
       const requestId = stringField((request as { requestId?: unknown }).requestId)
       if (!requestId) return rejectScope()
       const plan = (request as { plan?: unknown }).plan
-      const planFloor =
-        plan && typeof plan === 'object' ? (plan as { floor?: unknown }).floor : undefined
-      const latest = floorService.getAllFloors(scope.profileId, scope.chatId).at(-1)?.floor
-      const floor = typeof planFloor === 'number' ? planFloor : latest
-      if (floor === undefined) throw new Error('No committed Invocation Floor exists')
-      const running = invocationRuntime().runPlan({
-        ...scope,
-        floor,
-        plan,
-        toolScope: scope
-      })
-      pendingTransportRuns.set(requestId, { kind: 'plan', id: running.planId })
-      try {
-        return await running
-      } finally {
-        pendingTransportRuns.delete(requestId)
-      }
+      return ensureAgentSession(_.sender, scope).runPlan({ requestId, plan })
     })
   )
 
   ipcMain.handle(
     CARD_AGENT_CHANNELS.cancel,
-    gate(CARD_AGENT_CHANNELS.cancel, (_, requestId: unknown) => {
+    gate(CARD_AGENT_CHANNELS.cancel, (event, requestId: unknown) => {
       const id = stringField(requestId)
-      const pending = id ? pendingTransportRuns.get(id) : undefined
-      if (!pending) return false
-      return pending.kind === 'run'
-        ? invocationRuntime().cancelInvocation(pending.id)
-        : invocationRuntime().cancelPlan(pending.id)
+      if (!id) return false
+      for (const state of agentSessions.values()) {
+        if (state.senderId === event.sender.id && state.session.cancel(id)) return true
+      }
+      return false
     })
   )
 
@@ -234,19 +197,7 @@ export const registerAgentRunIpc = (ipcMain: IpcMain): void => {
       if (!scope || !request || typeof request !== 'object') return rejectScope()
       const binding = (request as { binding?: CardAgentToolBinding }).binding
       if (!binding || !stringField(binding.name)) return rejectScope()
-      const senderTools = toolRegistrations.get(event.sender.id) ?? new Map()
-      const registration = {
-        scope,
-        binding,
-        sender: event.sender,
-        completionCapability: crypto.randomUUID()
-      }
-      registerLiveTool(registration)
-      senderTools.set(toolRegistrationKey(scope, binding.name), registration)
-      toolCompletionCapabilities.set(registration.completionCapability, registration)
-      toolRegistrations.set(event.sender.id, senderTools)
-      ensureToolSenderLifecycle(event.sender)
-      return { completionCapability: registration.completionCapability }
+      return ensureAgentSession(event.sender, scope).registerTool(binding)
     })
   )
 
@@ -258,34 +209,22 @@ export const registerAgentRunIpc = (ipcMain: IpcMain): void => {
         request && typeof request === 'object'
           ? stringField((request as { name?: unknown }).name)
           : null
-      return scope && toolName ? unregisterLiveTool(event.sender.id, scope, toolName) : false
+      return scope && toolName
+        ? (agentSessions
+            .get(agentSessionKey(event.sender.id, scope))
+            ?.session.unregisterTool(toolName) ?? false)
+        : false
     })
   )
 
   ipcMain.on(CARD_AGENT_CHANNELS.toolResult, (event, result: unknown) => {
     if (!result || typeof result !== 'object') return
     const scope = resolveCardScope(result)
-    const completionCapability = stringField(
-      (result as { completionCapability?: unknown }).completionCapability
-    )
-    const registration = completionCapability
-      ? toolCompletionCapabilities.get(completionCapability)
-      : undefined
-    if (
-      !scope ||
-      !registration ||
-      registration.sender.id !== event.sender.id ||
-      registration.scope.profileId !== scope.profileId ||
-      registration.scope.chatId !== scope.chatId ||
-      registration.scope.characterId !== scope.characterId
-    )
-      return
+    if (!scope) return
+    const session = agentSessions.get(agentSessionKey(event.sender.id, scope))?.session
+    if (!session) return
     try {
-      liveCardToolRegistry().complete({
-        ...(result as any),
-        senderId: event.sender.id,
-        scope
-      })
+      session.completeTool(result as any)
     } catch (cause) {
       console.error(
         '[card agent tool result]',

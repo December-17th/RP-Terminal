@@ -146,3 +146,69 @@ export const recentAgentRuns = (
         .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
         .slice(0, limit)
     )
+
+export const latestRunPerAgent = (
+  byChat: AgentRunState['byChat'],
+  chatId: string
+): AgentRunSummary[] => {
+  const selected = new Map<string, AgentRunSummary>()
+
+  for (const candidate of Object.values(byChat[chatId] ?? {})) {
+    const current = selected.get(candidate.agentName)
+    const candidateRunning = candidate.status === 'running'
+    const currentRunning = current?.status === 'running'
+
+    if (
+      !current ||
+      (candidateRunning && !currentRunning) ||
+      (candidateRunning === currentRunning &&
+        candidate.startedAt.localeCompare(current.startedAt) > 0)
+    ) {
+      selected.set(candidate.agentName, candidate)
+    }
+  }
+
+  return [...selected.values()].sort((a, b) => {
+    const runningOrder = Number(b.status === 'running') - Number(a.status === 'running')
+    return runningOrder || b.startedAt.localeCompare(a.startedAt)
+  })
+}
+
+export interface AgentRunIndicatorState {
+  tone: 'idle' | 'success' | 'failure'
+  running: boolean
+}
+
+/**
+ * Title-strip status for the current renderer session. Hydrated history has no revision entry, so it
+ * deliberately leaves the indicator yellow until a run finishes after this app/session resumes.
+ */
+export const agentRunIndicatorState = (
+  byChat: AgentRunState['byChat'],
+  revisionByChat: AgentRunState['revisionByChat'],
+  chatId: string
+): AgentRunIndicatorState => {
+  const runs = Object.values(byChat[chatId] ?? {})
+  const revisions = revisionByChat[chatId] ?? {}
+  let latestTerminal: { revision: number; run: AgentRunSummary } | null = null
+
+  for (const run of runs) {
+    const revision = revisions[run.invocationId]
+    if (
+      run.status !== 'running' &&
+      revision !== undefined &&
+      (!latestTerminal || revision > latestTerminal.revision)
+    ) {
+      latestTerminal = { revision, run }
+    }
+  }
+
+  return {
+    tone: latestTerminal
+      ? latestTerminal.run.status === 'succeeded'
+        ? 'success'
+        : 'failure'
+      : 'idle',
+    running: runs.some((run) => run.status === 'running')
+  }
+}

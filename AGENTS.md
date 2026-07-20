@@ -1,8 +1,8 @@
 # AGENTS.md
 
 This file describes common mistakes and confusion points an agent might hit while working in this project,
-plus the project's general direction. If something in the project surprises you, alert the developer
-working with you **and** note it here, so the next agent doesn't trip on the same thing.
+plus the project's general direction. If something in the project is a confirmed, recurring project-wide
+trap, alert the developer and record it here. Keep one-off issues and task-specific findings out of this file.
 
 ## Project direction
 
@@ -42,8 +42,6 @@ card-authored panels / beautifications / mini-games, local combat, and cache opt
 - If unsure about a library, API, or ST / TavernHelper / MVU / EJS behavior, read the actual source
   (`node_modules`, the extension's repo) or the official docs before writing code. Treat your training
   knowledge of these tools as outdated and verify it.
-- This codebase is largely AI-generated — do not assume it does what its names suggest. Confirm against
-  the real code.
 - Cite the exact files (and line ranges) you actually read when explaining behavior. If you haven't
   verified something, label it "unverified" rather than stating it as fact.
 
@@ -82,9 +80,6 @@ update Y" mapping.
 
 - Cite the file each behavioral claim is verified against. When two docs disagree, the one with file:line
   citations wins — reconcile the other to it.
-- **Known gap:** several docs reference a `ROADMAP.md` that does not exist in the repo. Either create it or
-  repoint the references; don't add new links to it until it exists.
-
 ## Module boundaries — ENFORCED by `npm run check:deps` (dependency-cruiser)
 
 - `shared/thRuntime` is the ONLY module the card transports import from; transports
@@ -97,14 +92,13 @@ update Y" mapping.
 
 ## Verification
 
-- Before declaring any change done: `npm run typecheck && npm run check:deps && npm run test`.
+- Before declaring code, dependency, or build-configuration changes done, run `npm run verify`.
+  For documentation-only or instruction-only changes, run `git diff --check` and any relevant focused
+  documentation check; the full test suite is not required unless executable behavior or build inputs change.
 - Characterization tests pin current behavior on the cores: thRuntime/bridge parity,
   MVU parser, EJS engine, combat engine, converter declarative path. They assert "same as
   before," not "correct." If a change SHOULD alter behavior, update the characterization
   test in the SAME commit, deliberately — never delete a failing one to go green.
-- One module per change/PR. No multi-file autonomous rewrites; extract behind an interface,
-  keep tests green at each step.
-
 ## Agent skills
 
 ### Issue tracker

@@ -369,6 +369,8 @@ export const registerAgentCatalogIpc = (ipcMain: IpcMain): void => {
         if (floor === undefined) {
           return { ok: false, error: 'No committed Invocation Floor exists' }
         }
+        const catalogAgent = new AgentCatalog(profileId).get(agent)
+        const apiPresetId = catalogAgent?.invocationConfig.apiPresetId
         // Final-review Finding 1: a manual "Run now" of Memory Maintenance respects the SAME due-gate
         // the trigger path uses, so nothing-due never bills a pointless provider call. `null` from the
         // bridge means no tables are due — surface a distinct "nothing due" outcome, not a fake success.
@@ -384,10 +386,12 @@ export const registerAgentCatalogIpc = (ipcMain: IpcMain): void => {
             chatId,
             floor,
             agent,
-            options:
-              rawInput && typeof rawInput === 'object'
+            options: {
+              ...(rawInput && typeof rawInput === 'object'
                 ? { input: rawInput as Record<string, never> }
-                : {}
+                : {}),
+              ...(apiPresetId ? { apiPresetId } : {})
+            }
           })
           return {
             ok: true,

@@ -50,15 +50,16 @@ describe('theme.chromeTokensFor — the app chrome surface for an effective sche
     expect(chromeTokensFor('light', 'dark').bg).toBe(THEMES.dark.tokens['--rpt-bg-secondary'])
   })
 
-  it('returns bg / bgPrimary / text / border / warning pulled from the selected source theme', () => {
+  it('returns app chrome surfaces and status colors from the selected source theme', () => {
     const c = chromeTokensFor('light', 'light')
     expect(c).toEqual({
       bg: THEMES.light.tokens['--rpt-bg-secondary'],
       bgPrimary: THEMES.light.tokens['--rpt-bg-primary'],
       text: THEMES.light.tokens['--rpt-text-primary'],
       border: THEMES.light.tokens['--rpt-border'],
-      // Chrome-level status tint (the top-strip memory chip's backlog pill): app-scoped so a card
-      // palette shadowing the play-root --rpt-warning* can't strand card colors on the app strip.
+      // App-scoped so a card palette shadowing play-root semantics cannot recolor strip indicators.
+      danger: THEMES.light.tokens['--rpt-danger'],
+      success: THEMES.light.tokens['--rpt-success'],
       warning: THEMES.light.tokens['--rpt-warning'],
       warningSoft: THEMES.light.tokens['--rpt-warning-soft']
     })
