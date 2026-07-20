@@ -9,7 +9,7 @@ import {
   appendDispatchEntries,
   assembledArtifact,
   type DispatchTransform
-} from '../src/main/services/nodes/promptArtifact'
+} from '../src/main/services/generation/promptArtifact'
 import type { ChatMessage } from '../src/main/services/promptBuilder'
 import { createRecordBuilder } from '../src/main/services/generation/executionRecord'
 

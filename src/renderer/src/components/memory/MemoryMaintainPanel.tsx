@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useChatStore } from '../../stores/chatStore'
 import { useT } from '../../i18n'
-import './workflowEditor.css'
+import './memoryMaintainPanel.css'
 
 // The memory.maintain node's Prompt-tab extension (memory.maintain plan, WP2): under the scaffold
 // prompt editor, it surfaces the REAL brain of a memory system — each bound table's per-operation

@@ -23,7 +23,7 @@ import {
 import { parseMvuCommands } from '../../src/main/parsers/mvuParser'
 import type { Scene } from '../../src/shared/yuzu/sceneSchema'
 import type { GenContext } from '../../src/main/services/generation/types'
-import type { RunContext } from '../../src/main/services/nodes/types'
+import type { RunContext } from '../../src/main/services/generation/runContext'
 
 const gen = { profileId: 'p', lorebookIds: ['book'] } as unknown as GenContext
 const ctx = { signal: new AbortController().signal } as unknown as RunContext

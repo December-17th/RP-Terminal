@@ -27,7 +27,6 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
   const open = useUiStore((s) => s.settingsOpen)
   const close = useUiStore((s) => s.closeSettings)
   const initialSection = useUiStore((s) => s.settingsSection)
-  const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
   const openAssetsPopup = useUiStore((s) => s.openAssetsPopup)
   const openMemoryManager = useUiStore((s) => s.openMemoryManager)
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
@@ -123,25 +122,6 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
             card={activeCharacter?.card ?? null}
           />
         )
-      case 'workflow':
-        return (
-          <div className="settings-launch">
-            <div className="settings-launch-icon" aria-hidden>
-              ⧉
-            </div>
-            <h3 className="settings-launch-title">{t('settings.workflowTitle')}</h3>
-            <p className="settings-launch-body">{t('settings.workflowBody')}</p>
-            <button
-              className="btn-accent"
-              onClick={() => {
-                close()
-                openWorkflowEditor()
-              }}
-            >
-              {t('settings.workflowOpen')}
-            </button>
-          </div>
-        )
       case 'memory':
         return (
           <div className="settings-launch">
@@ -195,7 +175,6 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
           {railItem('regex', t('settings.regex'))}
           {railItem('scripts', t('settings.scripts'))}
           <div className="settings-rail-group">{t('settings.groupAutomation')}</div>
-          {railItem('workflow', t('settings.workflow'))}
           {railItem('memory', t('settings.memory'))}
           {railItem('variables', t('settings.variables'))}
           {railItem('agents', t('settings.agents'))}

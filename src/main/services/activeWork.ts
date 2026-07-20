@@ -15,11 +15,11 @@
  *     and never registers there, so every `callModelResilient` caller is invisible to this source.
  *   - tableBackfillService — a manual multi-batch table backfill mid-job.
  *   - tableRefillService   — a manual multi-batch table refill mid-job.
- *   - headlessRunService   — a trigger-evaluation pass (pack path or doc path) in flight for any chat.
- *     M5c-REMOVAL: this source dies with workflow deletion. It is NOT the coverage for the new
- *     floor-commit trigger runtime — a triggered Agent dispatches through `invocationRuntime().run`
- *     (the identity path), so its in-flight work is already counted by `hasActiveAgentWork()` above.
- *     Drop this line together with `headlessRunService` in M5c; no union member is lost.
+ *
+ * (M5c-2 removed the sixth source, `headlessRunService.hasActiveTriggerEvaluation`, together with the
+ * deleted workflow surface. It was never the coverage for the floor-commit trigger runtime — a triggered
+ * Agent dispatches through `invocationRuntime().run`, the identity path, so its in-flight work is already
+ * counted by `hasActiveAgentWork()`; no union member was lost.)
  *
  * `activeControllers` and `activeTurns` OVERLAP rather than nest, so both are needed: a turn sets an
  * entry in the shared per-chat `activeControllers` map, but so does a raw call, which overwrites the
@@ -57,7 +57,6 @@
 import { hasActiveAgentWork } from './agentRuntime/InvocationRuntimeService'
 import { hasActiveRawGeneration } from './generation/rawGenerate'
 import { hasActiveTurns } from './generationService'
-import { hasActiveTriggerEvaluation } from './headlessRunService'
 import { hasActiveBackfill } from './tableBackfillService'
 import { hasActiveRefill } from './tableRefillService'
 
@@ -66,5 +65,4 @@ export const hasActiveBackgroundWork = (): boolean =>
   hasActiveTurns() ||
   hasActiveRawGeneration() ||
   hasActiveBackfill() ||
-  hasActiveRefill() ||
-  hasActiveTriggerEvaluation()
+  hasActiveRefill()

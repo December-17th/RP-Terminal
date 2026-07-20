@@ -1,16 +1,13 @@
 import type { PromptMessage } from '../../shared/agentRuntime'
 import {
   setMemoryMaintenanceBridge,
-  MEMORY_MAINTENANCE_AGENT_NAME,
   type MemoryMaintenanceScope
 } from './agentRuntime/memoryMaintenanceSlot'
-import { AgentCatalog } from './agentRuntime/catalog'
-import { getDb } from './db'
 import { buildGenContext } from './generation/genContext'
 import type { GenContext } from './generation/types'
 import { applyTableEdit, chatTemplate, dueTables } from './memory/memoryCore'
 import { composeMaintainerMessages, memoryMaintainConfig } from './memory/maintainerCompose'
-import { DEFAULT_MEMORY_MAINTAIN_CONFIG } from './memory/maintainerDefaults'
+import { resolveEffectiveMaintainConfig } from './memory/maintainConfig'
 import { extractTagAll } from '../../shared/memory/tagExtract'
 import { advanceProgress, getProgress } from './tableProgressService'
 import { getFloorCount, transcriptEpoch } from './floorService'
@@ -44,24 +41,11 @@ import type { z } from 'zod'
 
 type MemoryMaintainConfig = z.infer<typeof memoryMaintainConfig>
 
-/**
- * The effective Table-memory MAINTAINER config (execution-plan M5c-1, scaffold re-home): the built-in
- * default overlaid with the Agent's profile-local `invocation_config.maintain` override. `null` only when
- * the merged config fails schema validation (a corrupt override) — the default alone is always valid, so
- * this is effectively always present. Whether a run actually happens is decided downstream by the bound
- * table template and the DUE set, NOT by this config.
- */
-const resolveMaintainConfig = (profileId: string): MemoryMaintainConfig | null => {
-  let override: Record<string, unknown> = {}
-  try {
-    const agent = new AgentCatalog(profileId, getDb()).get(MEMORY_MAINTENANCE_AGENT_NAME)
-    override = agent?.invocationConfig.maintain ?? {}
-  } catch (cause) {
-    log('error', `Memory Maintenance override read failed — ${errorMessage(cause)}`)
-  }
-  const parsed = memoryMaintainConfig.safeParse({ ...DEFAULT_MEMORY_MAINTAIN_CONFIG, ...override })
-  return parsed.success ? parsed.data : null
-}
+// The effective maintainer config (built-in default ⊕ the Agent's profile-local override) is resolved by
+// the shared `resolveEffectiveMaintainConfig` (also used by the memory-maintain-preview IPC), so the
+// converted Agent and the preview never drift.
+const resolveMaintainConfig = (profileId: string): MemoryMaintainConfig | null =>
+  resolveEffectiveMaintainConfig(profileId)
 
 /** Compute the DUE tables for this floor exactly as the node does (memoryNodes.ts:171-173). */
 const computeDue = (

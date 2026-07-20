@@ -74,11 +74,6 @@ const mockCallModel = vi.hoisted(() => ({
   callModel: vi.fn(async () => ({ raw: 'The door opens.', rawUsage: {}, stopped: false }))
 }))
 vi.mock('../../src/main/services/generation/callModel', () => mockCallModel)
-vi.mock('../../src/main/services/workflowEvents', () => ({
-  notifyWorkflowTrace: vi.fn(),
-  notifyWorkflowPanel: vi.fn(),
-  notifyWorkflowActivity: vi.fn()
-}))
 vi.mock('../../src/main/services/logService', () => ({ log: vi.fn() }))
 
 import { getDefaultSettings } from '../../src/main/services/settingsService'

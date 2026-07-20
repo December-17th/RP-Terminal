@@ -15,9 +15,7 @@ import { registerCombatIpc } from './combatIpc'
 import { registerChatCardVarsIpc } from './chatCardVarsIpc'
 import { registerDuelPreviewIpc } from './duelPreviewIpc'
 import { registerDuelIpc } from './duelIpc'
-import { registerWorkflowIpc } from './workflowIpc'
 import { registerTableMemoryIpc } from './tableMemoryIpc'
-import { registerAgentPackIpc } from './agentPackIpc'
 import { registerNotesMemoryIpc } from './notesMemoryIpc'
 import { registerSaveTransferIpc } from './saveTransferIpc'
 import { registerUpdateIpc } from './updateIpc'
@@ -42,9 +40,7 @@ export const registerIpc = (ipcMain: IpcMain): void => {
   registerChatCardVarsIpc()
   registerDuelPreviewIpc()
   registerDuelIpc(ipcMain)
-  registerWorkflowIpc(ipcMain)
   registerTableMemoryIpc(ipcMain)
-  registerAgentPackIpc(ipcMain)
   registerNotesMemoryIpc(ipcMain)
   registerSaveTransferIpc(ipcMain)
   registerUpdateIpc(ipcMain)

@@ -12,9 +12,6 @@ import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
 import * as worldAssetProtocol from './services/worldAssetProtocol'
 import * as avatarProtocol from './services/avatarProtocol'
-// Side-effect: wires workflowService's card-import ops into characterService's seam (breaks the
-// characterService → workflowService cycle). Must load before any card import runs.
-import './services/cardWorkflowBridge'
 import './services/cardAgentCatalogBridge'
 import './services/agentPresetAssemblyBridge'
 import './services/memoryMaintenanceAgentBridge'

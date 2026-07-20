@@ -19,7 +19,6 @@ import { trimProcessedContext, exportTableEntries } from './classicStages'
 import { matchWorldInfo, assemblePrompt } from './assemble'
 import { estimateTokens } from '../promptBudget'
 import { log } from '../logService'
-import type { AttachmentDecl } from '../../../shared/workflow/attachments'
 import type { ExecutionRecord } from '../../../shared/executionRecord'
 import type { GenContext } from './types'
 import { shapePreview, type PreviewSection, type OmittedItem } from './previewSections'
@@ -39,16 +38,6 @@ export interface PreviewInputs {
   chatId: string
   /** A pending action to preview against; '' previews the next turn with no typed input yet. */
   userAction?: string
-  /** The installed-pack summaries (agentPackService.list). Retained on the input for IPC-contract
-   *  stability while the pack system still exists; the direct-assembly preview no longer runs packs
-   *  (the fixed Classic spine does not), so this is currently unused and dies with the pack system in
-   *  M5c. */
-  packSummaries?: {
-    id: string
-    manifest: { name: string }
-    attachments: AttachmentDecl[]
-    gateOpen?: boolean
-  }[]
 }
 
 /**

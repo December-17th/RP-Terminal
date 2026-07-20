@@ -23,8 +23,23 @@
 // pack WITHOUT scanning its text.
 
 import { createHash } from 'node:crypto'
-import type { CompositionMeta } from '../../../shared/workflow/compose'
-import type { CheckpointId } from '../../../shared/workflow/attachments'
+// Pack-attribution vestige (execution-plan M5c-2: agent-packs deleted). The fixed Classic spine has no
+// pack rejoins, so `shapePreview` is always called with empty `injections`/`gatedInjectors`; these local
+// aliases keep the (now inert) attribution types resolving without the deleted `shared/workflow` module.
+// The whole pack-attribution path here is dead and slated for removal in the M6 doc/cleanup pass.
+type CheckpointId = string
+export interface CompositionMeta {
+  packs: Record<
+    string,
+    {
+      rejoinEdges: Array<{
+        checkpoint: string
+        from: { node: string; port: string }
+        to: { node: string; port: string }
+      }>
+    }
+  >
+}
 import type {
   ExecutionRecord,
   RecordContent,

@@ -21,17 +21,8 @@ import { OverlayHost } from './components/workspace/OverlayHost'
 import { YuzuCardSurface } from './components/yuzu/YuzuCardSurface'
 import { CardScriptWcvHost } from './components/CardScriptWcvHost'
 import { PluginHost } from './components/PluginHost'
-import { useWorkflowTraceStore } from './stores/workflowTraceStore'
-import { useWorkflowPanelStore } from './stores/workflowPanelStore'
-import {
-  useAgentFailureStore,
-  isHeadlessTrace,
-  deriveHeadlessFailure
-} from './stores/agentFailureStore'
-import { useRecallFailOpenStore, recallOutcome } from './stores/recallFailOpenStore'
 import { useAgentActivityStore } from './stores/agentActivityStore'
 import { useAgentRunStore } from './stores/agentRunStore'
-import type { WorkflowRunTrace } from '../../shared/workflow/trace'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
 import { useWcvFreezeStore } from './stores/wcvFreezeStore'
@@ -56,10 +47,6 @@ import { StDomCompat } from './components/StDomCompat'
 // hoisted into App via a narrow selector). Rendering them unconditionally would request every chunk at
 // startup. Suspense fallback is null — nothing is visible until the user opens the surface anyway.
 const SettingsModal = lazyNamed(() => import('./components/SettingsModal'), 'SettingsModal')
-const WorkflowEditorOverlay = lazyNamed(
-  () => import('./components/workflow/WorkflowEditorOverlay'),
-  'WorkflowEditorOverlay'
-)
 const DuelPopup = lazyNamed(() => import('./components/DuelPopup'), 'DuelPopup')
 const AssetsPopup = lazyNamed(() => import('./components/AssetsPopup'), 'AssetsPopup')
 const AgentWorkspace = lazyNamed(
@@ -101,7 +88,6 @@ export default function App(): React.ReactElement {
   // (mode → 'duel' opens the popup) lives INSIDE the component's effect, so it must be mounted whenever
   // the chat is in duel mode OR the popup is already open, else it could never observe the transition.
   const settingsOpen = useUiStore((s) => s.settingsOpen)
-  const workflowEditorOpen = useUiStore((s) => s.workflowEditorOpen)
   const duelPopupOpen = useUiStore((s) => s.duelPopupOpen)
   const assetsPopupOpen = useUiStore((s) => s.assetsPopupOpen)
   const agentWorkspaceOpen = useUiStore((s) => s.agentWorkspaceOpen)
@@ -197,34 +183,10 @@ export default function App(): React.ReactElement {
     // Broadcast TavernHelper lifecycle/mutation events to BOTH transports — the compute+fan-out logic
     // lives in initCardEventBridge (cardBridge/hostBroadcast), so the two paths can't drift (WS-7).
     const unsubEvents = initCardEventBridge()
-    // Per-turn workflow run trace → keep the latest per chat for the Workflows trace panel.
-    const unsubTrace = window.api.onWorkflowTrace((trace: unknown) => {
-      const t = trace as WorkflowRunTrace
-      useWorkflowTraceStore.getState().put(t)
-      // Headless agent runs are silent by nature (no chat message). Surface their failures as a
-      // dismissible banner (agentFailureStore → ChatView) so a background agent that fails never
-      // passes unnoticed. A clean headless run retires any earlier banner for that chat.
-      if (isHeadlessTrace(t)) {
-        const failure = deriveHeadlessFailure(t)
-        if (failure) useAgentFailureStore.getState().recordFailure(t.chatId, failure)
-        else useAgentFailureStore.getState().clear(t.chatId)
-      }
-      // Plot-recall (A3): tally consecutive PRE-TURN recall fail-opens for this chat. memory.recall
-      // runs inside the player-turn graph, so this is NOT gated on isHeadlessTrace — a turn trace with
-      // a fail-opened recall node bumps the streak; a clean recall resets it. ChatView warns at N.
-      const outcome = recallOutcome(t)
-      if (outcome) useRecallFailOpenStore.getState().record(t.chatId, outcome === 'failed')
-    })
-    // Live side-agent activity (agent-activity-indicator): a calls-llm node OTHER than the narrator
-    // started/finished its API request → fold into agentActivityStore so ChatView shows a pre-phase
-    // "Recalling memories…" ghost or a post-phase "Updating memory…" chip. Keyed by chat.
-    const unsubActivity = window.api.onWorkflowActivity((a) => {
-      if (a.state === 'start')
-        useAgentActivityStore.getState().start(a.chatId, a.nodeId, a.nodeType, a.phase)
-      else useAgentActivityStore.getState().end(a.chatId, a.nodeId)
-    })
     // Agent Runtime activity is keyed by Invocation ID, so overlapping calls in one chat remain
-    // independently visible and stoppable. Notification policy never gates this activity edge.
+    // independently visible and stoppable. Notification policy never gates this activity edge. (M5c-2:
+    // the legacy `workflow-activity`/`workflow-trace`/`workflow-panel` feeds were removed with the
+    // workflow system — this agent-run feed is now the sole activity source ChatView reads.)
     const unsubAgentRuns = window.api.onAgentRunEvent((event) => {
       useAgentRunStore.getState().apply(event)
       if (event.type === 'started') {
@@ -237,16 +199,8 @@ export default function App(): React.ReactElement {
         useAgentActivityStore.getState().end(event.run.chatId, event.run.invocationId)
       }
     })
-    // Opt-in node output panels (spec D4): append deltas; a chat's panels belong to its latest
-    // turn, so clear them on the turn's rising edge (isGenerating false→true).
-    const unsubPanel = window.api.onWorkflowPanel((p) => useWorkflowPanelStore.getState().append(p))
-    const unsubPanelClear = useChatStore.subscribe((state, prev) => {
-      if (state.isGenerating && !prev.isGenerating && state.activeChatId) {
-        useWorkflowPanelStore.getState().clear(state.activeChatId)
-      }
-    })
-    // A workflow tool node switched the chat's mode main-side (started combat/duel) → the
-    // workspace must follow without a user click.
+    // A combat/duel service switched the chat's mode main-side → the workspace must follow without a
+    // user click.
     const unsubModeChanged = window.api.onChatModeChanged(({ chatId, mode }) => {
       if (chatId === useChatStore.getState().activeChatId) {
         useChatStore.setState({ activeChatMode: mode })
@@ -264,11 +218,7 @@ export default function App(): React.ReactElement {
       unsubFreeze()
       unsubFloors()
       unsubEvents()
-      unsubTrace()
-      unsubActivity()
       unsubAgentRuns()
-      unsubPanel()
-      unsubPanelClear()
       unsubModeChanged()
     }
   }, [])
@@ -515,7 +465,6 @@ export default function App(): React.ReactElement {
           retired. */}
       <Suspense fallback={null}>
         {settingsOpen && <SettingsModal profileId={activeProfile.id} />}
-        {workflowEditorOpen && <WorkflowEditorOverlay profileId={activeProfile.id} />}
         {(duelPopupOpen || activeChatMode === 'duel') && <DuelPopup profileId={activeProfile.id} />}
         {assetsPopupOpen && <AssetsPopup profileId={activeProfile.id} />}
         {agentWorkspaceOpen && <AgentWorkspace profileId={activeProfile.id} />}

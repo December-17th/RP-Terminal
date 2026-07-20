@@ -8,7 +8,7 @@ import {
   type PackInjection,
   type GatedInjector
 } from '../../src/main/services/generation/previewSections'
-import type { CompositionMeta } from '../../src/shared/workflow/compose'
+import type { CompositionMeta } from '../../src/main/services/generation/previewSections'
 import type {
   ExecutionRecord,
   RecordContent,

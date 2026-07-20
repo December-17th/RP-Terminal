@@ -1,7 +1,6 @@
 import { getChatTableTemplateId } from './chatService'
 import { getTableTemplateById } from './tableTemplateService'
 import { getFloorCount } from './floorService'
-import { resolveWorkflowDoc } from './workflowService'
 import {
   getProgress,
   computeTableProgress,
@@ -88,17 +87,11 @@ export const effectiveFrequencies = (
   return { ...out, ...overrides }
 }
 
-/** The chat's resolved workflow's table.gate configs (best-effort; [] on any failure). */
-const gateConfigs = (profileId: string, chatId: string): GateConfigView[] => {
-  try {
-    const { doc } = resolveWorkflowDoc(profileId, chatId)
-    return doc.nodes
-      .filter((n) => n.type === 'table.gate')
-      .map((n) => (n.config ?? {}) as GateConfigView)
-  } catch {
-    return []
-  }
-}
+/** Gate-config overrides no longer exist (execution-plan M5c-2: the `table.gate` workflow node and the
+ *  whole workflow surface are deleted), so there are never any overrides — the status uses each table's
+ *  own effective frequency. Kept as a seam so `effectiveFrequencies` still receives its `gates` argument
+ *  (empty), preserving its unit-tested pure contract. */
+const gateConfigs = (_profileId: string, _chatId: string): GateConfigView[] => []
 
 /**
  * Resolve the chat's assigned template, read the shared progress store, and compute per-table status

@@ -9,7 +9,6 @@ export interface CharacterImportSummary {
   uiWidgets: number
   presets: number
   lorebooks: number
-  workflows: number
   tableTemplates: number
   pluginsSkipped: number
   assetsImported: number

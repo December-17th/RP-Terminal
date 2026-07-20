@@ -41,14 +41,6 @@ module.exports = {
       to: { path: '^src/(main|renderer|preload)|node_modules/electron/' }
     },
     {
-      name: 'workflow-engine-pure',
-      comment:
-        'The node workflow engine (src/shared/workflow) must NOT import renderer, main, preload, or electron (spec §15 / CLAUDE.md module boundaries).',
-      severity: 'error',
-      from: { path: '^src/shared/workflow' },
-      to: { path: '^src/(main|renderer|preload)|node_modules/electron/' }
-    },
-    {
       name: 'agent-contracts-pure',
       comment:
         'AgentContracts (src/shared/agentRuntime) is a pure shared Module and must not import renderer, main, preload, or electron.',

@@ -188,7 +188,6 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
           summary.scripts && text.bundleItem(summary.scripts, 'scripts'),
           summary.cardCodeSurfaces && text.bundleItem(summary.cardCodeSurfaces, 'cardCodeSurfaces'),
           summary.uiWidgets && text.bundleItem(summary.uiWidgets, 'uiWidgets'),
-          summary.workflows && text.bundleItem(summary.workflows, 'workflows'),
           summary.tableTemplates && text.bundleItem(summary.tableTemplates, 'tableTemplates'),
           summary.pluginsSkipped && text.bundleItem(summary.pluginsSkipped, 'pluginsSkipped')
         ].filter(Boolean)

@@ -30,7 +30,7 @@ import type { TableStatusLike } from '../workspace/tableGridModel'
 import { TableCards, type CellChange } from './TableCards'
 import { RefillWorkbench } from './RefillWorkbench'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { MemoryPreview } from '../workflow/MemoryMaintainPanel'
+import { MemoryPreview } from './MemoryMaintainPanel'
 import { groupOpsByFloor, rewindConsequence, type HistoryOp } from './historyModel'
 import {
   describeStagedOp,

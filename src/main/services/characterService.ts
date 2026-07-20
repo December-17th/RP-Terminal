@@ -259,10 +259,6 @@ export const deleteCharacter = (profileId: string, characterId: string): void =>
   // mirrors deletePreset's cleanup of its preset-scoped artifacts.
   regexService.deleteScriptsByOwner(profileId, 'world', characterId)
   scriptService.deleteScriptsByOwner(profileId, 'world', characterId)
-  // Remove the world-bound workflows this card brought in on import (tagged meta.world_owner);
-  // deleteWorkflowsByOwner also clears the world-default selection ref. Bundled table templates are
-  // library artifacts (never world-bound, like presets/lorebooks) and are deliberately left in place.
-  cardWorkflowHooks?.deleteWorkflowsByOwner(profileId, characterId)
   const avatar = getAvatarPath(characterId)
   if (fs.existsSync(avatar)) fs.unlinkSync(avatar)
   const thumb = getAvatarThumbPath(characterId)
@@ -292,8 +288,6 @@ export interface ImportSummary {
   uiWidgets: number
   presets: number
   lorebooks: number
-  /** Bundled workflow docs imported + bound as this world's default (Track S / card-import). */
-  workflows: number
   /** Bundled memory-table templates dropped into the profile's template library. */
   tableTemplates: number
   /** Bundled plugins detected but NOT installed yet (package format/grant flow TBD). */
@@ -339,12 +333,6 @@ export const collectBundledPresets = (card: RPTerminalCard): any[] => {
 export const collectBundledLorebooks = (card: RPTerminalCard): any[] => {
   const b = getRpExt(card)?.lorebooks
   return Array.isArray(b) ? b.filter((x) => x && typeof x === 'object') : []
-}
-
-/** Bundled generation/memory workflow docs from `rp_terminal.workflows[]` (world-bound on import). */
-export const collectBundledWorkflows = (card: RPTerminalCard): any[] => {
-  const w = getRpExt(card)?.workflows
-  return Array.isArray(w) ? w.filter((x) => x && typeof x === 'object') : []
 }
 
 /** Bundled memory-table templates from `rp_terminal.table_templates[]` (library-drop on import). */
@@ -397,7 +385,6 @@ export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
     uiWidgets: Array.isArray(rpt?.ui_layout) ? rpt.ui_layout.length : 0,
     presets: collectBundledPresets(parsed.card).length,
     lorebooks: collectBundledLorebooks(parsed.card).length,
-    workflows: collectBundledWorkflows(parsed.card).length,
     tableTemplates: collectBundledTableTemplates(parsed.card).length,
     pluginsSkipped: Array.isArray(rpt?.plugins) ? rpt.plugins.length : 0,
     assetsImported: 0
@@ -421,7 +408,6 @@ export const hasBundle = (s: ImportSummary): boolean =>
   s.uiWidgets > 0 ||
   s.presets > 0 ||
   s.lorebooks > 0 ||
-  s.workflows > 0 ||
   s.tableTemplates > 0
 
 /**
@@ -473,21 +459,6 @@ export const parseCardFile = (filePath: string): ParsedCard | null => {
     src.name || 'Unknown'
   )
   return { card: result.data, lorebook }
-}
-
-/**
- * Workflow operations are injected to keep characterService out of workflowService's dependency cycle.
- */
-export interface CardWorkflowHooks {
-  importWorkflow: (profileId: string, doc: unknown, owner: string) => string | null
-  setWorldWorkflow: (profileId: string, characterId: string, workflowId: string) => void
-  deleteWorkflowsByOwner: (profileId: string, owner: string) => void
-}
-
-let cardWorkflowHooks: CardWorkflowHooks | null = null
-
-export const setCardWorkflowHooks = (hooks: CardWorkflowHooks | null): void => {
-  cardWorkflowHooks = hooks
 }
 
 /** Injected by cardAgentCatalogBridge so card import remains independently testable and avoids
@@ -603,7 +574,6 @@ interface BundleCounts {
   scripts: number
   presets: number
   lorebooks: number
-  workflows: number
   tableTemplates: number
   assetsImported: number
   /** See {@link ImportSummary.cartridgeError}. */
@@ -688,21 +658,6 @@ const installBundleArtifacts = (
     }
   }
 
-  let workflows = 0
-  let worldWorkflowId: string | null = null
-  for (const doc of collectBundledWorkflows(card)) {
-    const id = cardWorkflowHooks?.importWorkflow(profileId, doc, characterId) ?? null
-    if (id) {
-      workflows++
-      worldWorkflowId ??= id
-    } else {
-      log('info', 'Bundled workflow not imported (invalid, unsupported, or bridge unwired)')
-    }
-  }
-  if (worldWorkflowId) {
-    cardWorkflowHooks?.setWorldWorkflow(profileId, characterId, worldWorkflowId)
-  }
-
   // Templates are library artifacts without world ownership. Install them only on a fresh import so a
   // card update cannot silently duplicate templates under new ids.
   let tableTemplates = 0
@@ -775,7 +730,6 @@ const installBundleArtifacts = (
     scripts,
     presets,
     lorebooks,
-    workflows,
     tableTemplates,
     assetsImported,
     cartridgeError
@@ -792,7 +746,6 @@ const buildImportSummary = (parsed: ParsedCard, counts: BundleCounts): ImportSum
     counts.scripts
   summary.presets = counts.presets
   summary.lorebooks = counts.lorebooks
-  summary.workflows = counts.workflows
   summary.tableTemplates = counts.tableTemplates
   summary.assetsImported = counts.assetsImported
   summary.cartridgeError = counts.cartridgeError
@@ -935,7 +888,6 @@ export const updateCharacterInPlace = (
     // a rejected or archive-less update from destroying a working installation.
     regexService.deleteScriptsByOwner(profileId, 'world', characterId)
     scriptService.deleteScriptsByOwner(profileId, 'world', characterId)
-    cardWorkflowHooks?.deleteWorkflowsByOwner(profileId, characterId)
 
     const counts = installBundleArtifacts(profileId, characterId, card, filePath, assetZipPath, {
       installExtraLorebooks: false,

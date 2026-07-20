@@ -11,7 +11,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getDefaultSettings } from '../../src/main/services/settingsService'
 import { getDefaultPreset } from '../../src/main/types/preset'
 import type { FloorFile } from '../../src/main/types/chat'
-import { buildDefaultMemoryDocV2 } from '../../src/main/services/nodes/builtin/defaultMemoryTemplate'
 
 const settings = (() => {
   const s = getDefaultSettings()
@@ -113,33 +112,7 @@ const defaultStream = async (
   return 'You open the door.'
 }
 
-const { resolveEffectiveDoc, notifyWorkflowTrace, appendRun } = vi.hoisted(() => ({
-  resolveEffectiveDoc: vi.fn(),
-  notifyWorkflowTrace: vi.fn(),
-  appendRun: vi.fn(() => undefined)
-}))
-vi.mock('../../src/main/services/workflowService', () => ({
-  resolveEffectiveDoc,
-  setEnabledFragmentsProvider: () => {}
-}))
-vi.mock('../../src/main/services/workflowEvents', () => ({
-  notifyWorkflowTrace,
-  notifyWorkflowPanel: () => {},
-  notifyWorkflowActivity: () => {}
-}))
-vi.mock('../../src/main/services/runHistoryStore', () => ({ appendRun }))
-
 import { generate } from '../../src/main/services/generationService'
-
-/** The seeded production doc, exactly as a profile stores it. */
-const productionDoc = () => buildDefaultMemoryDocV2()
-
-/** The same doc after a mid-session edit that the predicate must reject — a panel on a spine node. */
-const editedDoc = () => {
-  const doc = buildDefaultMemoryDocV2()
-  doc.nodes.find((n) => n.id === 'assemble')!.panel = { show: true, label: 'Prompt' }
-  return doc
-}
 
 /** The floor with its wall-clock stamps removed, for cross-turn comparison. */
 const comparable = (f: FloorFile): unknown => {
@@ -151,11 +124,6 @@ const comparable = (f: FloorFile): unknown => {
 
 beforeEach(() => {
   appended.length = 0
-  resolveEffectiveDoc
-    .mockReset()
-    .mockReturnValue({ id: 'wf-seeded', doc: productionDoc(), warnings: [] })
-  notifyWorkflowTrace.mockReset()
-  appendRun.mockReset().mockReturnValue(undefined)
   streamProviderMock.mockReset().mockImplementation(defaultStream)
 })
 
@@ -186,19 +154,13 @@ describe('generate() — the production doc routes to the direct orchestration',
   })
 })
 
-describe('generate() — an edited doc stays on the direct path (M5a hard cutover)', () => {
-  it('a mid-session edit that USED to fall back now produces the same floor and prompt directly', async () => {
-    // Turn 1 on the production doc…
-    resolveEffectiveDoc.mockReturnValue({ id: 'wf-seeded', doc: productionDoc(), warnings: [] })
+describe('generate() — the direct path is doc-agnostic (M5c-2: no workflow doc)', () => {
+  it('two consecutive turns with the same action produce the same floor and prompt', async () => {
     const first = await generate('profile1', 'chat1', 'open the door')
     const firstPrompt = streamProviderMock.mock.calls[0][1]
 
-    // …the user opens the editor and adds a panel to a spine node. Pre-M5a this demoted turn 2 onto
-    // runWorkflow; post-cutover it stays direct. The result is unchanged because the direct path
-    // ignores the panel (it emits none), so the same floor and prompt still come out.
     appended.length = 0
     streamProviderMock.mockClear()
-    resolveEffectiveDoc.mockReturnValue({ id: 'wf-seeded', doc: editedDoc(), warnings: [] })
     const second = await generate('profile1', 'chat1', 'open the door')
     const secondPrompt = streamProviderMock.mock.calls[0][1]
 
@@ -206,17 +168,5 @@ describe('generate() — an edited doc stays on the direct path (M5a hard cutove
     expect(second).not.toBeNull()
     expect(secondPrompt).toEqual(firstPrompt)
     expect(comparable(second!)).toEqual(comparable(first!))
-  })
-
-  it('and flipping BACK is equally invisible', async () => {
-    resolveEffectiveDoc.mockReturnValue({ id: 'wf-seeded', doc: editedDoc(), warnings: [] })
-    const viaEdited = await generate('profile1', 'chat1', 'open the door')
-
-    appended.length = 0
-    streamProviderMock.mockClear()
-    resolveEffectiveDoc.mockReturnValue({ id: 'wf-seeded', doc: productionDoc(), warnings: [] })
-    const viaProduction = await generate('profile1', 'chat1', 'open the door')
-
-    expect(comparable(viaProduction!)).toEqual(comparable(viaEdited!))
   })
 })

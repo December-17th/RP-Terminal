@@ -183,9 +183,6 @@ vi.mock('../src/main/services/agentRuntime/InvocationRuntimeService', () => mock
 const mockGeneration = vi.hoisted(() => ({ hasActiveTurns: vi.fn(() => false) }))
 vi.mock('../src/main/services/generationService', () => mockGeneration)
 
-const mockHeadless = vi.hoisted(() => ({ hasActiveTriggerEvaluation: vi.fn(() => false) }))
-vi.mock('../src/main/services/headlessRunService', () => mockHeadless)
-
 const mockRaw = vi.hoisted(() => ({ hasActiveRawGeneration: vi.fn(() => false) }))
 vi.mock('../src/main/services/generation/rawGenerate', () => mockRaw)
 
@@ -201,7 +198,6 @@ describe('hasActiveBackgroundWork', () => {
   beforeEach(() => {
     mockAgentRuntime.hasActiveAgentWork.mockReturnValue(false)
     mockGeneration.hasActiveTurns.mockReturnValue(false)
-    mockHeadless.hasActiveTriggerEvaluation.mockReturnValue(false)
     mockRaw.hasActiveRawGeneration.mockReturnValue(false)
     mockBackfill.hasActiveBackfill.mockReturnValue(false)
     mockRefill.hasActiveRefill.mockReturnValue(false)
@@ -238,8 +234,6 @@ describe('hasActiveBackgroundWork', () => {
     expect(hasActiveBackgroundWork()).toBe(true)
   })
 
-  it('is true for an in-flight trigger evaluation', () => {
-    mockHeadless.hasActiveTriggerEvaluation.mockReturnValue(true)
-    expect(hasActiveBackgroundWork()).toBe(true)
-  })
+  // M5c-2 removed the sixth source (headless trigger evaluation) with the workflow system; a triggered
+  // Agent's in-flight work is counted by hasActiveAgentWork instead.
 })

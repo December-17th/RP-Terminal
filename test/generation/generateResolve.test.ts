@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getDefaultSettings } from '../../src/main/services/settingsService'
 import { getDefaultPreset } from '../../src/main/types/preset'
 import type { FloorFile } from '../../src/main/types/chat'
-import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from '../fixtures/narratorSpineDoc'
 
 // Post-workflow entry shape (execution-plan M5c-1): `generate()` no longer resolves a workflow doc,
 // builds a node RunContext, broadcasts a run trace, or persists run history — the detached post-turn
@@ -115,41 +114,12 @@ const defaultStream = async (
   return 'You open the door.'
 }
 
-const { resolveEffectiveDoc, buildTurnContext, notifyWorkflowTrace } = vi.hoisted(() => ({
-  resolveEffectiveDoc: vi.fn(),
-  buildTurnContext: vi.fn(),
-  notifyWorkflowTrace: vi.fn()
-}))
-// setEnabledFragmentsProvider is added to the mock only for module-load completeness: generate() now
-// transitively imports headlessRunService → agentPackService (the WP2.2 turn-boundary hook), and
-// agentPackService calls setEnabledFragmentsProvider at import time. generate() itself never calls it;
-// this stub just keeps the partial workflowService mock loadable. No assertion depends on it.
-vi.mock('../../src/main/services/workflowService', () => ({
-  resolveEffectiveDoc,
-  setEnabledFragmentsProvider: () => {}
-}))
-vi.mock('../../src/main/services/workflowEvents', () => ({ notifyWorkflowTrace }))
-// Run-history persistence (WP2.3): the turn path persists on the SAME detached promise as the trace
-// broadcast. Mock the store (its sqlite table can't load under Node) and assert the annotated record.
-const { appendRun } = vi.hoisted(() => ({ appendRun: vi.fn(() => undefined) }))
-vi.mock('../../src/main/services/runHistoryStore', () => ({ appendRun }))
-vi.mock('../../src/main/services/nodes/turnContext', async (orig) => {
-  const actual = await orig<Record<string, unknown>>()
-  buildTurnContext.mockImplementation((actual as any).buildTurnContext)
-  return { ...actual, buildTurnContext }
-})
-
 import { generate } from '../../src/main/services/generationService'
 
 describe('generate() — resolves the active workflow', () => {
   beforeEach(() => {
     capturedFloor = null
     appendFloorCalled = false
-    resolveEffectiveDoc
-      .mockReset()
-      .mockReturnValue({ id: 'custom-1', doc: DEFAULT_GRAPH, warnings: [] })
-    buildTurnContext.mockClear()
-    appendRun.mockReset().mockReturnValue(undefined)
     streamProviderMock.mockReset().mockImplementation(defaultStream)
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2020-06-01T12:00:00.000Z'))

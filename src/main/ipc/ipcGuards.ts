@@ -46,14 +46,12 @@ export const GATED_CHANNELS = [
   // table-template import/export native dialogs (tableMemoryIpc) — host-path read/write
   'table-template-import-dialog',
   'table-template-export-dialog',
-  // import/export native dialogs (presetIpc / regexIpc / lorebookIpc / scriptIpc / workflowIpc)
+  // import/export native dialogs (presetIpc / regexIpc / lorebookIpc / scriptIpc)
   'import-preset-dialog',
   'import-regex-dialog',
   'import-lorebook-dialog',
   'export-lorebook-dialog',
   'import-script-dialog',
-  'import-workflow-dialog',
-  'export-workflow-dialog',
   // preset high-trust opt-in (a card must not unlock its own remote-code preset scripts) (presetIpc)
   'preset-set-high-trust',
   // plugin/grant mutation (a card must not grant itself trust) + plugin install dialogs (pluginIpc)
@@ -92,14 +90,7 @@ export const GATED_CHANNELS = [
   'card-agent-run-plan',
   'card-agent-cancel',
   'card-agent-tool-register',
-  'card-agent-tool-unregister',
-  // agent-pack / module / recipe transfer dialogs (agentPackIpc)
-  'agent-pack-export-dialog',
-  'agent-pack-import-dialog',
-  'module-export-dialog',
-  'module-import-dialog',
-  'recipe-export-dialog',
-  'recipe-import-dialog'
+  'card-agent-tool-unregister'
 ] as const
 
 export type GatedChannel = (typeof GATED_CHANNELS)[number]

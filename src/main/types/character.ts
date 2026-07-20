@@ -216,10 +216,10 @@ export const RPTerminalExtSchema = z
     regex: z.array(z.any()).optional(),
     presets: z.array(z.any()).optional(),
     lorebooks: z.array(z.any()).optional(),
-    /** Bundled generation/memory workflow docs (node-graphs). Loose element shape — imported +
-     *  validated against the builtin node registry on install; the first successfully-imported one
-     *  becomes this world's default workflow. */
-    workflows: z.array(z.any()).optional(),
+    // Legacy `workflows: []` (bundled node-graph docs) was dropped from the active surface in
+    // execution-plan M5c-2 (workflow system deleted). A card that still carries the key round-trips
+    // losslessly — `parseCardFile` preserves the entire `extensions` object — it is simply no longer
+    // read or imported.
     /** Declarative Agent Runtime definitions bundled by this card. Unlike legacy workflows these are
      * strict at the card import boundary and normalize through AgentContracts. */
     agents: z.array(AgentDefinitionSchema).optional(),
