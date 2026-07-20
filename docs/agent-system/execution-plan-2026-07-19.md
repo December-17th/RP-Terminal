@@ -286,6 +286,74 @@ commit, not silently ignored.
 
 ## 7. Implementation log
 
+### 2026-07-19 — M6 implemented (living docs, residue, merge gate)
+
+**Residue cleanup.** Purged the dead React-Flow / WorkflowEditor selectors from
+`memoryMaintainPanel.css` (kept only the `.rpt-mm-*` classes + `.rpt-assemble-preview-text` that
+`MemoryMaintainPanel.tsx` renders). Deleted the orphaned `previewService.ts` + `previewSections.ts`
+(the workflow next-prompt preview; their IPC handler and the `AgentsView` preview pane died with the
+editor) and their tests, plus the fully-orphaned renderer twin `previewDisplay.ts` + its test —
+restoration path: git history at `2780f7e` (direct-assembly `previewService`) / earlier for the pane.
+Swept active-code comments that described workflow as current — `activeWork.ts` (preview registry /
+`runWorkflow` node coverage), `agentActivityStore.ts` (the deleted `workflow-activity` feed), and the
+renderer's workflow-editor-overlay references (`App.tsx`, `viewRegistry.tsx`, `uiStore.ts`,
+`SettingsModal.tsx`, `TopStrip.tsx`, `wcvFreezeStore.ts`, `useWcvSuppression.ts`,
+`MemoryManagerView.tsx`, `ChatView.tsx`) → the Agent Workspace is now the single full-window surface.
+Dead locale keys removed from **both** locales: `nav.flow` (the retired Workflow button, now Agents)
+plus the `preview.*` / `runDrawer.*` / `runs.*` clusters (the removed workflow trace / run drawer /
+agent-pack preview panes; the live run UI uses `agentRuns.activity.*`). The kept
+`workflowEditor.memoryMaintain.*` keys are the last `workflowEditor.*` survivors and are still used by
+`MemoryMaintainPanel.tsx`, so they were left (rename = churn). ~141 other locale keys are unreferenced
+by any `t()` call but predate this branch (e.g. `nav.api`, `combat.*`, `duel.*`, `settings.language`);
+they are a pre-existing condition, out of "from the deletion" scope, and left for a focused follow-up.
+
+**Living docs.** README (agent section rewritten; workflow/node-graph/`@xyflow/react` claims removed),
+CLAUDE.md (module-boundary section gains the `shared/agentRuntime` purity rule; notes no workflow
+rules remain), `current-status.md` + `documentation-catalog.md` (cutover reflected; deleted-subject
+docs get superseded/historical lifecycle notes), SDK `README.md` + `component-inventory.md` (workflow
+"if you touch X" mapping row → agent-runtime; `workflows[]` card slot → removed/inert; importer prose
+→ `agents[]` install), `world-card-design.md` status header, `workflow-module-format.md` (superseded
+banner, body kept for history), and the design/implementation-plan status headers (cutover complete on
+`agent-system`, remaining = owner review/merge). `test-agents/README.md`: `blocksNextTurn` section
+rewritten to "live, fail-open" (M3) and the card-trigger example annotated as held (D2), cadence as
+the live path. CONTEXT.md, `rpt-api.md`, `plugin-api.md`, `compat-comparison.md` already carried no
+active workflow surface — left as-is.
+
+**Gate.** typecheck ✓; check:deps ✓ (505 modules, down 3 from the deleted preview files);
+test 2998 passed / 10 skipped (274 files; −33 = the three deleted preview test files, no regressions);
+build ✓. `check:docs` broken-link baseline recounted after M5's deletions: **85 → 76** (this milestone's
+edits net-removed 9 and added zero — every new src citation resolves). Owner manual matrix added as §8.
+
+### 2026-07-19 — M5 implemented (five slices, a–c2)
+
+**M5a** (`b7c9423`): classicShape predicate and runWorkflow fallback removed — every Classic turn is
+direct (D4 hard cutover); the VN acceptance gate (repair ladder, effect fold, yuzu_trace) was found
+living in the `parse.response` node and ported verbatim into `classicTurn` (the direct path had been
+bypassing it — a latent Yuzu regression fixed, not introduced); decoy builtin rows deleted by
+idempotent migration with a seeded-rows fixture and byte-identical `sqlite_master` (D6, no table
+rebuild, CHECK kept); vnMode overlay/token-budget pinned riding the direct path (retires Session 9).
+**M5b** (`2780f7e`): load-bearing helpers relocated out of node files (tagExtract,
+maintainerCompose, classicStages, mainSample); previewService rewritten as direct assembly with no
+engine and no provider call (closes the audited preview `memory.recall` real-call hole);
+profile-local `invocation_config` home for the memory agent's API preset (never exported — pinned).
+**M5b2** (`9bc8752`): one-time per-profile settings seed (marker `profiles.memory_settings_seeded`,
+pristine-builtin-only, reads legacy docs raw off disk) + the Memory sheet Maintenance settings strip
+(cadence / API preset / enabled) over new gated invocation-config IPC.
+**M5c-1** (`d03f8f5`): turn path severed — generationService drops doc resolution, buildTurnContext,
+the builtin registry, RunResult/NodeTrace synthesis, and the detached
+summarize/appendRun/trigger-evaluation chain; the memory bridge drops `resolveEffectiveDoc`
+(scaffold = `DEFAULT_MEMORY_MAINTAIN_CONFIG` ⊕ `invocation_config.maintain`, seed extended;
+profiles seeded before the extension fall back to default scaffold — documented acceptable loss).
+**M5c-2** (`cb477ff`): the workflow system deleted — 185 files (engine, shared model, all 29 node
+files, workflow/agent-pack services + IPC + preload, editor/canvas/trace renderer, ~409
+workflow-only locale keys per locale, `workflows[]` card schema with unknown keys preserved,
+`@xyflow/react`); survivors relocated (MemoryMaintainPanel, recall/notes compose cores,
+maintainConfig resolver); acceptance searches clean of runtime imports; Legacy Workflow Data inert
+on disk, `chats.workflow_id` unread. Gate after the sweep: typecheck / check:deps 508 modules /
+**3031 tests green** (workflow suites deleted with their subjects). Known residue for M6: dead
+React-Flow selectors in the relocated `memoryMaintainPanel.css`; `previewService`/`previewSections`
+orphaned (their IPC/UI died with the editor); stray workflow-named prose comments.
+
 ### 2026-07-19 — M4 implemented
 
 `memory.maintain` is CONVERTED to the built-in **Memory Maintenance** Agent (parser-backed design §6),
@@ -358,3 +426,35 @@ decoy rows away in M5**. Milestones 3–5 are unblocked with these scopes.
 Audit performed against `ef8ab9f`; findings in §1. Stale status headers in
 `agent-runtime-design.md` and `implementation-plan.md` corrected in the same change. No code
 changed. M1 decision package awaiting owner.
+
+## 8. Owner manual verification matrix
+
+Run these in a dev build (`npm run dev`) on the `agent-system` branch. Each row is self-contained:
+the action, the expected result, and where in the UI to look. "Agent Workspace" = the full-window
+popup opened by the **Agents** button in the play-mode top strip (TopStrip). "Memory sheet" = the
+full-window Memory Manager opened by the **Memory** chip in the top strip. "Run activity" = the
+per-chat agent-run indicator in the chat view (AgentRunActivity); "Runs" = the run list/detail inside
+the Agent Workspace.
+
+Set up a world/session first (launcher → pick a world → open a chat) so a chat is active.
+
+| # | Action | Expected result | Where to look |
+| --- | --- | --- | --- |
+| 1 | **Classic — generate.** Type a message in the composer and Send. | A reply streams in token by token, then commits as a new floor. | ChatView message list + streaming area. |
+| 2 | **Classic — stop.** Send, then click **Stop** mid-stream. | Streaming halts promptly; the partial reply is kept/committed and the UI returns to idle (no freeze). | ChatView Stop control. |
+| 3 | **Classic — regenerate.** On the latest reply, use **Regenerate**. | A fresh reply replaces the current one on the same floor (a new swipe/alternate). | ChatView reply controls. |
+| 4 | **Classic — swipe.** With ≥2 alternates, swipe left/right. | Navigates between stored alternates without re-calling the model. | ChatView swipe arrows / counter. |
+| 5 | **Yuzu vnMode turn.** In a VN-mode session (chat `vn_mode` on), take a turn. | The turn renders as a scene (VN overlay + token budget applied); output is identical in substance to Classic riding the direct path. | Play area (VN stage). |
+| 6 | **Cadence-triggered imported Agent.** Import an Agent with `trigger.onFloorCommitted.everyNFloors: N` (or rely on the built-in Memory Maintenance, N=3). Play N floors. | On the Nth commit the Agent fires **unattended** — a run appears with no manual click; not on replay. | Run activity indicator; Runs list (origin "on its own"). |
+| 7 | **Manual Run now.** Agent Workspace → pick an Agent → **Run now** with JSON input. | The Agent runs against the latest committed floor; a run record appears with its result. | Agent Workspace → Runs (origin "run by you"). |
+| 8 | **Same-Agent consecutive floors.** Give one Agent `everyNFloors: 1` and play several floors. | It runs once per floor, serialized in its lane (no overlap, no skipped/duplicated floor). | Runs list — one run per floor, in order. |
+| 9 | **Parallel independent Agents.** Enable two different cadenced Agents due on the same commit. | Both fire on that one commit boundary, tracked as two independent runs; neither blocks the other. | Run activity (two entries); Runs list. |
+| 10 | **Late-result replay.** Trigger a slow Agent, then take more Classic turns before it finishes. | Its result inserts at its **Invocation Floor** (not the latest), and later floors are rebuilt by Forward Replay — earlier floor's state changes appear where they belong. | ChatView floors; VariablesView on the affected floors. |
+| 11 | **In-flight floor deletion.** While an Agent is running on floor F, delete floor F. | The run is cancelled, no result is incorporated, and its Run Record is gone; no orphaned "running" row. | Runs list (run disappears/cancelled); ChatView. |
+| 12 | **Variable edit + replay.** In VariablesView, edit a variable on an earlier floor. | The edit is journaled; later floors Forward-Replay so the change propagates; deleting that floor removes the edit. | VariablesView; later floors' state. |
+| 13 | **Builtin edit / restore.** Agent Workspace → open **Memory Maintenance** (built-in) → change a field, save → then **Restore to default**. | The edit applies profile-wide; Restore returns the reviewed baseline; the row cannot be deleted (only disabled). | Agent Workspace editor + Restore control. |
+| 14 | **.rptagent import + collision.** Settings → Agents → **Scan agent folder** with a new `.rptagent`; then add a second file whose Agent name collides. | First imports as a `user-imported` row; the colliding import is **blocked** with a rename prompt (no silent overwrite). Re-scanning an edited file is an upgrade, not a duplicate. | Agent Workspace library; scan/import dialog. |
+| 15 | **Run Record inspection + Stop.** Open a completed run's detail; then Stop a running one. | Detail shows effective version/hash, prompt, model/preset, result, attempts, tokens, latency; Stop cancels an in-flight run. | Agent Workspace → Runs → detail + Stop. |
+| 16 | **Memory maintenance settings + run.** In the Memory sheet's **Maintenance** strip, set cadence / API preset / enabled; play enough floors to hit the cadence (or Run now). | Maintenance runs through the Agent Harness (a Run Record appears) and the SQL-table memory updates; disabling stops it firing. | Memory sheet Maintenance strip; Tables view; Runs list. |
+| 17 | **`blocksNextTurn` fail-open.** Use an Agent with `blocksNextTurn: true` that fails (e.g. bad API preset), then take the next turn. | The next turn is **not** hung — the barrier releases and the turn proceeds **with a visible warning** about the failed required Agent (fail-open, D5). | ChatView (turn proceeds + warning); Runs (failed run). |
+| 18 | **App-exit warning with active work.** Start long-running work (a table backfill/refill, or a running Agent), then quit (Cmd/Ctrl-Q, window close, or restart). | A warning dialog appears before discarding in-flight work; confirming quits once, cancelling keeps the app running. With nothing active, exit is immediate (no dialog). | OS quit / window close → confirm dialog. |

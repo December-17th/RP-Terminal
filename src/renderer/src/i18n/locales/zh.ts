@@ -56,7 +56,6 @@ const zh: Record<string, string> = {
   'assets.empty.location': '拖入图片，或点击导入 — 命名规则 <地点>_背景.png / <地点>_全景.png。',
   'assets.empty.cg': '拖入图片，或点击导入 — 命名规则 <场景>_CG[_<变体>].png（如 初遇_CG.png）。',
   'nav.api': 'API',
-  'nav.flow': '工作流',
   'nav.settings': '设置',
   'nav.logs': '日志',
   'nav.backToWorlds': '返回世界列表',
@@ -1242,43 +1241,6 @@ const zh: Record<string, string> = {
   'memory.packOff': '已关闭',
   'memory.dataTitle': '数据',
   'memory.browseData': '浏览表格',
-  // ── 注入预览面板（智能体包计划 WP3.4）───────────────────────────────────────────────
-  'preview.title': '下一条提示词',
-  'preview.subtitle': '将要发送的完整内容，逐段列出，并标注每部分的来源。',
-  'preview.refresh': '刷新预览',
-  'preview.generatedAt': '截至 {{time}}',
-  'preview.totalTokens': '{{n}} 个 token',
-  'preview.totalTokensEst': '约 {{n}} 个 token（估算）',
-  'preview.est': '估算',
-  'preview.expand': '展开全文',
-  'preview.collapse': '收起',
-  // 段落类型标签（preview.section.<id>）
-  'preview.section.system': '系统指令',
-  'preview.section.persona': '你的人设',
-  'preview.section.card': '角色',
-  'preview.section.worldInfo': '世界书',
-  'preview.section.history': '对话历史',
-  'preview.section.memory': '记忆',
-  'preview.section.packInject': '由智能体添加',
-  'preview.section.action': '你的消息',
-  'preview.section.other': '其他',
-  // 来源标签（preview.source.<kind>）——pack 类型直接显示智能体包名称。
-  'preview.source.narrator': '基础',
-  'preview.source.lorebook': '世界书',
-  'preview.source.memory': '记忆',
-  // 未包含分组
-  'preview.omittedTitle': '未包含',
-  'preview.omittedNote': '本回合未命中的世界书条目不在此列出——不实际运行本回合就无法得知它们。',
-  'preview.omitted.reason.gate': '已关闭',
-  'preview.omitted.reason.empty': '无内容可加',
-  'preview.omitted.reason.budget': '超出预算',
-  // 状态
-  'preview.noChatTitle': '请先打开一个对话',
-  'preview.noChatBody': '提示词预览基于当前对话生成。打开一个对话即可查看。',
-  'preview.errorTitle': '无法生成预览',
-  'preview.errorBody': '组装下一条提示词时出错了。请重试。',
-  'preview.emptyTitle': '暂无可预览内容',
-  'preview.emptyBody': '下一条提示词还没有任何段落。发送一条消息以生成。',
   // 能力标签（ModuleImportSheet 复用这些平实语言的能力标签）
   'agents.cap.reads-tables': '读取表格',
   'agents.cap.writes-tables': '写入表格',
@@ -1292,62 +1254,7 @@ const zh: Record<string, string> = {
   'agents.cap.injects-prompt': '注入提示词',
   'agents.cap.runs-headless': '在后台运行',
   // 包设置（MemoryPane 复用「设置」入口标签）
-  'agents.settings.open': '设置',
-
-  // ── 运行时间线（WP3.3） ────────────────────────────────────────────────────────────────────────
-  // 来源徽标（字形 + 简短标签）
-  'runs.origin.turn': '回复',
-  'runs.origin.headless': '自动运行',
-  'runs.origin.manual': '手动运行',
-  'runs.origin.turnTitle': '作为回复的一部分运行',
-  'runs.origin.headlessTitle': '智能体自动运行',
-  'runs.origin.manualTitle': '你运行了此智能体',
-  // 一体化画布重构 WP6.4a：编辑器运行抽屉。
-  'runDrawer.title': '运行记录',
-  'runDrawer.empty': '暂无运行记录',
-  'runDrawer.noChat': '打开一个对话以查看其运行记录',
-  'runDrawer.loading': '正在加载运行记录…',
-  'runDrawer.refresh': '刷新',
-  'runDrawer.live': '实时',
-  'runDrawer.liveTitle': '清除回放并返回实时叠加',
-  // 归属
-  'runs.narratorTurn': '旁白回合',
-  'runs.packSep': '、',
-  // 触发器说明前缀（record.trigger 已是可读文本）
-  'runs.triggerCaption': '触发器：{{trigger}}',
-  // 一句话结果（插值 {{n}}；{{node}} 为本地化的节点标题）
-  'runs.outcome.failed': '在「{{node}}」处失败。',
-  'runs.outcome.failedGeneric': '出了点问题。',
-  'runs.outcome.branchFailed': '「{{node}}」失败——未影响回复。',
-  'runs.outcome.branchFailedGeneric': '有一个旁支步骤失败——未影响回复。',
-  'runs.outcome.updatedTables': '更新了 {{n}} 张表。',
-  'runs.outcome.updatedTablesMore': '更新了 {{n}} 张表，还做了其它处理。',
-  'runs.outcome.wroteFloors': '写入了 {{n}} 个楼层。',
-  'runs.outcome.wroteFloorsMore': '写入了 {{n}} 个楼层，还做了其它处理。',
-  'runs.outcome.calledModel': '调用了模型 {{n}} 次。',
-  'runs.outcome.calledModelMore': '调用了模型 {{n}} 次，还做了其它处理。',
-  'runs.outcome.skipped': '这次无需处理。',
-  'runs.outcome.ran': '运行了 {{n}} 个步骤。',
-  // 节点详情
-  'runs.detail.narratorGroup': '旁白',
-  'runs.detail.status.ran': '已运行',
-  'runs.detail.status.skipped': '已跳过',
-  'runs.detail.status.failed': '失败',
-  'runs.detail.expand': '显示步骤',
-  'runs.detail.collapse': '隐藏步骤',
-  // 筛选标签
-  'runs.filter.all': '全部',
-  // 刷新
-  'runs.refresh': '刷新',
-  'runs.loadMore': '加载更早的运行',
-  'runs.loadingMore': '加载中…',
-  // 空状态 + 错误 + 加载
-  'runs.emptyTitle': '暂无活动',
-  'runs.emptyBody':
-    '回复之后，以及智能体自动运行时，运行记录会显示在这里。前往「已安装」开启一个智能体即可开始。',
-  'runs.loadError': '无法加载活动记录。',
-  'runs.noWorldTitle': '请先打开聊天',
-  'runs.noWorldBody': '活动记录按聊天单独跟踪。打开一个世界并开始聊天，即可在此查看运行记录。'
+  'agents.settings.open': '设置'
 }
 
 export default zh

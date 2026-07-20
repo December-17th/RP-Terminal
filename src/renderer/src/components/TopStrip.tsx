@@ -63,7 +63,7 @@ const MemoryChip: React.FC<{ profileId: string }> = ({ profileId }) => {
  * retired (workspace panels are now game + debug only); instead the config/authoring surfaces are
  * reached from direct buttons here, each opening its Settings section, and the full editors live in
  * the Settings hub (useUiStore.openSettings(section)). Layout: brand · world/session breadcrumb ·
- * ‹spacer› · Persona / Preset / Lorebook / Assets / Connection buttons · Workflow · settings gear.
+ * ‹spacer› · Persona / Preset / Lorebook / Assets / Connection buttons · Agents · settings gear.
  * The right padding (in CSS) reserves the OS window-control overlay; the strip is the window drag
  * region. (These were once dropdowns; they were flattened to plain buttons because the dropdowns'
  * WCV suppression caused a visible flash of the native play-area panels.)

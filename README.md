@@ -5,8 +5,9 @@
 
 RP Terminal is a **standalone Electron desktop app** for AI-driven interactive fiction and roleplay
 games. It pairs a streaming LLM generation pipeline with a sandboxed scripting/template runtime,
-author-authored UI panels, native local game systems (turn-based combat and a deckbuilder duel), and a
-visual node-graph workflow engine — all running locally against your own model provider and API key.
+author-authored UI panels, native local game systems (turn-based combat and a deckbuilder duel), and an
+**Agent Runtime** for triggered background automation (memory maintenance and author-imported agents) —
+all running locally against your own model provider and API key.
 
 The renderer is **React 19 + Zustand**; all model generation is centralized in the **Electron main
 process**; state is persisted with **SQLite + a file-based store**. The app UI is localized (\*\*English
@@ -120,58 +121,49 @@ content.
 
 ---
 
-## Agents & the workflow node-graph engine
+## Agents
 
-Generation and agentic behavior are authored as a **visual, ComfyUI-style node graph** (`shared/workflow`,
-`src/main/services/workflowEngine.ts`, editor built on `@xyflow/react`). A graph is a **validated,
-versioned document** (`docSchema.ts`, `validate.ts`); the engine topologically orders it (`graph.ts`) and
-executes it with per-node tracing (`trace.ts`), run history, and per-node output panels.
+Background automation runs through the **Agent Runtime** (`shared/agentRuntime` contracts,
+`src/main/services/agentRuntime/`). An **Agent** is a validated, versioned definition — a prompt (or a
+full-assembly `preset` bundle), a result contract, retry/model parameters, and an optional trigger — that
+runs a single model call through the shared harness (`AgentHarness.execute`) and records every run
+(`AgentRunStore`) for inspection and Stop. This replaced the earlier ComfyUI-style node-graph workflow
+engine, which was **removed** in the cutover (ADR
+[0020](docs/adr/0020-agent-runtime-replaces-workflow-system.md)); Classic generation now takes a single
+direct pipeline path with no graph document.
 
-### Typed ports and the node catalog
+### Authoring and the library
 
-Nodes connect through **typed ports** — `Signal` (control flow), `Context`, `Messages`, `Text`, `Vars`,
-and `Lore` — so the editor can validate wiring before a run. Node **config panels auto-render from the
-same Zod schema the engine validates with** (`catalog.ts` converts each node's `configSchema` to JSON
-Schema), so the UI and the executor never disagree about a node's shape.
+Agents are authored in a flat full-window **Agent Workspace** (`AgentWorkspace.tsx`) — a library, a form
+editor (prompt / result / model / retry / trigger sections), a plan editor, and a run list with detail
+and cancel. There is **no canvas, node, port, or edge**. Author-made agents import from `.rptagent` files
+via a scanned folder, with hash-versioned upgrades and edit-conflict handling.
 
-Around **forty built-in node types** ship across a dozen families (`src/main/services/nodes/builtin/`):
+### Triggers and prompt assembly
 
-- **Triggers** — `trigger.state` (fires when a comparison over committed state holds), `trigger.cadence`
-  (every N turns), `trigger.manual`.
-- **Context assembly** — pull recent history, action, persona, params, and knowledge-base selections into
-  a prompt context; refresh it mid-graph.
-- **Generation** — sample a model, assemble/compose prompts, choose an API preset per call, merge/trim
-  message arrays.
-- **Parsing & state** — extract tagged blocks or fields from a reply, apply state-variable updates, run
-  structured-memory (SQL-table) reads/queries/writes with gating.
-- **Control flow** — `control.if` / `control.switch` / `control.when`.
-- **Sub-graphs** — `subgraph.call` / `input` / `output` / `loop` for composition and bounded iteration.
-- **Consolidated agent nodes** — `history.recent` + `agent.llm` fold the common
-  _read history → prompt a model → get its reply_ pattern into two nodes, so a typical memory agent is a
-  five-node chain: **trigger → `history.recent` → `agent.llm` → `parse.extract` → `table.apply`**. The
-  fine-grained legacy nodes stay registered so older graphs keep running.
+An Agent may carry one declarative trigger — `onFloorCommitted` with an `everyNFloors` cadence —
+evaluated at the single commit boundary a new floor emits (no timers, no variable-watching, no cron;
+replay never re-fires). Every Agent prompt renders through the **same template engine and preset
+assembler** the main turn uses (ADR
+[0021](docs/adr/0021-agents-assemble-prompts-through-the-existing-engine.md)); assembly failure is
+fail-open but **visible** (a Run Record warning + a "Degraded" badge). An Agent may declare
+`blocksNextTurn`, which makes the Classic turn await that Agent's barrier before assembling the next
+prompt (fail-open with a visible warning if the required Agent fails).
 
-### One graph, two execution paths
+### The built-in Memory Maintenance Agent
 
-The same document does double duty via a **Signal-gate / dead-edge** mechanism:
-
-- **Turn run (on the hot path)** — when the player takes an action, the graph runs to produce the reply.
-  Only the **main output streams live** back to the renderer. This is the _pre-phase_: a failure on an
-  unwired node here is fatal to the turn.
-- **Headless run (off the hot path)** — when a trigger fires, only its **downstream closure** executes
-  asynchronously (`headlessRunService.ts`). This is the _post-phase_: side branches and agent fragments
-  **fail open**, so a background summarizer or memory pass can error without breaking the player's turn.
-
-Because a trigger-rooted chain is gated on the trigger's `Signal`, that chain's edges go **dead** on a
-normal turn run (the trigger is excluded), the gated nodes are pruned, and the same graph cleanly serves
-both paths without branching logic.
+The SQL-table memory maintenance that was formerly a workflow node is now a seeded built-in Agent: it
+fires on a floor-commit cadence, composes its maintainer prompt through the shared composer, and applies
+the model's `<TableEdit>` output to the structured-memory tables — all recorded as a normal Agent run.
 
 ### Guardrails
 
-Multi-model graphs are bounded by the same **per-endpoint RPM budget and max-concurrency cap** as the main
-pipeline, so a graph that fans out to several LLM calls can't open unbounded parallel requests. Triggers
-and reusable agent chains are persisted (`workflowTriggerStore.ts`, `agentPack*` services) and can be
-transferred between sessions.
+Agent model calls are bounded by the same **per-endpoint RPM budget and max-concurrency cap** as the main
+pipeline, and coalesced/laned per floor by the invocation runtime, so triggered and manual runs can't open
+unbounded parallel requests.
+
+> A card-facing `rpt.agents` API exists at inline/WCV parity but is **held** (not shipped) this release;
+> the declarative cadence trigger is the live path for unattended agents.
 
 ---
 
@@ -182,16 +174,17 @@ State is split deliberately between a relational store and portable files (`src/
 
 - **SQLite** (`better-sqlite3`) is split between a central index (`rpterminal.db`: profiles, settings,
   worlds, chat metadata, and shared-library references) and one database per session
-  (`profiles/<profileId>/chats/<chatId>/session.sqlite`: floors, operation logs, combat, workflow state,
-  and progress). Existing central session rows migrate at startup only after a checkpointed backup is
+  (`profiles/<profileId>/chats/<chatId>/session.sqlite`: floors, operation logs, combat state, agent
+  runs, and progress; legacy workflow rows remain on disk but inert). Existing central session rows
+  migrate at startup only after a checkpointed backup is
   created; startup stops and retries later if the backup or any chat migration fails.
 - **File-based JSON** holds **portable, user-shareable artifacts** in their native format (presets,
   world/knowledge data, regex, structured-memory tables), so they can be exchanged without a database
   export.
 - **Structured-memory tables** (`tableDbService.ts`, `tableSql.ts` and siblings) provide a
-  spreadsheet/SQL-table memory layer driven by workflow nodes, with sandboxed writes, an operation log
-  for rewind, backfill, and an editable table view. Each session's sandbox lives beside its session DB
-  as `table.sqlite`.
+  spreadsheet/SQL-table memory layer maintained by the built-in Memory Maintenance Agent, with sandboxed
+  writes, an operation log for rewind, backfill, and an editable table view. Each session's sandbox lives
+  beside its session DB as `table.sqlite`.
 - **Portable saves** (`.rpsave`) are validated zip archives containing one session store plus a world
   reference and central sidecar. Import requires the referenced world to be installed, stages and
   integrity-checks the session database before publishing it, rejects unsupported or unexpected
@@ -206,9 +199,10 @@ State is split deliberately between a relational store and portable files (`src/
 ## Renderer
 
 - **React 19 + Zustand** — feature state is split across focused stores (`src/renderer/src/stores/`),
-  one per subsystem (session, settings, workflow editor, combat, duel, plugins, …).
+  one per subsystem (session, settings, agents/runs, combat, duel, plugins, …).
 - **Launcher → workspace flow** — a launcher selects a world/session; the workspace hosts pluggable
-  views (chat, combat, duel, variables, tables, workflow editor, logs, usage) behind a panel router.
+  views (chat, combat, duel, variables, tables, logs, usage) behind a panel router, plus a full-window
+  Agent Workspace popup for agent authoring.
 - **Variables inspector/editor** — a debug view over the active session's variable state, built on
   `vanilla-jsoneditor`.
 - **Internationalization** — all user-facing strings route through a minimal `t()` layer
@@ -291,12 +285,12 @@ _should_ alter behavior, update the characterization test in the same commit, de
 
 ```
 src/
-  main/       Electron main: generation pipeline, services (session/combat/duel/workflow/…),
+  main/       Electron main: generation pipeline, services (session/combat/duel/agentRuntime/…),
               IPC, parsers, custom protocols, SQLite, sandbox worker
   preload/    the typed IPC bridge (window.api)
   renderer/   React 19 + Zustand UI, i18n (en/zh), authored-UI hosts, workspace views
   shared/     pure cross-process code: sandbox runtime (thRuntime), combat/duel engines,
-              template engine, object-path & regex helpers, workflow schema
+              template engine, object-path & regex helpers, agent contracts
 resources/    vendored assets (e.g. cardlibs/)
 docs/         design docs and the extension/compatibility contract
 test/         vitest suites (incl. combat/ characterization)
@@ -318,7 +312,6 @@ identifiers — **verify before redistribution.**
 | `electron` (+ `@electron-toolkit/preload`, `@electron-toolkit/utils`) | Desktop app shell                              | MIT                        |
 | `react`, `react-dom`                                                  | Renderer UI                                    | MIT                        |
 | `zustand`                                                             | Renderer state stores                          | MIT                        |
-| `@xyflow/react`                                                       | Workflow node-graph editor                     | MIT                        |
 | `better-sqlite3`                                                      | SQLite storage                                 | MIT                        |
 | `vanilla-jsoneditor`                                                  | JSON editor in the Variables view              | **ISC**                    |
 | `@formkit/auto-animate`                                               | Duel UI animation                              | MIT                        |

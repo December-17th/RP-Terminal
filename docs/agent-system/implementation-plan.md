@@ -1,7 +1,14 @@
 # Agent Runtime implementation plan
 
-Status: Milestones 1–4, Sessions 0–7, are implemented, reviewed, accepted, and committed on
-`agent-system`. Session 0 evidence is complete and reviewed.
+Status: Sessions 0–7 and 10 are implemented, reviewed, accepted, and committed on `agent-system`, and
+Session 0 evidence is complete and reviewed. Sessions 8, 9, 11, and 12 are superseded by the
+[execution plan v2 (2026-07-19)](execution-plan-2026-07-19.md), under which **the cutover is now
+complete**: the workflow surface is deleted (ADR 0020), `memory.maintain` is a built-in Agent, and
+`blocksNextTurn` is live. Remaining work is owner review and merge.
+
+> **Note:** the point-in-time body below (e.g. "`blocksNextTurn` … has no production caller",
+> "no deletion approved or performed") predates the execution plan v2 and is overtaken by its §7
+> implementation log; it is preserved as the Sessions 0–7/10 record, not current status.
 
 Session 8 was superseded in ordering by the
 [Classic Narrator first execution plan](classic-narrator-first-execution-plan.md), and **all six of

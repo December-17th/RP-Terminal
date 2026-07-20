@@ -460,9 +460,9 @@ export default function App(): React.ReactElement {
         </div>
       )}
 
-      {/* App-wide overlays — render over BOTH the launcher and play. The workflow editor is now the
-          single surface for workflows + agents (one-canvas rebuild WP6.4b); the control center is
-          retired. */}
+      {/* App-wide overlays — render over BOTH the launcher and play. The Agent Workspace
+          (AgentWorkspace) is the single surface for agents; the workflow editor and control center
+          were retired (ADR 0020). */}
       <Suspense fallback={null}>
         {settingsOpen && <SettingsModal profileId={activeProfile.id} />}
         {(duelPopupOpen || activeChatMode === 'duel') && <DuelPopup profileId={activeProfile.id} />}

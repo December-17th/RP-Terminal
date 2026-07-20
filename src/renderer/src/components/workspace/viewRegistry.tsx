@@ -104,10 +104,11 @@ const UsagePanel: React.FC = () => {
   )
 }
 
-// The workflow EDITOR is deliberately NOT a panel view: the canvas needs the whole window, so it
-// lives in the app-level WorkflowEditorOverlay (uiStore.openWorkflowEditor). The retired
-// agents/workflow launcher stubs + the card-scripts explanatory-note view were removed — a saved
-// layout still referencing them resolves to the graceful "unknown view" placeholder (Panel.tsx).
+// Agent authoring is deliberately NOT a panel view: it needs the whole window, so it lives in the
+// app-level Agent Workspace popup (uiStore.openAgentWorkspace). The retired agents/workflow launcher
+// stubs, the workflow editor, and the card-scripts explanatory-note view were all removed (ADR 0020)
+// — a saved layout still referencing them resolves to the graceful "unknown view" placeholder
+// (Panel.tsx).
 
 export interface ViewEntry {
   title: string

@@ -59,7 +59,6 @@ const en: Record<string, string> = {
   'assets.empty.cg':
     'Drop images here, or click Import — name them <scene>_CG[_<variant>].png (e.g. FirstMeeting_CG.png).',
   'nav.api': 'API',
-  'nav.flow': 'Workflow',
   'nav.settings': 'Settings',
   'nav.logs': 'Logs',
   'nav.backToWorlds': 'Back to worlds',
@@ -1288,44 +1287,6 @@ const en: Record<string, string> = {
   'memory.packOff': 'Off',
   'memory.dataTitle': 'Data',
   'memory.browseData': 'Browse the tables',
-  // ── Injection preview pane (agent-packs plan WP3.4) ───────────────────────────────────────────────
-  'preview.title': 'Next prompt',
-  'preview.subtitle': 'Exactly what will be sent, section by section, with where each part comes from.',
-  'preview.refresh': 'Refresh preview',
-  'preview.generatedAt': 'as of {{time}}',
-  'preview.totalTokens': '{{n}} tokens',
-  'preview.totalTokensEst': '~{{n}} tokens (estimated)',
-  'preview.est': 'est.',
-  'preview.expand': 'Show text',
-  'preview.collapse': 'Hide text',
-  // Section-kind labels (preview.section.<id>)
-  'preview.section.system': 'System instructions',
-  'preview.section.persona': 'Your persona',
-  'preview.section.card': 'Character',
-  'preview.section.worldInfo': 'World info',
-  'preview.section.history': 'Conversation',
-  'preview.section.memory': 'Memory',
-  'preview.section.packInject': 'Added by an agent',
-  'preview.section.action': 'Your message',
-  'preview.section.other': 'Other',
-  // Source chips (preview.source.<kind>) — the pack kind uses the pack name directly.
-  'preview.source.narrator': 'Base',
-  'preview.source.lorebook': 'Lorebook',
-  'preview.source.memory': 'Memory',
-  // Omitted group
-  'preview.omittedTitle': 'Not included',
-  'preview.omittedNote':
-    'Lorebook entries that did not match this turn are not listed here — they cannot be known without running the turn.',
-  'preview.omitted.reason.gate': 'turned off',
-  'preview.omitted.reason.empty': 'nothing to add',
-  'preview.omitted.reason.budget': 'over budget',
-  // States
-  'preview.noChatTitle': 'Open a chat first',
-  'preview.noChatBody': 'The prompt preview is built from an active chat. Open one to see it.',
-  'preview.errorTitle': "Couldn't build the preview",
-  'preview.errorBody': 'Something went wrong assembling the next prompt. Try again.',
-  'preview.emptyTitle': 'Nothing to preview yet',
-  'preview.emptyBody': 'The next prompt has no sections. Send a message to build one.',
   // Capability chips (ModuleImportSheet reuses these plain-language capability labels)
   'agents.cap.reads-tables': 'reads tables',
   'agents.cap.writes-tables': 'writes tables',
@@ -1339,62 +1300,7 @@ const en: Record<string, string> = {
   'agents.cap.injects-prompt': 'adds to the prompt',
   'agents.cap.runs-headless': 'runs in the background',
   // Pack settings (MemoryPane reuses the "Settings" affordance label)
-  'agents.settings.open': 'Settings',
-
-  // ── Runs timeline (WP3.3) ──────────────────────────────────────────────────────────────────────
-  // Origin badges (glyph + short label)
-  'runs.origin.turn': 'Reply',
-  'runs.origin.headless': 'On its own',
-  'runs.origin.manual': 'Run by you',
-  'runs.origin.turnTitle': 'Ran as part of a reply',
-  'runs.origin.headlessTitle': 'An agent ran on its own',
-  'runs.origin.manualTitle': 'You ran this agent',
-  // One-canvas rebuild WP6.4a: the editor's Run drawer.
-  'runDrawer.title': 'Runs',
-  'runDrawer.empty': 'No runs yet',
-  'runDrawer.noChat': 'Open a chat to see its runs',
-  'runDrawer.loading': 'Loading runs…',
-  'runDrawer.refresh': 'Refresh',
-  'runDrawer.live': 'Live',
-  'runDrawer.liveTitle': 'Clear the replay and return to the live overlay',
-  // Attribution
-  'runs.narratorTurn': 'Narrator turn',
-  'runs.packSep': ', ',
-  // Trigger caption prefix (record.trigger is already human-readable)
-  'runs.triggerCaption': 'Trigger: {{trigger}}',
-  // One-sentence outcomes (interpolate {{n}}; {{node}} is a localized node title)
-  'runs.outcome.failed': 'Failed at {{node}}.',
-  'runs.outcome.failedGeneric': 'Something went wrong.',
-  'runs.outcome.branchFailed': '{{node}} failed — the reply was not affected.',
-  'runs.outcome.branchFailedGeneric': 'A side step failed — the reply was not affected.',
-  'runs.outcome.updatedTables': 'Updated {{n}} table(s).',
-  'runs.outcome.updatedTablesMore': 'Updated {{n}} table(s), and did more.',
-  'runs.outcome.wroteFloors': 'Wrote {{n}} floor(s).',
-  'runs.outcome.wroteFloorsMore': 'Wrote {{n}} floor(s), and did more.',
-  'runs.outcome.calledModel': 'Called the model {{n}} time(s).',
-  'runs.outcome.calledModelMore': 'Called the model {{n}} time(s), and did more.',
-  'runs.outcome.skipped': 'Nothing to do this time.',
-  'runs.outcome.ran': 'Ran {{n}} step(s).',
-  // Node detail
-  'runs.detail.narratorGroup': 'Narrator',
-  'runs.detail.status.ran': 'ran',
-  'runs.detail.status.skipped': 'skipped',
-  'runs.detail.status.failed': 'failed',
-  'runs.detail.expand': 'Show steps',
-  'runs.detail.collapse': 'Hide steps',
-  // Filter chips
-  'runs.filter.all': 'All',
-  // Refresh
-  'runs.refresh': 'Refresh',
-  'runs.loadMore': 'Load older runs',
-  'runs.loadingMore': 'Loading…',
-  // Empty + error + loading
-  'runs.emptyTitle': 'No activity yet',
-  'runs.emptyBody':
-    'Runs show up here after replies, and whenever an agent runs on its own. Turn on an agent under Installed to get started.',
-  'runs.loadError': "Couldn't load the activity feed.",
-  'runs.noWorldTitle': 'Open a chat first',
-  'runs.noWorldBody': 'Activity is tracked per chat. Open a world and start a chat to see runs here.'
+  'agents.settings.open': 'Settings'
 }
 
 export default en

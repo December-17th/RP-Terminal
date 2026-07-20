@@ -18,8 +18,8 @@ import { useT } from '../i18n'
 /**
  * The single Settings popup — the app's config hub. Since the tab nav was retired (panels are now
  * game + debug only), every config/authoring surface lives here: App prefs + Connection, the active
- * world's editable pieces (Preset / Lorebook / Persona / Assets / Regex / Scripts), and the Workflow
- * editor launcher. A VS Code-style category rail (grouped App / World / Automation) on the LEFT,
+ * world's editable pieces (Preset / Lorebook / Persona / Assets / Regex / Scripts). A VS Code-style
+ * category rail (grouped App / World / Automation) on the LEFT,
  * the selected section on the RIGHT. Opened via useUiStore.openSettings(section) — the TopStrip
  * dropdowns deep-link straight to a section; the launcher gear opens it at App.
  */

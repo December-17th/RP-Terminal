@@ -28,11 +28,20 @@ Re-scanning is safe and idempotent:
 - if you edited the same field in the app that the file changes, the scan reports a **conflict** and
   changes nothing until you pick `Keep my edits` or `Use the file`.
 
-## Triggering World Progression from a card
+## Triggering an Agent
 
-RP Terminal deliberately owns no scheduler — design §11: *"RP Terminal does not own a variable
-scheduler. A card script observes its variables and chooses when to invoke an Agent."* In-game time
-lives in card variables, so the trigger is card-side:
+The **live** trigger path is a declarative cadence on the Agent itself:
+`trigger: { onFloorCommitted: { everyNFloors: N } }`, evaluated at the single commit boundary a new
+floor emits (no timers, no variable-watching; replay never re-fires). Set it in the Agent editor's
+Trigger section, or in the `.rptagent` file. This is how an imported Agent runs unattended today.
+
+### Card-driven triggering (API currently held)
+
+For *variable-predicate* schedules (a month boundary, a quest state), the design keeps scheduling
+card-side — design §11: *"RP Terminal does not own a variable scheduler. A card script observes its
+variables and chooses when to invoke an Agent."* The card `rpt.agents` API below is **built but held**
+(decision D2) and does not run this release; the cadence trigger above is the shipped path. When the API
+ships, the pattern is:
 
 ```js
 // Card script. Fires once per committed floor; the card decides what a "month boundary" means.
@@ -50,16 +59,14 @@ rpt.agents.onFloorCommitted(async ({ floor, variables, previousVariables }) => {
 it is the only emit site. Re-incorporating a result into an existing floor therefore cannot
 re-trigger a monthly schedule.
 
-## Known limitation — `blocksNextTurn` is not yet live
+## `blocksNextTurn` is live (fail-open)
 
-`character-progression.rptagent` declares `blocksNextTurn: true`, and the barrier machinery exists
-(`InvocationRuntime.startBarrier` / `waitForNextTurnBarriers`), but **nothing in the generation path
-awaits it** — `waitForNextTurnBarriers` currently has no production caller, and
-`src/main/services/generation/` contains no reference to `InvocationRuntime`.
+`character-progression.rptagent` declares `blocksNextTurn: true`, and as of execution-plan M3 the flag
+is **wired**: the direct Classic path awaits `waitForNextTurnBarriers(chatId)` before assembling the
+next prompt (generate / regenerate / swipe). The failure policy is **fail-open with a visible warning**
+(decision D5): if a required Agent fails, the barrier releases so the turn proceeds without that
+result rather than hanging, and the failure surfaces on the run. A lost progression beat is
+recoverable; a stuck turn is not.
 
-So today the flag is recorded and displayed but does not actually gate a turn. Wiring it is a
-deliberate, separate decision: it would create the first production edge from generation into
-`InvocationRuntime`, and it needs a policy for what a *failed* required progression does to the turn
-(fail-closed and block, or fail-open and proceed without the result).
-
-Until then, both Agents are exercised by invoking them against the latest committed floor.
+Both Agents can also be exercised manually via **Run now** in the Agent Workspace against the latest
+committed floor.

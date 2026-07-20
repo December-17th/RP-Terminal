@@ -1,8 +1,8 @@
 // Full-window Memory Manager (Memory Manager WP1) — the SQL-table memory feature's rich full-screen
 // home, mirroring the shujuku 数据库 plugin's full-takeover "Visualizer". Hosted as a centered
 // full-window popup like DuelPopup / AssetsPopup so it layers above BOTH the reconfigurable Workspace
-// and a card's static panel_ui layout, and above the workflow editor overlay it is launched from
-// (.modal-overlay sits in the top z-index band; the editor overlay is far below it).
+// and a card's static panel_ui layout (.modal-overlay sits in the top z-index band). Opened from the
+// Memory chip in the TopStrip and from Settings.
 //
 // Layout (mirrors the Visualizer): a LEFT RAIL (template-binding row + a sheet list, one entry per
 // table with a row·column count and a maintenance badge, click to activate) · a MAIN AREA (a topbar +

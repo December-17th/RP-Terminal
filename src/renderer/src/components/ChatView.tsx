@@ -22,8 +22,8 @@ import {
 import { useT } from '../i18n'
 import { AgentRunActivity } from './AgentRunActivity'
 
-// Local copy of the workflow editors' `inEditable` shape (do NOT import across modules): true when
-// focus is inside a text-entry element, so keyboard paging never fires while typing in the composer.
+// Local `inEditable` guard (do NOT import across modules): true when focus is inside a text-entry
+// element, so keyboard paging never fires while typing in the composer.
 const inEditable = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
   (target.tagName === 'INPUT' ||

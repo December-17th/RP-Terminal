@@ -94,9 +94,11 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   plan semantics, duplicate coalescing, deletion/cancellation, stale-source restarts, one shared
   corrective retry budget, atomic `RunStore`/result/FloorState incorporation, Next-turn Barriers, and
   activity stop/shutdown. Unified floor deletion removes floors, state journals, and Run Records in
-  one transaction while cancelling affected work. Sessions 8-12 remain planned and unimplemented;
-  the public card Agent API now provides scoped run/plan calls, live card tools, cancellation, and exact-once floor commit scheduling with inline/WCV parity. Player Generation cutover and workflow removal are not implemented, so
-  Classic and Yuzu still use the workflow-backed product path.
+  one transaction while cancelling affected work. The card `rpt.agents` API (scoped run/plan calls,
+  live card tools, cancellation, exact-once floor-commit scheduling with inline/WCV parity) is built
+  but **held** (D2) — the declarative cadence trigger is the live path. On the `agent-system` branch
+  the workflow removal and Classic/Yuzu cutover are now **complete** (see the milestone log below);
+  `main` itself still carries the workflow-backed product path until `agent-system` merges.
   The [Classic Narrator first execution plan](agent-system/classic-narrator-first-execution-plan.md)
   reorders Session 8 validation ahead of debloating. Its Milestone 1 is implemented, reviewed, and
   committed as `b707a66`: the assembled request from the `llm.sample` node
@@ -133,7 +135,7 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   maintenance cadence keeps the direct path while any edit to the turn phase falls back. Provider bytes
   and persisted floor state are proven equal across both paths, the four off-port `GenContext` channels
   survive, and Classic run history is still recorded on the direct path.
-  Milestone 4 is implemented in the current working tree and not yet committed. Quitting now warns
+  Milestone 4 (active-work exit warning) is implemented and committed. Quitting now warns
   before discarding in-flight work. One `hasActiveBackgroundWork()` signal unions six read-only
   accessors — Agent invocations queued/running plus stepping plans, a Classic turn in flight, a
   `generateRaw` call in flight (combat adjudication, enemy turns, duel narration, which run outside the
@@ -153,21 +155,25 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
   it. No recovery, resumption, or lifecycle framework was added. One accepted gap: the window between
   a turn releasing its slot and the detached trigger pass entering its guard (trace summarization,
   run-history persistence) is tracked by nothing and is not warned about.
-  Milestone 5 is design-only and committed as `ee84f3f`. Milestone 6 remains planned.
-  The original [implementation plan](agent-system/implementation-plan.md) remains the broader
-  session record. Plot/memory node conversion is design-only until separately approved.
-  The planned cutover replaces every model-backed operation with one provider-neutral Harness,
-  moves variable/time scheduling to card-side logic, and removes the workflow runtime, canvas, node
-  formats, examples, and compatibility surface before merge. There is no migration or dual-runtime
-  release; legacy workflow data remains inert on disk.
+  The Classic Narrator plan's own Milestones 1-6 all landed. Work then continued under the
+  [execution plan v2](agent-system/execution-plan-2026-07-19.md), which supersedes the original
+  implementation plan's Sessions 8/9/11/12. Under that plan the cutover is now **done on
+  `agent-system`**: a declarative commit-boundary cadence trigger owns unattended runs (M3);
+  `memory.maintain` is a built-in Memory Maintenance Agent running through `AgentHarness.execute`
+  (M4); the `classicShape` predicate and `runWorkflow` fallback are gone — every Classic turn takes
+  the single direct path — and the entire workflow surface (engine, nodes, canvas, packs, formats,
+  IPC, stores, `@xyflow/react`, and card `workflows[]` import) has been **deleted** with the builtin
+  decoy rows migrated away (M5, ADR 0020). M6 (this doc/gate pass) is in progress; remaining work is
+  owner review and merge. There is no migration or dual-runtime release; legacy workflow data remains
+  inert on disk.
 
 ## Superseded or retired
 
 - The removed episodic/vector-memory engine is superseded by SQL-table memory.
 - The entire workflow/agent graph product model—packs, fragments, checkpoints, attachments,
   activation gates/scopes, recipes, effective graphs, one-canvas workflows, trigger-rooted chains,
-  nodes, and modules—is superseded by ADR 0020. The implementation remains present only until the
-  approved atomic Agent Runtime cutover; no new workflow features are planned.
+  nodes, and modules—is superseded by ADR 0020. It is **deleted** on `agent-system` (M5) and remains
+  present on `main` only until that branch merges; no new workflow features are planned.
 - The June maintainability plans and dated reviews are historical records, not current backlogs.
 
 ## Current documentation and release risks

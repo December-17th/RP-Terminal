@@ -27,24 +27,17 @@
  * while a turn is still running, and is non-empty for raw work the turn map never sees.
  *
  * The remaining direct provider callers are covered transitively rather than by their own accessor.
- * The model-backed nodes (`llm.sample`, `agent.llm`, `memory.recall`, `memory.maintain`,
- * `notes.maintain` — all five reach the provider through `runLlmCall`) execute either under
- * `runWorkflow`/`runSubgraph`, entered from a turn or from headless trigger evaluation, or under
- * Milestone 3's direct Classic path, which reaches `runLlmCall` without the engine. All three entries
- * are already sources. `tableMaintainerLoop` is not an entry point — its only callers are the backfill
- * and refill services above.
+ * The model-backed work — the Classic turn's own generation and its pre/post memory operations
+ * (`memory.recall`, `memory.maintain` now the built-in Memory Maintenance Agent, `notes.maintain`) —
+ * runs either inside a Classic turn (covered by `hasActiveTurns`) or as an Agent invocation dispatched
+ * through `invocationRuntime().run` (covered by `hasActiveAgentWork`). `tableMaintainerLoop` is not an
+ * entry point — its only callers are the backfill and refill services above.
  *
- * The prompt-preview path (`previewService`) is the one direct provider caller left UNCOVERED, and
- * that is a judgement call rather than a coverage gap, so it is stated precisely. Preview does NOT
- * avoid the provider: `buildPreviewRegistry` stubs only `llm.sample` plus the eight
- * `SIDE_EFFECT_TYPES`, and none of the other four `runLlmCall` node types is in either set, so they
- * run for real. `memory.recall` in particular feeds `prompt.assemble`'s `block` input, so it executes
- * BEFORE the `llm.sample` stub's `abortGraph()` fires — previewing a chat whose effective doc carries
- * a recall node makes a real, untracked provider call. It is left uncovered because quitting mid-
- * preview discards nothing DURABLE: recall writes no state, and the post-phase writers
- * (`memory.maintain`, `notes.maintain`) really are skipped by the abort. The cost is a wasted API
- * call, categorically unlike the backfill/refill hole, which lost memory-table writes. Re-evaluate
- * this if preview ever gains a durable writer upstream of the stub.
+ * The composed-prompt previews (`memory-maintain-preview`, and the next-prompt assembly the Memory
+ * sheet shows) are pure: they assemble/compose messages and never reach the provider, so there is no
+ * uncovered live provider call to guard here. (The old node-graph preview registry, which stubbed
+ * `llm.sample` but let `memory.recall` fire a real call mid-preview, was removed with the workflow
+ * system — ADR 0020.)
  *
  * Deliberately NOT used as a source: AgentRunStore's persisted `status = 'running'` rows. Those are
  * durable per-chat records that outlive the process, so after a crash they still read "running" for

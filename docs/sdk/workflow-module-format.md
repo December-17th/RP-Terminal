@@ -1,9 +1,13 @@
 # Workflow module format — the agent UI contract
 
-**Status:** Implemented legacy contract, frozen on 2026-07-18. ADR 0020 and the
-[Agent Runtime design](../agent-system/agent-runtime-design.md) supersede this format for future
-development and schedule its complete removal at the atomic cutover. Current builds continue to
-support the behavior documented below until that cutover ships.
+> **SUPERSEDED — historical only.** The workflow runtime, editor, node catalog, and `.rptmodule` /
+> `GroupDecl` formats described below were **removed** by the Agent Runtime cutover
+> ([ADR 0020](../adr/0020-agent-runtime-replaces-workflow-system.md)) on the `agent-system` branch. No
+> current build supports this format; agents are authored as `.rptagent` Agent Definitions per the
+> [Agent Runtime design](../agent-system/agent-runtime-design.md). This page is retained unchanged for
+> historical reference — the file/line citations below point at code that no longer exists.
+
+**Status (historical):** Implemented legacy contract, frozen on 2026-07-18, then removed by ADR 0020.
 
 A workflow **module** is a reusable slab of a workflow graph: a named group of in-place nodes, its
 internal edges, and the settings it exposes. It ships as a `.rptmodule` file

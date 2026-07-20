@@ -64,8 +64,8 @@ interface UiState {
   /** The full-window Memory Manager (MemoryManagerView) — the SQL-table memory feature's rich
    *  full-screen home (Data / Structure / Maintenance tabs over the active chat's tables). Hosted as a
    *  centered full-window popup like the Duel/Assets popups so it layers above BOTH the reconfigurable
-   *  Workspace and a card's static panel_ui, and above the workflow editor overlay it's launched from.
-   *  Opened from the editor's Memory side sheet; closed by ✕ / Esc / backdrop. */
+   *  Workspace and a card's static panel_ui. Opened from the Memory chip; closed by ✕ / Esc /
+   *  backdrop. */
   memoryManagerOpen: boolean
   openMemoryManager: () => void
   closeMemoryManager: () => void

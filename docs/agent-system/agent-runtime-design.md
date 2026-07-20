@@ -1,13 +1,15 @@
 # Agent Runtime design
 
-**Status:** Approved design; Sessions 0–7 and 10, the
+**Status:** Approved design; **the cutover is complete on `agent-system`.** Sessions 0–7 and 10, the
 [Classic Narrator first execution plan](classic-narrator-first-execution-plan.md)'s six milestones,
-and [ADR 0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md)'s prompt/preset
-assembly are implemented and committed on `agent-system`. ADR 0021 extends §3 and §10 of this
-document (Agent prompts now render through the template engine and may bundle a preset); those
-sections have not yet been rewritten to match — the ADR wins where they differ. Remaining work is
-planned in the [execution plan v2 (2026-07-19)](execution-plan-2026-07-19.md), which supersedes
-Sessions 8, 9, 11, and 12.
+[ADR 0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md)'s prompt/preset
+assembly, and the [execution plan v2 (2026-07-19)](execution-plan-2026-07-19.md) Milestones 0–5 are all
+implemented and committed: a declarative cadence trigger owns unattended runs, `memory.maintain` is a
+built-in Agent, `blocksNextTurn` is live (fail-open), and the entire workflow surface is deleted
+(ADR 0020). M6 (living docs + merge gate) is in progress; the remaining work is **owner review and
+merge**. ADR 0021 extends §3 and §10 of this document (Agent prompts now render through the template
+engine and may bundle a preset); those sections have not yet been rewritten to match — the ADR wins
+where they differ.
 **Decision date:** 2026-07-18.
 **Supersedes:** the workflow/node authoring and execution model, ADR 0011, the unshipped
 tool-loop portions of `docs/agentic-mode-design.md`, and the future-facing contract in
