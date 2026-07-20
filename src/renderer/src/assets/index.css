@@ -3262,6 +3262,14 @@ select {
   border:1px solid var(--rpt-border); border-radius:9px; background:var(--rpt-bg-primary); }
 .rpt-mm-maint-title { margin:0; font-size:13px; font-weight:600; color:var(--rpt-text-primary); }
 .rpt-mm-maint-intro { margin:0; font-size:12px; color:var(--rpt-text-secondary); }
+/* Memory Maintenance Agent settings strip (M5b2) */
+.rpt-mm-agent-strip-head { display:flex; flex-direction:column; gap:4px; }
+.rpt-mm-agent-strip-row { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; }
+.rpt-mm-agent-field { display:flex; flex-direction:column; gap:4px; }
+.rpt-mm-agent-label { font-size:12px; color:var(--rpt-text-secondary); }
+.rpt-mm-agent-cadence { width:88px; }
+.rpt-mm-agent-toggle { display:flex; align-items:center; gap:6px; font-size:13px;
+  color:var(--rpt-text-primary); padding-bottom:6px; }
 .rpt-mm-maint-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .rpt-mm-maint-label { font-size:12px; color:var(--rpt-text-secondary); }
 .rpt-mm-maint-num { width:72px; font:inherit; font-size:12px; padding:4px 7px; border-radius:6px;

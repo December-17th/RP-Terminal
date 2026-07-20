@@ -304,6 +304,42 @@ export const registerAgentCatalogIpc = (ipcMain: IpcMain): void => {
   )
 
   /**
+   * Read the Agent's profile-local invocation config (M5b) — currently just the re-homed API preset.
+   * Separate from `get` (which returns the portable definition) because this config never belongs to
+   * the definition and never exports. Returns `{}` for an unknown profile/agent (fail-soft).
+   */
+  ipcMain.handle(
+    AGENT_CATALOG_CHANNELS.getInvocationConfig,
+    gate(
+      AGENT_CATALOG_CHANNELS.getInvocationConfig,
+      async (_event, rawProfileId: unknown, rawId: unknown) => {
+        const profileId = stringArg(rawProfileId)
+        const id = stringArg(rawId)
+        if (!profileId || !id) return {}
+        return new AgentCatalog(profileId).get(id)?.invocationConfig ?? {}
+      }
+    )
+  )
+
+  /** Write the Agent's profile-local invocation config (M5b). Blank apiPresetId clears it (normalized
+   *  main-side). Returns the refreshed summary envelope so the UI can reconcile enabled/customized. */
+  ipcMain.handle(
+    AGENT_CATALOG_CHANNELS.setInvocationConfig,
+    gate(
+      AGENT_CATALOG_CHANNELS.setInvocationConfig,
+      async (_event, rawProfileId: unknown, rawId: unknown, rawConfig: unknown) => {
+        const id = stringArg(rawId)
+        if (!id) return { ok: false, error: 'INVALID_REQUEST', code: 'INVALID_REQUEST' } as AgentMutationResult
+        const config = rawConfig && typeof rawConfig === 'object' ? (rawConfig as { apiPresetId?: unknown }) : {}
+        const apiPresetId = typeof config.apiPresetId === 'string' ? config.apiPresetId : undefined
+        return mutate(stringArg(rawProfileId), (catalog) =>
+          catalog.setInvocationConfig(id, apiPresetId ? { apiPresetId } : {})
+        )
+      }
+    )
+  )
+
+  /**
    * Manual Invocation (design §12): explicit JSON input against the LATEST committed floor, with the
    * same identity rule as any other invocation — one Agent per floor, so a repeat click coalesces
    * onto the in-flight run rather than starting a second one. No `toolScope` is passed: a Workspace

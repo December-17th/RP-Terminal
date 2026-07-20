@@ -510,6 +510,17 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'mode', 'mode TEXT')
   addColumnIfMissing(db, 'chats', 'cached_world_info', 'cached_world_info TEXT')
   addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
+  // M5b2: one-time per-profile marker for the memory-maintenance settings SEED (the re-home of the old
+  // workflow-doc memory group settings onto the Memory Maintenance Agent). 0 = not yet seeded (a
+  // pre-existing profile whose OLD doc-group customizations must be inherited on next open); 1 = seeded
+  // or born re-homed (createProfile writes 1). Mirrors the `chats.session_migrated` per-entity marker
+  // precedent — a column on the entity table, not a parallel marker mechanism.
+  addColumnIfMissing(
+    db,
+    'profiles',
+    'memory_settings_seeded',
+    'memory_settings_seeded INTEGER NOT NULL DEFAULT 0'
+  )
   addColumnIfMissing(db, 'agent_catalog', 'name_key', 'name_key TEXT')
   addColumnIfMissing(
     db,

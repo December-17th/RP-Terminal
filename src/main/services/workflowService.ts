@@ -200,6 +200,39 @@ const seedDefaultMemoryWorkflow = (profileId: string): void => {
   }
 }
 
+/** The OLD workflow-doc memory-group settings, read straight off disk by NODE TYPE (M5b2 seed source).
+ *  Returns the first doc carrying a memory group's exposed settings: cadence (`trigger.cadence`
+ *  everyNFloors), mode (`control.mode` selected — 'every_turn' | 'async' | 'off'), and API preset
+ *  (`memory.maintain` api_preset_id). `null` when the profile has no doc with any memory-group node
+ *  (a fresh profile, or one that never opened the memory UI). Deliberately does NOT trigger the lazy
+ *  default-memory seed: a v1→v2 supersession would rebuild the doc from template defaults and lose the
+ *  very customizations this reads, so we read whatever docs already exist. The doc retires in M5c. */
+export const readMemoryGroupSettings = (
+  profileId: string
+): { everyNFloors?: number; mode?: string; apiPresetId?: string } | null => {
+  const dir = workflowsDir(profileId)
+  if (!fs.existsSync(dir)) return null
+  for (const file of listFilesSync(dir)) {
+    if (!file.endsWith('.json') || file.startsWith('_')) continue
+    const data = readJsonSync<WorkflowDoc>(path.join(dir, file))
+    if (!data || !Array.isArray(data.nodes)) continue
+    const maintain = data.nodes.find((n) => n.type === 'memory.maintain')
+    const cadence = data.nodes.find((n) => n.type === 'trigger.cadence')
+    const mode = data.nodes.find((n) => n.type === 'control.mode')
+    // Not a memory doc (none of the group's nodes) → keep scanning.
+    if (!maintain && !cadence && !mode) continue
+    const out: { everyNFloors?: number; mode?: string; apiPresetId?: string } = {}
+    const everyN = (cadence?.config as { everyNFloors?: unknown } | undefined)?.everyNFloors
+    if (typeof everyN === 'number' && Number.isFinite(everyN)) out.everyNFloors = everyN
+    const selected = (mode?.config as { selected?: unknown } | undefined)?.selected
+    if (typeof selected === 'string') out.mode = selected
+    const apiPreset = (maintain?.config as { api_preset_id?: unknown } | undefined)?.api_preset_id
+    if (typeof apiPreset === 'string' && apiPreset.trim()) out.apiPresetId = apiPreset.trim()
+    return out
+  }
+  return null
+}
+
 export const listWorkflows = (profileId: string): WorkflowSummary[] => {
   seedDefaultMemoryWorkflow(profileId)
   const dir = ensureWorkflowsDir(profileId)

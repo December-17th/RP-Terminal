@@ -8,6 +8,7 @@ import { deleteChatFully, chatIdsForProfile } from './chatDeleteService'
 import * as sessionDbService from './sessionDbService'
 import { Profile } from '../types/models'
 import { AgentCatalog } from './agentRuntime/catalog'
+import { seedMemoryMaintenanceSettings } from './memoryMaintenanceSettingsSeed'
 
 export const getProfiles = (): Profile[] => {
   const db = getDb()
@@ -16,14 +17,23 @@ export const getProfiles = (): Profile[] => {
       'SELECT id, name, avatar_path as avatar_path, password_hash, created_at, last_active FROM profiles ORDER BY last_active DESC'
     )
     .all() as Profile[]
-  for (const profile of profiles) new AgentCatalog(profile.id, db)
+  for (const profile of profiles) {
+    new AgentCatalog(profile.id, db)
+    // One-time re-home of the OLD memory-group settings onto the Memory Maintenance Agent (M5b2). The
+    // DB marker makes this a single cheap SELECT once the profile is seeded — same per-profile ensure
+    // idiom as the AgentCatalog builtin seeding right above it.
+    seedMemoryMaintenanceSettings(profile.id)
+  }
   return profiles
 }
 
 export const getProfile = (id: string): Profile | undefined => {
   const db = getDb()
   const profile = db.prepare('SELECT * FROM profiles WHERE id = ?').get(id) as Profile | undefined
-  if (profile) new AgentCatalog(profile.id, db)
+  if (profile) {
+    new AgentCatalog(profile.id, db)
+    seedMemoryMaintenanceSettings(profile.id)
+  }
   return profile
 }
 
@@ -38,7 +48,9 @@ export const createProfile = (name: string, passwordHash?: string): Profile => {
   }
   getDb()
     .prepare(
-      'INSERT INTO profiles (id, name, password_hash, created_at, last_active) VALUES (?, ?, ?, ?, ?)'
+      // memory_settings_seeded = 1: a brand-new profile has no OLD doc-group memory settings to inherit
+      // (M5b2 seed), so it is born re-homed — the seed's marker precedent mirrors createChat writing 1.
+      'INSERT INTO profiles (id, name, password_hash, created_at, last_active, memory_settings_seeded) VALUES (?, ?, ?, ?, ?, 1)'
     )
     .run(profile.id, profile.name, profile.password_hash ?? null, now, now)
   new AgentCatalog(profile.id)

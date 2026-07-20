@@ -283,6 +283,10 @@ const api = {
     ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.upgrade, profileId, id, conflicts),
   runAgentManually: (profileId: string, chatId: string, agent: string, input?: unknown) =>
     ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.run, profileId, chatId, agent, input),
+  getAgentInvocationConfig: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.getInvocationConfig, profileId, id),
+  setAgentInvocationConfig: (profileId: string, id: string, config: { apiPresetId?: string }) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.setInvocationConfig, profileId, id, config),
   cardAgentRun: (request: unknown) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.run, request),
   cardAgentRunPlan: (request: unknown) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.runPlan, request),
   cardAgentCancel: (requestId: string) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.cancel, requestId),

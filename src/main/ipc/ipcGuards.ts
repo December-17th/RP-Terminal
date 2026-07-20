@@ -81,6 +81,10 @@ export const GATED_CHANNELS = [
   'agent-catalog-export',
   'agent-catalog-inspect-upgrade',
   'agent-catalog-upgrade',
+  // Profile-local per-Agent invocation config (M5b) — the API preset the triggered dispatch runs an
+  // Agent against decides what model work fires; a trusted card must still never reach these.
+  'agent-catalog-get-invocation-config',
+  'agent-catalog-set-invocation-config',
   // Manual Invocation from the Agent Workspace: starts real model work on the latest committed floor.
   'agent-catalog-run',
   // Inline card Agent transport. Main validates its explicit card scope against the authoritative chat.

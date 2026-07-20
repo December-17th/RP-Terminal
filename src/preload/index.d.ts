@@ -169,6 +169,15 @@ declare global {
         agent: string,
         input?: unknown
       ) => Promise<import('../shared/agentRuntime').AgentManualRunResult>
+      getAgentInvocationConfig: (
+        profileId: string,
+        id: string
+      ) => Promise<import('../shared/agentRuntime').AgentInvocationConfig>
+      setAgentInvocationConfig: (
+        profileId: string,
+        id: string,
+        config: import('../shared/agentRuntime').AgentInvocationConfig
+      ) => Promise<import('../shared/agentRuntime').AgentMutationResult>
       onWorkflowPanel: (
         cb: (p: { chatId: string; nodeId: string; label?: string; delta: string }) => void
       ) => () => void

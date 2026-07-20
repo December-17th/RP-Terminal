@@ -30,6 +30,16 @@ export interface AgentCatalogSummary {
   updatedAt: string
 }
 
+/**
+ * Profile-local, non-exported per-Agent invocation config (execution-plan M5b). Currently the single
+ * re-homed setting: the API preset the triggered dispatch runs the Agent against. Mirrors the main-side
+ * `AgentCatalog.AgentInvocationConfig` shape across the IPC boundary. NEVER travels into an exported
+ * `.rptagent` (design §10 forbids user-local preset refs).
+ */
+export interface AgentInvocationConfig {
+  apiPresetId?: string
+}
+
 export type AgentFileStatus = 'installed' | 'upgraded' | 'unchanged' | 'conflict' | 'failed'
 
 export interface AgentFileSyncItem {
@@ -80,5 +90,9 @@ export const AGENT_CATALOG_CHANNELS = {
   exportOne: 'agent-catalog-export',
   inspectUpgrade: 'agent-catalog-inspect-upgrade',
   upgrade: 'agent-catalog-upgrade',
-  run: 'agent-catalog-run'
+  run: 'agent-catalog-run',
+  // Profile-local invocation config (M5b) — the re-homed per-Agent API preset. Kept off the definition
+  // get/edit channels because it never belongs to the portable definition (never exported).
+  getInvocationConfig: 'agent-catalog-get-invocation-config',
+  setInvocationConfig: 'agent-catalog-set-invocation-config'
 } as const
