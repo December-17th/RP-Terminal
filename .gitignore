@@ -49,3 +49,4 @@ test/yuzu/p0/results/
 !/docs/compat-comparison.md
 !/docs/workflows/
 !/docs/workflows/**
+/.worktrees/
