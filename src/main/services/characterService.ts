@@ -284,6 +284,10 @@ export interface ImportSummary {
   regexScripts: number
   loreEntries: number
   scripts: number
+  /** Executable cartridge-backed UI entry documents declared by this card. */
+  cardCodeSurfaces: number
+  /** Whether import must collect a card-code/script trust decision before the card can run. */
+  requiresTrust: boolean
   uiWidgets: number
   presets: number
   lorebooks: number
@@ -359,18 +363,36 @@ export const collectBundledScripts = (card: RPTerminalCard): any[] => {
   return Array.isArray(arr) ? arr.filter((s) => s && typeof s === 'object') : []
 }
 
+/** Count executable `card-code:` panel, overlay, and Yuzu entry documents declared by a card. */
+export const countCardCodeSurfaces = (card: RPTerminalCard): number => {
+  const rpt = getRpExt(card)
+  const ui = rpt?.panel_ui
+  const entries = [
+    ...(ui?.slots ?? []),
+    ...(ui?.overlays ?? []),
+    ...(rpt?.yuzu?.surface ? [rpt.yuzu.surface] : [])
+  ]
+  return entries.filter(
+    (entry) => typeof entry?.entry === 'string' && entry.entry.startsWith('card-code:')
+  ).length
+}
+
 /** Count what a parsed card bundles, for the import confirm + summary toast. */
 export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
   const rpt = getRpExt(parsed.card)
+  const scripts =
+    (Array.isArray(rpt?.scripts) ? rpt.scripts.length : 0) +
+    collectBundledScripts(parsed.card).length
+  const cardCodeSurfaces = countCardCodeSurfaces(parsed.card)
   return {
     name: parsed.card.data.name,
     isWorldCard: !!rpt?.world_card,
     regexScripts: collectBundledRegex(parsed.card).length,
     loreEntries: parsed.lorebook?.entries.length || 0,
     // Native (rp_terminal.scripts, ride on the card) + bundled TH scripts (imported to store).
-    scripts:
-      (Array.isArray(rpt?.scripts) ? rpt.scripts.length : 0) +
-      collectBundledScripts(parsed.card).length,
+    scripts,
+    cardCodeSurfaces,
+    requiresTrust: scripts > 0 || cardCodeSurfaces > 0,
     uiWidgets: Array.isArray(rpt?.ui_layout) ? rpt.ui_layout.length : 0,
     presets: collectBundledPresets(parsed.card).length,
     lorebooks: collectBundledLorebooks(parsed.card).length,
@@ -382,13 +404,11 @@ export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
 }
 
 /**
- * True when the card's `panel_ui` declares any `card-code:` slot/overlay entry — i.e. its panels are
- * served from the extracted PNG cartridge and are dead (404) unless the cartridge installs.
+ * True when the card declares any `card-code:` UI entry — panel slot, overlay, or Yuzu takeover
+ * surface — that is dead (404) unless the PNG cartridge installs.
  */
 export const cardDeclaresCardCode = (card: RPTerminalCard): boolean => {
-  const ui = getRpExt(card)?.panel_ui
-  const entries = [...(ui?.slots ?? []), ...(ui?.overlays ?? [])]
-  return entries.some((e) => typeof e?.entry === 'string' && e.entry.startsWith('card-code:'))
+  return countCardCodeSurfaces(card) > 0
 }
 
 /** True when a card carries enough of a bundle to warrant the install confirm. */
@@ -396,6 +416,7 @@ export const hasBundle = (s: ImportSummary): boolean =>
   s.isWorldCard ||
   s.regexScripts > 0 ||
   s.scripts > 0 ||
+  s.cardCodeSurfaces > 0 ||
   s.uiWidgets > 0 ||
   s.presets > 0 ||
   s.lorebooks > 0 ||
@@ -567,8 +588,8 @@ const installBundleArtifacts = (
     }
   }
 
-  // A card whose panel_ui points at `card-code:` entries NEEDS the cartridge — record (don't swallow)
-  // any install failure so the import summary can warn, instead of the panels 404ing later with no clue.
+  // A card whose UI points at `card-code:` entries NEEDS the cartridge — record (don't swallow) any
+  // install failure so the import summary can warn, instead of its surfaces 404ing later with no clue.
   const needsCartridge = cardDeclaresCardCode(card)
   let cartridgeError: string | undefined
   if (path.extname(filePath).toLowerCase() === '.png') {

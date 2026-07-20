@@ -6,8 +6,9 @@
 // (no DOM/electron/Zustand), so it resolves in both the renderer and preload builds.
 //
 // Clean-room: the JSR `createSrcContent` / `adjust_viewport.js` behavior is the compat TARGET; the code
-// below is our own. The per-realm bits that genuinely differ (resolved lib URLs, avatar URLs, the live
-// viewport height) are passed in via EnvHeadOpts so this module stays URL-agnostic and pure.
+// below is our own. Per-document avatar URLs and live viewport height arrive via EnvHeadOpts; WCV CDN
+// tags live here so renderer-built and cartridge-backed WCV documents cannot drift.
+import { buildCardDoc } from './cardDoc'
 
 /** Card sizing mode. `fit` = content-fit (embedded, default); `fill` = fill the frame (vh-driven). */
 export type CardSizing = 'fit' | 'fill'
@@ -44,6 +45,21 @@ export const TAILWIND_CDN_URL = 'https://cdn.tailwindcss.com/3.4.16'
 // Motion (motion.dev) — assumed env lib for card-authored animations (the app does NOT use it; cards opt in).
 // UMD/global build → window.Motion (Motion.animate/scroll/inView/…). Unversioned, like the other CDN libs.
 export const MOTION_JS_URL = 'https://cdn.jsdelivr.net/npm/motion/dist/motion.js'
+
+const cssTag = (href: string): string => `<link rel="stylesheet" href="${href}">`
+const jsTag = (src: string): string => `<script src="${src}"></script>`
+
+/** Assumed external libraries for every WCV document, including cartridge-backed panel/Yuzu pages. */
+export function buildWcvLibTags(): string {
+  return [
+    cssTag(FONTAWESOME_CSS_URL),
+    cssTag(JQUERY_UI_THEME_CSS_URL),
+    jsTag(TAILWIND_CDN_URL),
+    jsTag(JQUERY_UI_JS_URL),
+    jsTag(JQUERY_UI_TOUCH_PUNCH_URL),
+    jsTag(MOTION_JS_URL)
+  ].join('')
+}
 
 /**
  * The base CSS reset cards assume. Mirrors SillyTavern/Tavern-Helper's `createSrcContent` (≈ Tailwind
@@ -112,6 +128,16 @@ export function buildEnvHead(opts: EnvHeadOpts): string {
     opts.libTags +
     viewportBootstrap(opts.viewportHeightPx)
   )
+}
+
+/** Apply the standard WCV environment to a cartridge-owned full-page document before its scripts run. */
+export function buildWcvSurfaceDocument(html: string): string {
+  return buildCardDoc(html, {
+    headInject: buildEnvHead({
+      libTags: buildWcvLibTags(),
+      sizing: 'fill'
+    })
+  })
 }
 
 /** Convert the vh values inside one declaration value to the viewport variable. */

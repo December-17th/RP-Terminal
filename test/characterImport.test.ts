@@ -169,6 +169,25 @@ describe('summarizeCardBundle + hasBundle', () => {
     expect(hasBundle(s)).toBe(false)
   })
 
+  it('counts a cartridge-backed Yuzu surface and requires card trust', () => {
+    const s = summarizeCardBundle({
+      card: card({
+        rp_terminal: {
+          yuzu: {
+            version: 1,
+            surface: { entry: 'card-code:yuzu/index.html' }
+          }
+        }
+      }),
+      lorebook: null
+    } as any)
+
+    expect(s.scripts).toBe(0)
+    expect(s.cardCodeSurfaces).toBe(1)
+    expect(s.requiresTrust).toBe(true)
+    expect(hasBundle(s)).toBe(true)
+  })
+
   it('counts bundled workflows + table templates, and each alone warrants the confirm', () => {
     const withWf = summarizeCardBundle({
       card: card({ rp_terminal: { workflows: [{ id: 'w', name: 'W', nodes: [], edges: [] }] } }),

@@ -273,10 +273,11 @@ transports inject the same thing (clean-room mirror of JSR's `createSrcContent`/
   ([`buildEnvHead`](../../src/shared/cardEnv.ts)).
 - **Assumed libs** the card env provides (cards are authored expecting these to be global):
   - From `cardEnv` (CDN, both transports): **FontAwesome**, **jQuery-UI (+touch-punch)**, **Tailwind** (v3),
-    **Motion** (motion.dev, global `window.Motion` — `Motion.animate`/`scroll`/`inView`/…; UMD build via
-    `MOTION_JS_URL` in [`cardEnv.ts`](../../src/shared/cardEnv.ts), injected by both
-    [`cardBridge/cardLibs.ts`](../../src/renderer/src/cardBridge/cardLibs.ts) builders —
-    `buildInlineLibTags`/`buildWcvLibTags`). App-provided for card use only — the native app does not
+    **Motion** (motion.dev, global `window.Motion` — `Motion.animate`/`scroll`/`inView`/…); UMD build via
+    `MOTION_JS_URL` in [`cardEnv.ts`](../../src/shared/cardEnv.ts). Inline pages use
+    [`buildInlineLibTags`](../../src/renderer/src/cardBridge/cardLibs.ts); WCV message frames and
+    cartridge-backed panel/Yuzu documents use the shared `buildWcvLibTags` /
+    `buildWcvSurfaceDocument` before card scripts execute. App-provided for card use only — the native app does not
     depend on it; an RPT/JSR-env addition cards may opt into for animation.
   - From the transport: **jQuery**, **Vue**, **Pinia**, **VueRouter** (iframe-realm classic builds —
     [`cardBridge/cardLibs.ts`](../../src/renderer/src/cardBridge/cardLibs.ts) inline / `wcvPreload` WCV),
@@ -345,9 +346,19 @@ character_version, character_book` (embedded lorebook). Unknown ST `extensions.*
 | `game_rules`                         | freeform rules bag                                                                                                                                                                                                                                                                                                                                                                                                                                                      | ✅                                                                                                                                                                   |
 | `left_panel`                         | `{ name: string }` — a card UI (matched by script `name`) auto-docked left in the workspace when active. Requires `renderMode:'panel'`.                                                                                                                                                                                                                                                                                                                                 | ✅                                                                                                                                                                   |
 | `panel_ui`                           | static card-determined grid (slots → native view or `wcv` entry). `seamless:true` drops inter-slot gap/padding + per-slot chrome (border/radius/title) so adjacent WCV surfaces compose into one continuous stage; a slot's `chrome:bool` overrides the layout default. `overlays:[{id,entry,title?}]` (PM-A7) declares full-play-area overlay surfaces the card raises at runtime via `requestOverlay(id)`/`closeOverlay()` (§2, same `entry` URL semantics as slots). | ✅ schema                                                                                                                                                            |
+| `yuzu`                               | `{version, opening?, surface?:{entry, enable_vn_mode?}}`. One trusted WCV owns the play area; `enable_vn_mode:true` opts into YSS generation, while absent/false keeps classic generation.                                                                                                                                                                                                                                                                              | 🟡 MVP full-screen surface                                                                                                                                           |
 | **World Card bundle slots**          | `world_card` (version marker), `meta`, `regex[]`, `presets[]`, `lorebooks[]`, `workflows[]`, `table_templates[]`, `plugins[]`, `agent`, `combat`, `recommended_settings`                                                                                                                                                                                                                                                                                                | ✅ schema; routing varies by slot (see §5)                                                                                                                           |
 | `workflows[]`                        | workflow docs or `rpt-workflow-bundle` envelopes; imported into the profile workflow store, tagged to the world, with the first valid workflow selected as that world's default                                                                                                                                                                                                                                                                                         | ✅ import + world cleanup ([`characterService.ts`](../../src/main/services/characterService.ts), [`workflowService.ts`](../../src/main/services/workflowService.ts)) |
 | `table_templates[]`                  | chatSheets v2 or native `TableTemplate` objects; imported into the profile template library without assigning or wiping any chat                                                                                                                                                                                                                                                                                                                                        | ✅ import ([`characterService.ts`](../../src/main/services/characterService.ts), [`tableTemplateService.ts`](../../src/main/services/tableTemplateService.ts))       |
+
+The Yuzu MVP mounts the declared page through
+[`YuzuCardSurface`](../../src/renderer/src/components/yuzu/YuzuCardSurface.tsx) after applying its
+explicit generation flag. The [schema](../../src/main/types/character.ts) keeps presentation and
+generation orthogonal. Cartridge HTML receives the shared
+[WCV environment](../../src/shared/cardEnv.ts) in the
+[main loader](../../src/main/services/wcvManager.ts) before its scripts execute, including Motion for
+text/portrait animation; TavernHelper/MVU globals come from
+[`wcvPreload`](../../src/preload/wcvPreload.ts).
 
 `world_card` present ⇒ the card is a **World Card** (a complete, one-click-installable world). The schema
 has a `catchall` so future slots round-trip.
@@ -477,8 +488,9 @@ This is already specced as **World Card §8**. Concretely:
 ### 6a. Serving card code — `card-code:` entries, per-card origins, trust gate (A2)
 
 - **`card-code:<path>` entry convention (D1).** A cartridge can't know its own `characterId` at package
-  time (RPT mints a fresh id per import), so split-mode `panel_ui` slot / `panel_ui.overlays` entries are
-  written **card-relative** as `card-code:surfaces/self.html`. `wcvManager.ensure` rewrites them to the
+  time (RPT mints a fresh id per import), so `panel_ui` slots/overlays and `yuzu.surface.entry` are
+  written **card-relative** as `card-code:surfaces/self.html` or `card-code:yuzu/index.html`.
+  `wcvManager.ensure` rewrites them to the
   card's per-card origin `rpt-card://<originToken>/surfaces/self.html` using the slot ctx's `characterId`.
   `data:` (inline mode — the POD dual-output default) and `https:` entries are untouched.
 - **Per-card origins (D3).** Host **`card`** stays the reserved legacy shared-origin inline path
@@ -494,13 +506,19 @@ This is already specced as **World Card §8**. Concretely:
     keep their storage. **No automatic migration in v1.**
 - **MIME (§5).** Sub-resources are served with the correct type from the extension table (`.js`/`.mjs` →
   `text/javascript`, `.css`, `.json`/`.map`, `.svg`, images, fonts, `.wasm`); default
-  `application/octet-stream`, **never** forced `text/html` (that forcing hard-fails ES module loads). HTML
-  documents still get the card CSP. File bodies stream (`net.fetch` + scheme `stream: true`).
+  `application/octet-stream`, **never** forced `text/html` (that forcing hard-fails ES module loads).
+  HTML documents get the card CSP plus the shared WCV environment before their own scripts execute;
+  subresource bodies stream through `net.fetch`
+  ([`wcvManager`](../../src/main/services/wcvManager.ts), [`cardEnv`](../../src/shared/cardEnv.ts)).
 - **Trust gate (main-side, in the handler).** Card code is served only when the card's grant is
   **`decided ∧ trusted`** (the same `trusted` grant `CardScriptWcvHost` gates script execution on — card
   code is the same category as remote-script trust); undecided/untrusted → **403**, fail-closed. Read from
   the main-side grant store (`pluginService.getGrants`), NOT the renderer. The renderer mount gate is
-  defense-in-depth, not the boundary (WCVs run `contextIsolation:false`, so the main-side check is the wall).
+  defense-in-depth, not the boundary (WCVs run `contextIsolation:false`, so the main-side check is the
+  wall). Import counts every declared `card-code:` document as an executable surface and requests this
+  grant even when the card has no separate `rp_terminal.scripts` entry
+  ([`characterService`](../../src/main/services/characterService.ts),
+  [`characterStore`](../../src/renderer/src/stores/characterStore.ts)).
 
 **Recommendation:** formally adopt **`chara_card_v3` + `extensions.rp_terminal`** as the standard (no new
 spec string → ST stays compatible), and treat the **PNG as the cartridge**: inline JSON for text

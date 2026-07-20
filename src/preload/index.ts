@@ -514,6 +514,8 @@ const api = {
     ipcRenderer.invoke('get-chat-mode', profileId, chatId),
   setChatMode: (profileId: string, chatId: string, mode: string) =>
     ipcRenderer.invoke('set-chat-mode', profileId, chatId, mode),
+  setVnMode: (profileId: string, chatId: string, on: boolean) =>
+    ipcRenderer.invoke('set-vn-mode', profileId, chatId, on),
   // A chat's FSM mode changed MAIN-side (a workflow tool node started combat/duel) — follow it.
   onChatModeChanged: (cb: (p: { chatId: string; mode: string }) => void) => {
     const listener = (_e: IpcRendererEvent, p: any): void => cb(p)

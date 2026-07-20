@@ -9,6 +9,8 @@ interface CharacterImportDialogResult {
     regexScripts: number
     loreEntries: number
     scripts: number
+    cardCodeSurfaces: number
+    requiresTrust: boolean
     uiWidgets: number
     presets: number
     lorebooks: number
@@ -42,6 +44,7 @@ declare global {
       wcvDestroyAwait: (id: string) => Promise<boolean>
       presetSetHighTrust: (profileId: string, presetId: string, on: boolean) => Promise<number>
       backfillUsageMetrics: (profileId: string, chatId: string) => Promise<unknown[]>
+      setVnMode: (profileId: string, chatId: string, on: boolean) => Promise<void>
       // Feature 2 — save (session) export/import. export → { name } | { error } | null (cancel);
       // import → { chatId } | { error, worldName? } | null (cancel).
       exportSaveDialog: (

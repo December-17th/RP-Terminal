@@ -188,6 +188,24 @@ export const RPTerminalExtSchema = z
       })
       .optional(),
 
+    /** Project Yuzu opt-in. `surface.entry` is the MVP full-play-area card UI: one unrestricted WCV
+     * document owns all Yuzu pixels and uses the existing card runtime globals. */
+    yuzu: z
+      .object({
+        version: z.number().int().positive(),
+        opening: z.string().optional(),
+        surface: z
+          .object({
+            entry: z.string().min(1),
+            /** Presentation and generation are orthogonal. Opt in only when this UI consumes YSS. */
+            enable_vn_mode: z.boolean().optional()
+          })
+          .catchall(z.any())
+          .optional()
+      })
+      .catchall(z.any())
+      .optional(),
+
     // --- World Card bundle slots (Track S). Optional so a plain card stays minimal; the
     // element shapes stay loose (z.any) because they're foreign formats (ST regex/preset/
     // lorebook) normalized on import. See docs/world-card-design.md §3. ---

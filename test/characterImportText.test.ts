@@ -20,6 +20,8 @@ describe('character import native-dialog text', () => {
     expect(chinese.duplicateDetail(details)).toContain('先完整导入新世界')
     expect(chinese.duplicateDetail(details)).toContain('删除')
     expect(english.duplicateDetail(details)).toContain('import the new world first')
+    expect(english.bundleItem(1, 'cardCodeSurfaces')).toContain('card-code UI')
+    expect(chinese.bundleItem(1, 'cardCodeSurfaces')).toContain('卡片代码界面')
   })
 
   it('falls back to English for unknown locales', () => {

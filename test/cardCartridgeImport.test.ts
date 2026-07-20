@@ -24,9 +24,11 @@ vi.mock('../src/main/services/storageService', async () => {
 
 import { closeDb, getDb } from '../src/main/services/db'
 import {
+  cardDeclaresCardCode,
   importCharacterFromFile,
   updateCharacterInPlace
 } from '../src/main/services/characterService'
+import { RPTerminalCardSchema } from '../src/main/types/character'
 import { cardCodeRoot } from '../src/main/services/cardCodeService'
 import {
   serveCardCode,
@@ -38,6 +40,22 @@ import {
 
 const P = 'p1'
 const sha1 = (s: string): string => crypto.createHash('sha1').update(s).digest('hex')
+
+describe('card-code declaration detection', () => {
+  it('treats a Yuzu takeover entry as cartridge-backed card code', () => {
+    const card = RPTerminalCardSchema.parse({
+      data: {
+        name: 'Yuzu World',
+        extensions: {
+          rp_terminal: {
+            yuzu: { version: 1, surface: { entry: 'card-code:yuzu/index.html' } }
+          }
+        }
+      }
+    })
+    expect(cardDeclaresCardCode(card)).toBe(true)
+  })
+})
 
 // --- Fixtures: a card declaring a card-code panel, packaged as .json / plain PNG / full PNG ---
 

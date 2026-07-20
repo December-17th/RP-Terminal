@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { buildEnvHead, replaceVhInContent, BASE_RESET_CSS } from '../src/shared/cardEnv'
+import {
+  buildEnvHead,
+  buildWcvSurfaceDocument,
+  replaceVhInContent,
+  BASE_RESET_CSS,
+  MOTION_JS_URL
+} from '../src/shared/cardEnv'
 
 describe('replaceVhInContent', () => {
   it('rewrites a CSS-block min-height:100vh to the viewport variable', () => {
@@ -107,5 +113,18 @@ describe('buildEnvHead', () => {
     expect(buildEnvHead({ ...opts, scrollable: true })).toContain(
       'html,body{overflow:auto!important}'
     )
+  })
+})
+
+describe('buildWcvSurfaceDocument', () => {
+  it('injects the WCV environment before card scripts in a cartridge HTML page', () => {
+    const cardBoot = 'window.cardBoot = window.Motion'
+    const doc = buildWcvSurfaceDocument(
+      `<!doctype html><html><head><script>${cardBoot}</script></head><body></body></html>`
+    )
+
+    expect(doc).toContain(MOTION_JS_URL)
+    expect(doc.indexOf(MOTION_JS_URL)).toBeLessThan(doc.indexOf(cardBoot))
+    expect(doc).toContain(BASE_RESET_CSS)
   })
 })
