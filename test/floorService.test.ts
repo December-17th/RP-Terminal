@@ -12,7 +12,8 @@ const seam = vi.hoisted(() => ({
   runs: [] as Array<{ sql: string; args: unknown[] }>,
   requestRow: undefined as unknown,
   countRow: { n: 0 } as unknown,
-  lastFloorRow: undefined as unknown
+  lastFloorRow: undefined as unknown,
+  floorExists: false
 }))
 
 const fakeDb = vi.hoisted(() => ({
@@ -21,6 +22,8 @@ const fakeDb = vi.hoisted(() => ({
     return {
       run: (...args: unknown[]) => seam.runs.push({ sql, args }),
       get: () => {
+        if (sql.includes('SELECT 1 FROM floors'))
+          return seam.floorExists ? { present: 1 } : undefined
         if (sql.includes('COUNT(*)')) return seam.countRow
         if (sql.includes('SELECT request')) return seam.requestRow
         if (sql.includes('ORDER BY floor DESC LIMIT 1')) return seam.lastFloorRow
@@ -67,6 +70,7 @@ beforeEach(() => {
   seam.requestRow = undefined
   seam.countRow = { n: 0 }
   seam.lastFloorRow = undefined
+  seam.floorExists = false
 })
 
 describe('floorService — lean floor projections (perf audit P0-2)', () => {
@@ -112,6 +116,17 @@ describe('floorService — lean floor projections (perf audit P0-2)', () => {
     } as FloorFile)
     const upserts2 = seam.runs.filter((r) => r.sql.includes('INSERT INTO floors'))
     expect(upserts2[1].args).toContain(JSON.stringify([{ role: 'user', content: 'NEW' }]))
+  })
+
+  it('reports a floor commit only for the first write of that floor identity', () => {
+    const committed = vi.fn()
+    saveFloor('p1', 'c1', mkLean(), committed)
+    expect(committed).toHaveBeenCalledWith(true)
+
+    seam.floorExists = true
+    saveFloor('p1', 'c1', mkLean(), committed)
+    expect(committed).toHaveBeenLastCalledWith(false)
+    expect(committed).toHaveBeenCalledTimes(2)
   })
 
   it('saveFloor refreshes the central chat summary after the row write (§B3)', () => {

@@ -36,6 +36,10 @@ export type WcvResidueMember =
   | 'getWorldbookById'
   | 'createChat'
   | 'formatRegex'
+  | 'runAgent'
+  | 'runAgentPlan'
+  | 'registerAgentTool'
+  | 'onFloorCommitted'
 
 /** Every Host member the spec table must cover (the flat Host minus the residue). */
 export type WcvSpecMember = Exclude<keyof Host, WcvResidueMember>
@@ -132,7 +136,7 @@ export const WCV_CHANNEL_SPEC: Record<WcvSpecMember, ChannelSpec> = {
 }
 
 /**
- * Member → channel-name lookup derived from the spec, for the main IPC layer (`wcvIpc.ts`) and other
+ * Member 鈫?channel-name lookup derived from the spec, for the main IPC layer (`wcvIpc.ts`) and other
  * transports to reference a channel by its Host member without repeating the raw string. Names only —
  * the `kind`/`fallback` live on `WCV_CHANNEL_SPEC`.
  */
@@ -153,3 +157,20 @@ export const WCV_RESIDUE_CHANNELS = {
   getWorldbookById: 'wcv-host-get-worldbook-by-id',
   formatRegex: 'wcv-host-format-regex'
 } as const satisfies Partial<Record<WcvResidueMember, string>>
+
+/**
+ * AgentHost uses the stateful Facet/Session contract from ADR 0022 rather than the flat Host table:
+ * these calls carry AbortSignals, callback functions, acknowledgements, and event subscriptions that
+ * cannot cross Electron IPC directly. Main still derives profile/chat/card identity from the WCV sender.
+ */
+export const WCV_AGENT_CHANNELS = {
+  run: 'wcv-host-agent-run',
+  runPlan: 'wcv-host-agent-run-plan',
+  cancel: 'wcv-host-agent-cancel',
+  registerTool: 'wcv-host-agent-tool-register',
+  unregisterTool: 'wcv-host-agent-tool-unregister',
+  toolResult: 'wcv-host-agent-tool-result',
+  floorSubscribe: 'wcv-host-floor-committed-subscribe',
+  floorUnsubscribe: 'wcv-host-floor-committed-unsubscribe',
+  floorCommitted: 'wcv-host-floor-committed'
+} as const

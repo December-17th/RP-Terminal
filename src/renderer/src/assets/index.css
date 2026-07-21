@@ -27,6 +27,11 @@
   --rpt-app-bg-primary: #121212;
   --rpt-app-text-primary: #e0e0e0;
   --rpt-app-border: #333333;
+  --rpt-app-accent: #5b8def;
+  --rpt-app-danger: #e74c3c;
+  --rpt-app-success: #4caf72;
+  --rpt-app-warning: #e0a23c;
+  --rpt-app-warning-soft: rgba(224, 162, 60, 0.14);
   --rpt-danger: #e74c3c;
   --rpt-success: #4caf72;
   --rpt-warning: #e0a23c;
@@ -890,6 +895,61 @@ details[open] > .stat-group-title::before {
   border-radius: 50%;
   background: var(--rpt-accent, #5b8def);
   animation: rpt-pulse 1.2s ease-in-out infinite;
+}
+
+/* Yuzu full-card takeover surface. The card-code WCV is a native view painted OVER the DOM, so the
+   escape bar is reserved ABOVE the WCV rect (an in-rect overlay would be occluded, including when a
+   declined trust grant serves a raw native error page). App-scoped tokens (`--rpt-app-*`) so a card
+   palette shadowing `.play-root` can't recolor the escape chrome. */
+.yuzu-surface {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.yuzu-surface__bar {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 3px 6px;
+  background: var(--rpt-app-bg-secondary);
+  border-bottom: 1px solid var(--rpt-app-border);
+}
+.yuzu-surface__exit {
+  padding: 2px 10px;
+  color: var(--rpt-app-text-primary);
+  background: transparent;
+  border: 1px solid var(--rpt-app-border);
+  border-radius: 5px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.yuzu-surface__exit:hover {
+  background: color-mix(in srgb, var(--rpt-app-text-primary) 10%, transparent);
+}
+.yuzu-surface__exit:focus-visible {
+  outline: 2px solid var(--rpt-app-accent);
+  outline-offset: 2px;
+}
+.yuzu-surface__body {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.yuzu-surface__fallback {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--rpt-app-text-primary);
+  background: var(--rpt-app-bg-secondary);
 }
 @keyframes rpt-pulse {
   0%,
@@ -2751,11 +2811,156 @@ select {
 }
 .tstrip-spacer {
   flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  container-type: inline-size;
 }
 .tstrip-menus {
   display: flex;
   align-items: center;
   gap: 1px;
+}
+.tstrip-agent-runs {
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+}
+.tstrip-agent-runs__toggle {
+  padding-inline: 8px;
+}
+.tstrip-agent-runs__indicator {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--rpt-app-warning);
+}
+.tstrip-agent-runs__indicator.tone-success {
+  background: var(--rpt-app-success);
+}
+.tstrip-agent-runs__indicator.tone-failure {
+  background: var(--rpt-app-danger);
+}
+.tstrip-agent-runs__indicator.is-running {
+  animation: rpt-pulse 1.2s ease-in-out infinite;
+}
+.tstrip-agent-runs__count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--rpt-app-text-primary);
+  background: color-mix(in srgb, var(--rpt-app-accent) 18%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.tstrip-agent-status {
+  min-width: 0;
+  max-width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--rpt-app-text-primary) 72%, transparent);
+  font-family: var(--rpt-font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.tstrip-agent-status__item,
+.tstrip-agent-status__items {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.tstrip-agent-status__items {
+  max-width: 100%;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+}
+.tstrip-agent-status__item {
+  flex: 0 1 auto;
+  gap: 4px;
+  overflow: hidden;
+}
+.tstrip-agent-status__dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--rpt-app-text-primary) 45%, transparent);
+}
+.tstrip-agent-status__item--running .tstrip-agent-status__dot {
+  background: var(--rpt-app-accent);
+  animation: rpt-pulse 1.2s ease-in-out infinite;
+}
+.tstrip-agent-status__item--succeeded .tstrip-agent-status__dot {
+  background: var(--rpt-app-success);
+}
+.tstrip-agent-status__item--failed .tstrip-agent-status__dot,
+.tstrip-agent-status__item--cancelled .tstrip-agent-status__dot {
+  background: var(--rpt-app-danger);
+}
+.tstrip-agent-status__item--degraded .tstrip-agent-status__dot {
+  background: var(--rpt-app-warning);
+}
+.tstrip-agent-status__name {
+  min-width: 0;
+  max-width: 14ch;
+  overflow: hidden;
+  color: var(--rpt-app-text-primary);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.tstrip-agent-status__state,
+.tstrip-agent-status__floor,
+.tstrip-agent-status__more,
+.tstrip-agent-status__message,
+.tstrip-agent-status__compact {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tstrip-agent-status__floor {
+  /* 72% mix clears WCAG AA (≥4.5:1) for this 11px text on all themes; 55% failed (~3.8:1) on light. */
+  color: color-mix(in srgb, var(--rpt-app-text-primary) 72%, transparent);
+}
+.tstrip-agent-status__more {
+  flex: 0 0 auto;
+}
+.tstrip-agent-status__compact {
+  display: none;
+}
+@container (max-width: 360px) {
+  .tstrip-agent-status__floor {
+    display: none;
+  }
+}
+@container (max-width: 260px) {
+  .tstrip-agent-status__state {
+    display: none;
+  }
+}
+@container (max-width: 160px) {
+  .tstrip-agent-status__items {
+    display: none;
+  }
+  .tstrip-agent-status__compact {
+    display: block;
+  }
+}
+@media (max-width: 1180px) {
+  .tstrip-agent-runs__label {
+    display: none;
+  }
 }
 /* Shared button on the strip — the direct settings buttons and the breadcrumb pills. */
 .tmenu-btn {
@@ -2800,6 +3005,12 @@ select {
 .tstrip .tmenu-btn,
 .tstrip-menus {
   -webkit-app-region: no-drag;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tstrip-agent-runs__indicator.is-running,
+  .tstrip-agent-status__item--running .tstrip-agent-status__dot {
+    animation: none;
+  }
 }
 
 /* World settings popup — Regex/Scripts tabs hosting the existing managers. */
@@ -3132,6 +3343,14 @@ select {
   border:1px solid var(--rpt-border); border-radius:9px; background:var(--rpt-bg-primary); }
 .rpt-mm-maint-title { margin:0; font-size:13px; font-weight:600; color:var(--rpt-text-primary); }
 .rpt-mm-maint-intro { margin:0; font-size:12px; color:var(--rpt-text-secondary); }
+/* Memory Maintenance Agent settings strip (M5b2) */
+.rpt-mm-agent-strip-head { display:flex; flex-direction:column; gap:4px; }
+.rpt-mm-agent-strip-row { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; }
+.rpt-mm-agent-field { display:flex; flex-direction:column; gap:4px; }
+.rpt-mm-agent-label { font-size:12px; color:var(--rpt-text-secondary); }
+.rpt-mm-agent-cadence { width:88px; }
+.rpt-mm-agent-toggle { display:flex; align-items:center; gap:6px; font-size:13px;
+  color:var(--rpt-text-primary); padding-bottom:6px; }
 .rpt-mm-maint-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .rpt-mm-maint-label { font-size:12px; color:var(--rpt-text-secondary); }
 .rpt-mm-maint-num { width:72px; font:inherit; font-size:12px; padding:4px 7px; border-radius:6px;
@@ -3680,4 +3899,466 @@ select {
   .rpt-assets-drawer { animation:none; }
   .rpt-assets-meter > span { transition:none; }
   .rpt-assets-tile-actions { transition:none; }
+}
+
+/* ---- Agent Workspace (Settings → Agents) ------------------------------------------------- */
+/* Flat library view: sources, role bindings, and folder-sync results. No canvas, per design §4. */
+.agents-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--rpt-text-primary);
+}
+.agents-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.agents-panel__header h3 {
+  margin: 0 0 3px;
+}
+.agents-panel__hint,
+.agents-panel__empty {
+  margin: 0;
+  color: var(--rpt-text-tertiary);
+  font-size: 12px;
+  max-width: 62ch;
+}
+.agents-panel__error {
+  margin: 0;
+  padding: 7px 9px;
+  color: var(--rpt-danger, #d24);
+  border: 1px solid var(--rpt-danger, #d24);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.agents-sync {
+  padding: 9px 11px;
+  background: var(--rpt-surface-2, rgba(127, 127, 127, 0.08));
+  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+  border-radius: 8px;
+  font-size: 12px;
+}
+.agents-sync__dir {
+  color: var(--rpt-text-tertiary);
+  font-family: ui-monospace, monospace;
+  overflow-wrap: anywhere;
+  margin-bottom: 6px;
+}
+.agents-sync ul,
+.agents-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.agents-sync__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+}
+.agents-sync__item--failed,
+.agents-sync__item--conflict {
+  color: var(--rpt-danger, #d24);
+}
+.agents-sync__detail {
+  color: var(--rpt-text-tertiary);
+}
+.agents-sync__resolve {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+}
+.agents-roles__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  max-width: 46ch;
+}
+.agents-row {
+  padding: 10px 0;
+  border-top: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+}
+.agents-row--off {
+  opacity: 0.55;
+}
+.agents-row__identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+.agents-row__desc {
+  margin: 5px 0 0;
+  color: var(--rpt-text-secondary);
+  font-size: 12px;
+  max-width: 74ch;
+}
+.agents-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 5px;
+  color: var(--rpt-text-tertiary);
+  font-size: 11px;
+}
+.agents-row__gate {
+  color: var(--rpt-accent, currentColor);
+}
+.agents-row__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 7px;
+}
+.agents-row__delete:not(:disabled) {
+  color: var(--rpt-danger, #d24);
+}
+.agents-badge {
+  padding: 1px 7px;
+  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+  border-radius: 999px;
+  color: var(--rpt-text-tertiary);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.agents-badge--role {
+  color: var(--rpt-accent-contrast, var(--rpt-text-primary));
+  background: var(--rpt-accent, rgba(127, 127, 127, 0.25));
+  border-color: transparent;
+}
+.agents-badge--upgrade,
+.agents-badge--missing {
+  color: var(--rpt-danger, #d24);
+  border-color: currentColor;
+}
+
+/* ---- Agent Workspace popup (Session 10) --------------------------------------------------- */
+.rpt-popup-modal-agents {
+  width: min(1180px, 96vw);
+  height: min(86vh, 900px);
+}
+.agent-workspace {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) 1fr;
+  gap: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.agent-workspace__library {
+  border-right: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 6px;
+}
+.agent-workspace__library-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 8px;
+  font-size: 12px;
+  color: var(--rpt-text-tertiary);
+}
+.agent-workspace__library ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.agent-workspace__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-workspace__item:hover {
+  background: var(--rpt-surface-2, rgba(127, 127, 127, 0.1));
+}
+.agent-workspace__item--active {
+  background: var(--rpt-accent, rgba(127, 127, 127, 0.28));
+  color: var(--rpt-accent-contrast, inherit);
+}
+.agent-workspace__item-meta {
+  font-size: 11px;
+  opacity: 0.75;
+}
+.agent-workspace__detail {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 4px 4px 4px 14px;
+}
+.agent-workspace__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.agent-workspace__header h3 {
+  margin: 0 0 2px;
+}
+.agent-workspace__source {
+  margin: 0;
+  font-size: 11px;
+  color: var(--rpt-text-tertiary);
+  overflow-wrap: anywhere;
+}
+.agent-workspace__header-actions,
+.agent-workspace__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.agent-workspace__footer {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+}
+.agent-workspace__tabs {
+  display: flex;
+  gap: 4px;
+  margin: 12px 0;
+  border-bottom: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+}
+.agent-workspace__tabs button {
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--rpt-text-secondary);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.agent-workspace__tabs button.active {
+  color: var(--rpt-text-primary);
+  border-bottom-color: var(--rpt-accent, currentColor);
+}
+.agent-workspace__notice {
+  margin: 0 0 10px;
+  padding: 7px 9px;
+  font-size: 12px;
+  border-radius: 8px;
+  background: var(--rpt-surface-2, rgba(127, 127, 127, 0.08));
+  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+}
+
+/* ---- shared field primitives (editor + plan) ---------------------------------------------- */
+.agent-editor__section {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+}
+.agent-editor__section h4 {
+  margin: 0 0 8px;
+}
+.agent-count {
+  font-size: 11px;
+  color: var(--rpt-text-tertiary);
+}
+.agent-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 9px;
+}
+.agent-field > span {
+  font-size: 11px;
+  color: var(--rpt-text-tertiary);
+}
+.agent-field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.agent-field--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+}
+.agent-field textarea {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+.agent-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 14px;
+}
+.agent-field__error {
+  color: var(--rpt-danger, #d24);
+  font-size: 11px;
+  font-style: normal;
+}
+.agent-input--invalid {
+  border-color: var(--rpt-danger, #d24) !important;
+  outline-color: var(--rpt-danger, #d24);
+}
+.agent-editor__note {
+  margin: 2px 0 8px;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+  border-left: 2px solid var(--rpt-app-warning, var(--rpt-border, #999));
+  background: var(--rpt-surface-2, rgba(127, 127, 127, 0.08));
+}
+.agent-editor__subhead {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  color: var(--rpt-text-secondary);
+}
+.agent-lorebook-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.agent-lorebook-row input {
+  flex: 1 1 auto;
+}
+.agent-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 0;
+}
+.agent-message {
+  margin-bottom: 10px;
+}
+.agent-message__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.agent-message__size {
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--rpt-text-tertiary);
+}
+.agent-plan__steps {
+  margin: 0 0 12px;
+  padding-left: 18px;
+}
+.agent-plan__step {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+}
+.agent-plan__step-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+.agent-plan__badge {
+  margin-right: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  text-transform: uppercase;
+  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+  color: var(--rpt-text-tertiary);
+}
+.agent-plan__group {
+  padding-left: 14px;
+  border-left: 2px solid var(--rpt-accent, rgba(127, 127, 127, 0.35));
+}
+.agent-plan__call {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+.agent-plan__add,
+.agent-plan__io {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+.agent-plan__io .agent-field {
+  flex: 1 1 260px;
+}
+.agent-runs__manual {
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+}
+.agent-runs__manual h4,
+.agent-runs h4 {
+  margin: 0 0 6px;
+}
+.agent-runs__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.agent-runs__list button {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+.agent-runs__list button:hover {
+  background: var(--rpt-surface-2, rgba(127, 127, 127, 0.1));
+}
+/* A degraded run succeeded on an incomplete prompt (ADR 0021 fail-open). Warning, not danger:
+   the run produced a result, it just did not see everything it was written against. */
+.agent-runs__degraded {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--rpt-warning-soft, rgba(224, 162, 60, 0.14));
+  color: var(--rpt-warning, #e0a23c);
+  font-weight: 600;
+}
+.agent-runs__degraded-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 0 8px;
+  padding: 7px 9px;
+  border-left: 3px solid var(--rpt-warning, #e0a23c);
+  background: var(--rpt-warning-soft, rgba(224, 162, 60, 0.14));
+  border-radius: 0 6px 6px 0;
+  font-size: 11px;
+}
+.agent-runs__detail {
+  margin-top: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+  border-radius: 8px;
+}
+.agent-runs__detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.agent-runs__detail pre {
+  max-height: 300px;
+  overflow: auto;
+  font-size: 11px;
+  margin: 0;
 }

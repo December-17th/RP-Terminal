@@ -33,7 +33,6 @@ export type BundleKind =
   | 'scripts'
   | 'cardCodeSurfaces'
   | 'uiWidgets'
-  | 'workflows'
   | 'tableTemplates'
   | 'pluginsSkipped'
 
@@ -45,7 +44,6 @@ const englishKinds: Record<BundleKind, string> = {
   scripts: 'card scripts',
   cardCodeSurfaces: 'card-code UI surfaces',
   uiWidgets: 'UI widgets',
-  workflows: 'workflows',
   tableTemplates: 'memory table templates',
   pluginsSkipped: 'plugins (skipped — not yet supported)'
 }
@@ -72,7 +70,7 @@ const english: CharacterImportText = {
     return (
       `Installed: ${details.installedName}${installedCreator}${installedVersion}\n` +
       `Importing: ${details.incomingName}${incomingCreator}${incomingVersion}\n\n` +
-      '• Update & keep saves — refresh this world’s card, scripts, workflows and lore; keep all sessions.\n' +
+      '• Update & keep saves — refresh this world’s card, scripts and lore; keep all sessions.\n' +
       '• Import as new — install a separate copy.\n' +
       '• Replace — import the new world first, then delete the installed world and its saved sessions.' +
       duplicateNote
@@ -94,7 +92,6 @@ const chineseKinds: Record<BundleKind, string> = {
   presets: '个预设',
   scripts: '个角色卡脚本',
   uiWidgets: '个界面组件',
-  workflows: '个工作流',
   tableTemplates: '个记忆表模板',
   pluginsSkipped: '个插件（已跳过，暂不支持）'
 }
@@ -120,7 +117,7 @@ const chinese: CharacterImportText = {
     return (
       `已安装：${details.installedName}${installedCreator}${installedVersion}\n` +
       `将导入：${details.incomingName}${incomingCreator}${incomingVersion}\n\n` +
-      '• 更新并保留存档——刷新角色卡、脚本、工作流和世界书，保留所有会话。\n' +
+      '• 更新并保留存档——刷新角色卡、脚本和世界书，保留所有会话。\n' +
       '• 作为新世界导入——安装一个独立副本。\n' +
       '• 替换——先完整导入新世界，再删除已安装的世界及其存档。' +
       duplicateNote

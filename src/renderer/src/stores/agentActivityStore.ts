@@ -1,11 +1,11 @@
 import { create } from 'zustand'
 
-/** Which run phase a side agent's LLM call belongs to. `pre` = a blocking pre-reply call
- *  (memory.recall) the user is waiting on; `post` = an off-the-hot-path call (memory.maintain /
- *  notes.maintain / agent.llm) that runs while the reply is already shown. */
+/** Which run phase a side agent's LLM call belongs to. `pre` = a blocking pre-reply call the user is
+ *  waiting on; `post` = an off-the-hot-path call (the built-in Memory Maintenance Agent and other
+ *  triggered/manual Agent invocations) that runs while the reply is already shown. */
 export type ActivityPhase = 'pre' | 'post'
 
-/** One live side-agent LLM call, keyed by its node id in the run (see agentActivityStore.active). */
+/** One live side-agent LLM call, keyed by its invocation id in the chat (see agentActivityStore.active). */
 export interface ActivityEntry {
   nodeType: string
   phase: ActivityPhase
@@ -14,15 +14,15 @@ export interface ActivityEntry {
 /**
  * Live "a SIDE LLM agent is making an API request" state, per chat (agent-activity-indicator).
  *
- * The engine emits `workflow-activity` {chatId,nodeId,nodeType,phase,state:'start'|'end'} around every
- * announce-set node's execution (the calls-llm nodes EXCEPT llm.sample, which already streams via
- * generation-delta). App.tsx subscribes and folds each event in here; ChatView/StreamingView read the
- * derived label so the user knows WHY a turn is stalling (pre) or that background work is running (post).
+ * Fed by the Agent Runtime's run-event feed (`onAgentRunEvent`): App.tsx folds a `started` event into
+ * a `post` entry and clears it on settle/deletion. ChatView/StreamingView read the derived label so the
+ * user knows WHY a turn is stalling (pre) or that background Agent work is running (post). (The old
+ * node-graph `workflow-activity` feed was removed with the workflow system — ADR 0020.)
  *
  * Shape mirrors the other per-chat "latest wins" stores (recallFailOpenStore / agentFailureStore): a
- * plain nodeId→entry map per chat. 'start' adds the entry, 'end' removes it; overlapping side agents
- * (two post nodes at once) coexist as separate keys, and the derived label picks the highest-priority
- * one. A stray 'end' with no matching 'start' is a no-op (fail-soft).
+ * plain invocationId→entry map per chat. 'start' adds the entry, 'end' removes it; overlapping side
+ * agents coexist as separate keys, and the derived label picks the highest-priority one. A stray 'end'
+ * with no matching 'start' is a no-op (fail-soft).
  */
 interface AgentActivityState {
   /** chatId → (nodeId → entry) for every side-agent call currently in flight. */

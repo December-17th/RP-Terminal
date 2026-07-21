@@ -46,7 +46,22 @@ const h = vi.hoisted(() => ({
   getSettings: vi.fn(),
   deleteChatMessages: vi.fn(() => true),
   afterChatMutation: vi.fn(() => null),
-  getExtensionSettings: vi.fn(() => ({}))
+  getExtensionSettings: vi.fn(() => ({})),
+  getAllFloors: vi.fn(() => [{ floor: 12, variables: { stat_data: {} } }]),
+  runAgent: vi.fn(),
+  runPlan: vi.fn(),
+  cancelInvocation: vi.fn(() => true),
+  cancelPlan: vi.fn(() => true),
+  registerCardTool: vi.fn(),
+  unregisterCardTool: vi.fn(() => true),
+  unregisterCardSender: vi.fn(() => 1),
+  completeCardTool: vi.fn(() => true),
+  catalogGet: vi.fn((_profileId: string, _name: string) => null as unknown),
+  senderSend: vi.fn(),
+  lifecycle: new Map<string, () => void>(),
+  floorListener: undefined as
+    | undefined
+    | ((profileId: string, chatId: string, event: unknown) => void)
 }))
 
 vi.mock('../src/main/services/wcvManager', () => ({
@@ -75,7 +90,34 @@ vi.mock('../src/main/services/chatCardVarsService', () => ({
   getChatCardVars: vi.fn(),
   setChatCardVars: vi.fn()
 }))
-vi.mock('../src/main/services/floorService', () => ({ getAllFloors: vi.fn(() => []) }))
+vi.mock('../src/main/services/floorService', () => ({ getAllFloors: h.getAllFloors }))
+vi.mock('../src/main/services/agentRuntime/cardAgentEvents', () => ({
+  onCardFloorCommitted: (listener: typeof h.floorListener) => {
+    h.floorListener = listener
+  }
+}))
+vi.mock('../src/main/services/agentRuntime/InvocationRuntimeService', () => ({
+  invocationRuntime: () => ({
+    run: h.runAgent,
+    runPlan: h.runPlan,
+    cancelInvocation: h.cancelInvocation,
+    cancelPlan: h.cancelPlan
+  }),
+  liveCardToolRegistry: () => ({
+    register: h.registerCardTool,
+    unregister: h.unregisterCardTool,
+    unregisterSender: h.unregisterCardSender,
+    complete: h.completeCardTool
+  })
+}))
+vi.mock('../src/main/services/agentRuntime/catalog', () => ({
+  AgentCatalog: class {
+    constructor(readonly profileId: string) {}
+    get(name: string): unknown {
+      return h.catalogGet(this.profileId, name)
+    }
+  }
+}))
 vi.mock('../src/main/services/generationService', () => ({}))
 vi.mock('../src/main/services/lorebookService', () => ({}))
 vi.mock('../src/main/services/scriptApiService', () => ({}))
@@ -91,6 +133,7 @@ vi.mock('../src/main/services/worldAssetService', () => ({}))
 vi.mock('../src/main/services/presetService', () => ({ getActivePresetId: vi.fn(() => '') }))
 
 import { registerWcvIpc } from '../src/main/ipc/wcvIpc'
+import { WCV_AGENT_CHANNELS } from '../src/shared/thRuntime/wcvChannelSpec'
 
 // Fake ipcMain that records every handler by channel so a test can invoke it with a synthetic event.
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
@@ -99,7 +142,14 @@ const fakeIpcMain = {
   handle: (ch: string, fn: (...a: unknown[]) => unknown) => handlers.set(ch, fn)
 } as unknown as IpcMain
 
-const evt = (senderId: number): unknown => ({ sender: { id: senderId } })
+const evt = (senderId: number): unknown => ({
+  sender: {
+    id: senderId,
+    send: h.senderSend,
+    once: (name: string, listener: () => void) => h.lifecycle.set(senderId + ':' + name, listener),
+    removeListener: (name: string) => h.lifecycle.delete(senderId + ':' + name)
+  }
+})
 const call = (channel: string, senderId: number, ...args: unknown[]): unknown =>
   handlers.get(channel)!(evt(senderId), ...args)
 
@@ -107,10 +157,29 @@ beforeEach(() => {
   handlers.clear()
   vi.clearAllMocks()
   h.contextFor.mockImplementation((id: number) => (id === WCV_ID ? SLOT : null))
+  h.catalogGet.mockReturnValue(null)
   h.getSettings.mockReturnValue({
     persona: { name: 'Lyra', description: 'A quiet cartographer', inject: false }
   })
   h.deleteChatMessages.mockReturnValue(true)
+  h.getAllFloors.mockReturnValue([{ floor: 12, variables: { stat_data: {} } }])
+  const run = Object.assign(
+    Promise.resolve({
+      invocationId: 'inv-1',
+      status: 'succeeded',
+      sourceRestarts: 0,
+      required: true
+    }),
+    { invocationId: 'inv-1' }
+  )
+  const plan = Object.assign(
+    Promise.resolve({ planId: 'plan-1', status: 'succeeded', outcomes: [] }),
+    { planId: 'plan-1' }
+  )
+  h.runAgent.mockReturnValue(run)
+  h.runPlan.mockReturnValue(plan)
+  h.lifecycle.clear()
+  h.floorListener = undefined
   registerWcvIpc(fakeIpcMain)
 })
 
@@ -246,5 +315,127 @@ describe('persona macro transport', () => {
 
     expect(h.getSettings).toHaveBeenCalledWith('pA')
     expect(event.returnValue).toBe('A quiet cartographer')
+  })
+})
+
+describe('WCV AgentHost IPC authority and lifecycle', () => {
+  it('derives profile/chat/card from the WCV sender and preserves direct JSON input', async () => {
+    await call(WCV_AGENT_CHANNELS.run, WCV_ID, {
+      requestId: 'request-1',
+      name: 'Monthly Property',
+      profileId: 'pEVIL',
+      chatId: 'cEVIL',
+      characterId: 'charEVIL',
+      options: { floor: 12, input: { month: 7 } }
+    })
+
+    expect(h.runAgent).toHaveBeenCalledWith({
+      profileId: 'pA',
+      chatId: 'cA',
+      characterId: 'charA',
+      floor: 12,
+      agent: 'Monthly Property',
+      options: { floor: 12, input: { month: 7 } },
+      toolScope: { profileId: 'pA', chatId: 'cA', characterId: 'charA' }
+    })
+  })
+
+  it('rejects an unresolvable sender scope with an accurate scope-rejection code', async () => {
+    await expect(
+      call(WCV_AGENT_CHANNELS.run, 999, { requestId: 'request-1', name: 'Agent', options: {} })
+    ).rejects.toMatchObject({ code: 'AGENT_RUN_SCOPE_REJECTED' })
+    expect(h.runAgent).not.toHaveBeenCalled()
+  })
+
+  it('rebinds to a fresh session when the slot ctx moves to a new chat/profile (no navigation)', async () => {
+    await call(WCV_AGENT_CHANNELS.run, WCV_ID, {
+      requestId: 'r1',
+      name: 'Agent',
+      options: { floor: 12 }
+    })
+    expect(h.runAgent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ profileId: 'pA', chatId: 'cA', characterId: 'charA' })
+    )
+    // The SAME slot/webContents is reused for a new (profile, chat) WITHOUT a navigation event.
+    h.contextFor.mockImplementation((id: number) =>
+      id === WCV_ID ? { slotId: 's1', profileId: 'pB', chatId: 'cB', characterId: 'charB' } : null
+    )
+    await call(WCV_AGENT_CHANNELS.run, WCV_ID, {
+      requestId: 'r2',
+      name: 'Agent',
+      options: { floor: 12 }
+    })
+    // The stale session was closed (its tools unregistered) and a fresh one bound to the new scope.
+    expect(h.unregisterCardSender).toHaveBeenCalledWith(WCV_ID)
+    expect(h.runAgent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        profileId: 'pB',
+        chatId: 'cB',
+        characterId: 'charB',
+        toolScope: { profileId: 'pB', chatId: 'cB', characterId: 'charB' }
+      })
+    )
+  })
+
+  it('applies the user per-Agent binding preset and ignores a card-supplied preset/model', async () => {
+    h.catalogGet.mockReturnValue({ invocationConfig: { apiPresetId: 'user-preset' } })
+    await call(WCV_AGENT_CHANNELS.run, WCV_ID, {
+      requestId: 'r1',
+      name: 'Agent',
+      options: { floor: 12, apiPresetId: 'card-preset', model: 'card-model' }
+    })
+    expect(h.catalogGet).toHaveBeenCalledWith('pA', 'Agent')
+    expect(h.runAgent.mock.calls.at(-1)![0].options).toEqual({
+      floor: 12,
+      apiPresetId: 'user-preset'
+    })
+  })
+
+  it('rejects a malformed tool binding on the WCV registerTool channel', () => {
+    expect(() =>
+      call(WCV_AGENT_CHANNELS.registerTool, WCV_ID, { inputSchema: { type: 'object' } })
+    ).toThrow(expect.objectContaining({ code: 'AGENT_RUN_INVALID_REQUEST' }))
+    expect(() => call(WCV_AGENT_CHANNELS.registerTool, WCV_ID, { name: '' })).toThrow(
+      expect.objectContaining({ code: 'AGENT_RUN_INVALID_REQUEST' })
+    )
+    expect(h.registerCardTool).not.toHaveBeenCalled()
+  })
+
+  it('registers card tools under authoritative scope and unregisters them on reload', () => {
+    const binding = {
+      name: 'clock',
+      inputSchema: { type: 'object' },
+      transactionMode: 'transactional',
+      parallelSafe: false
+    }
+    expect(call(WCV_AGENT_CHANNELS.registerTool, WCV_ID, binding)).toBe(true)
+    expect(h.registerCardTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: { profileId: 'pA', chatId: 'cA', characterId: 'charA', senderId: WCV_ID },
+        binding
+      })
+    )
+    h.lifecycle.get(WCV_ID + ':did-start-navigation')?.()
+    expect(h.unregisterCardSender).toHaveBeenCalledWith(WCV_ID)
+  })
+
+  it('accepts tool results only with the authoritative sender id', () => {
+    call(WCV_AGENT_CHANNELS.toolResult, WCV_ID, { requestId: 'tool-1', result: { ok: true } })
+    expect(h.completeCardTool).toHaveBeenCalledWith({
+      senderId: WCV_ID,
+      requestId: 'tool-1',
+      scope: { profileId: 'pA', chatId: 'cA', characterId: 'charA' },
+      result: { ok: true }
+    })
+  })
+
+  it('delivers one floor event only to a subscribed matching WCV scope', () => {
+    expect(call(WCV_AGENT_CHANNELS.floorSubscribe, WCV_ID)).toBe(true)
+    const event = { floor: 12, variables: { month: 7 }, previousVariables: { month: 6 } }
+    h.floorListener?.('pA', 'cA', event)
+    expect(h.senderSend).toHaveBeenCalledWith(WCV_AGENT_CHANNELS.floorCommitted, event)
+    h.senderSend.mockClear()
+    h.floorListener?.('pA', 'cB', event)
+    expect(h.senderSend).not.toHaveBeenCalled()
   })
 })

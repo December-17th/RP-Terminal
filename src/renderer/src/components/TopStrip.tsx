@@ -5,6 +5,7 @@ import { useChatStore } from '../stores/chatStore'
 import { useUiStore, type SettingsSection } from '../stores/uiStore'
 import { useT } from '../i18n'
 import { maintenanceSummary, type TableStatusLike } from './workspace/memoryPaneModel'
+import { AgentRunActivityToggle, AgentRunStatusStrip } from './AgentRunActivity'
 
 const api = (): any => (window as unknown as { api: any }).api
 
@@ -63,7 +64,7 @@ const MemoryChip: React.FC<{ profileId: string }> = ({ profileId }) => {
  * retired (workspace panels are now game + debug only); instead the config/authoring surfaces are
  * reached from direct buttons here, each opening its Settings section, and the full editors live in
  * the Settings hub (useUiStore.openSettings(section)). Layout: brand · world/session breadcrumb ·
- * ‹spacer› · Persona / Preset / Lorebook / Assets / Connection buttons · Workflow · settings gear.
+ * ‹spacer› · Persona / Preset / Lorebook / Assets / Connection buttons · Agents · settings gear.
  * The right padding (in CSS) reserves the OS window-control overlay; the strip is the window drag
  * region. (These were once dropdowns; they were flattened to plain buttons because the dropdowns'
  * WCV suppression caused a visible flash of the native play-area panels.)
@@ -78,10 +79,23 @@ export function TopStrip({
 }): React.ReactElement {
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const activePresetName = usePresetStore((s) => s.preset?.name)
+  const activeChatId = useChatStore((s) => s.activeChatId)
+  const [runStatusDisclosure, setRunStatusDisclosure] = React.useState<{
+    chatId: string | null
+    open: boolean
+  }>({ chatId: null, open: false })
   const t = useT()
 
   const worldName = activeCharacter?.card.data.name || t('nav.session')
   const openSettings = (section: SettingsSection): void => useUiStore.getState().openSettings(section)
+  const runsOpen =
+    !!activeChatId &&
+    runStatusDisclosure.chatId === activeChatId &&
+    runStatusDisclosure.open
+  const setRunsOpen = React.useCallback(
+    (open: boolean): void => setRunStatusDisclosure({ chatId: activeChatId, open }),
+    [activeChatId]
+  )
 
   return (
     <div className="tstrip">
@@ -126,7 +140,9 @@ export function TopStrip({
         </button>
       </div>
 
-      <span className="tstrip-spacer" title={`${profileName} · ${activePresetName || ''}`} />
+      <div className="tstrip-spacer" title={`${profileName} · ${activePresetName || ''}`}>
+        {runsOpen && activeChatId ? <AgentRunStatusStrip chatId={activeChatId} /> : null}
+      </div>
 
       <div className="tstrip-menus">
         <button
@@ -171,11 +187,20 @@ export function TopStrip({
 
         <button
           className="tmenu-btn"
-          onClick={() => useUiStore.getState().openWorkflowEditor()}
-          title={t('nav.workflowTitle')}
+          onClick={() => useUiStore.getState().openAgentWorkspace()}
+          title={t('nav.agentsTitle')}
         >
-          {t('nav.workflow')}
+          {t('nav.agents')}
         </button>
+
+        {activeChatId ? (
+          <AgentRunActivityToggle
+            key={activeChatId}
+            chatId={activeChatId}
+            open={runsOpen}
+            onOpenChange={setRunsOpen}
+          />
+        ) : null}
 
         <MemoryChip profileId={profileId} />
 

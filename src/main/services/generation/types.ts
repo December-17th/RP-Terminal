@@ -32,6 +32,8 @@ export interface GenContext {
   floors: FloorFile[]
   lastFloor: FloorFile | undefined
   workingVars: Record<string, any>
+  /** Snapshot immediately before this floor's model fold; persisted once for exact floor-0 replay. */
+  floorStateBaseline?: Record<string, unknown>
   globals: Record<string, unknown>
   userName: string
   cacheLevel: number

@@ -35,6 +35,7 @@ import { getProgress } from '../src/main/services/tableProgressService'
 import { listOps, listOpsForDisplay } from '../src/main/services/tableOpsService'
 import {
   createTableRefillLifecycle,
+  hasActiveRefill,
   type TableRefillLifecycleAdapters
 } from '../src/main/services/tableRefillService'
 import type { BackfillProgress } from '../src/main/services/tableBackfillEvents'
@@ -157,6 +158,68 @@ describe('table refill lifecycle', () => {
       status: 'done',
       completedUntil: 3
     })
+  })
+
+  // Classic Narrator plan, Milestone 4 — refill is backfill's sibling: a long-running multi-batch LLM
+  // job over callModelResilient, which never registers in `activeControllers`. Without its own
+  // accessor the exit signal reads idle and the app quits silently mid-refill.
+  it('reports active work while a refill is mid-job, and idle once it completes', async () => {
+    const profile = createProfile('Refill exit signal')
+    const characterId = `character-${randomUUID()}`
+    saveCharacter(profile.id, characterId, {
+      spec: 'chara_card_v3',
+      spec_version: '3.0',
+      data: {
+        name: 'Refill fixture',
+        description: '',
+        personality: '',
+        scenario: '',
+        first_mes: 'opening',
+        mes_example: '',
+        creator_notes: '',
+        system_prompt: '',
+        post_history_instructions: '',
+        alternate_greetings: [],
+        tags: [],
+        creator: '',
+        character_version: '',
+        extensions: {}
+      }
+    })
+    const chat = await createChat(profile.id, characterId)
+    appendFloor(profile.id, chat.id, floor(chat.id, 1))
+    appendFloor(profile.id, chat.id, floor(chat.id, 2))
+
+    const templateId = saveTableTemplate(profile.id, template)
+    setChatTableTemplateId(profile.id, chat.id, templateId)
+
+    expect(hasActiveRefill()).toBe(false)
+
+    let releaseBatch!: () => void
+    const batchInFlight = new Promise<void>((resolve) => {
+      releaseBatch = resolve
+    })
+    let sawActiveMidJob: boolean | null = null
+    const adapters: TableRefillLifecycleAdapters = {
+      runMaintainerBatch: async (_gen, _messages, _retries, _signal, apply) => {
+        sawActiveMidJob = hasActiveRefill()
+        await batchInFlight
+        apply("INSERT INTO chronicle (summary) VALUES ('floors 0-1')")
+        return true
+      },
+      notifyProgress: () => {}
+    }
+    const lifecycle = createTableRefillLifecycle(adapters)
+
+    const handle = await lifecycle.start(profile.id, chat.id, { fromFloor: 0, batchSize: 2 })
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(sawActiveMidJob).toBe(true)
+    expect(hasActiveRefill()).toBe(true)
+
+    releaseBatch()
+    await handle.completion
+    expect(hasActiveRefill()).toBe(false)
   })
 
   it('keeps a completed chunk durable after failure and resumes only the missing tail', async () => {

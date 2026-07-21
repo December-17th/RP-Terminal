@@ -13,9 +13,9 @@ export type SettingsSection =
   | 'assets'
   | 'regex'
   | 'scripts'
-  | 'workflow'
   | 'memory'
   | 'variables'
+  | 'agents'
 
 /** The ephemeral runtime play-theme override (runtime-theme-api-design §3B). A card's running UI sets it
  *  via setPlayTheme/setMessageTheme; App.tsx layers these tokens OVER the static card theme on `.play-root`.
@@ -45,21 +45,6 @@ interface UiState {
   settingsSection: SettingsSection
   openSettings: (section?: SettingsSection) => void
   closeSettings: () => void
-  /** The full-screen workflow editor overlay — the single surface for workflows + agents
-   *  (one-canvas rebuild WP6.4b). Opened from the title bar, the launcher cards, or a programmatic
-   *  hand-off. The retired control center used to sit alongside it; it no longer exists. */
-  workflowEditorOpen: boolean
-  /** When the editor is opened to EDIT A PACK FRAGMENT (agent-packs plan WP4.4 — "Edit fragment in
-   *  Studio"), this carries the pack id. WorkflowEditorView consumes it once on mount: it loads the
-   *  pack's fragment as an editable fragment session (full drag / connect / add-node editing, save →
-   *  updateAgentPackFragment). Null = a normal editor open. */
-  workflowEditorFragmentPackId: string | null
-  /** Open the editor overlay; pass `fragmentPackId` to open a pack's fragment as an editable
-   *  fragment session (WP4.4). */
-  openWorkflowEditor: (opts?: { fragmentPackId?: string | null }) => void
-  /** Called by WorkflowEditorView once it has consumed (loaded) the requested fragment pack id. */
-  consumeWorkflowEditorFragmentPackId: () => void
-  closeWorkflowEditor: () => void
   /** When set, the launcher opens directly to this world's session list (breadcrumb deep-link). */
   launcherWorldId: string | null
   setLauncherWorldId: (id: string | null) => void
@@ -79,11 +64,21 @@ interface UiState {
   /** The full-window Memory Manager (MemoryManagerView) — the SQL-table memory feature's rich
    *  full-screen home (Data / Structure / Maintenance tabs over the active chat's tables). Hosted as a
    *  centered full-window popup like the Duel/Assets popups so it layers above BOTH the reconfigurable
-   *  Workspace and a card's static panel_ui, and above the workflow editor overlay it's launched from.
-   *  Opened from the editor's Memory side sheet; closed by ✕ / Esc / backdrop. */
+   *  Workspace and a card's static panel_ui. Opened from the Memory chip; closed by ✕ / Esc /
+   *  backdrop. */
   memoryManagerOpen: boolean
   openMemoryManager: () => void
   closeMemoryManager: () => void
+  /** The full-window Agent Workspace popup (AgentWorkspace) — Session 10's complete editor: library,
+   *  definition form, prompt/result/tool/history/model/retry sections, plan editor, run detail, and
+   *  Manual Invocation. Hosted as a centered full-window popup like the Duel/Assets/Memory popups so
+   *  it layers above both the reconfigurable Workspace and a card's static panel_ui. The Settings →
+   *  Agents rail panel remains the QUICK-adjustment surface (scan/enable/bind); this is the editor.
+   *  `agentWorkspaceAgentId` deep-links straight to one Agent. */
+  agentWorkspaceOpen: boolean
+  agentWorkspaceAgentId: string | null
+  openAgentWorkspace: (opts?: { agentId?: string | null }) => void
+  closeAgentWorkspace: () => void
   /** Import-time card-script TRUST consent (CardTrustPrompt). When a freshly imported world ships
    *  scripts, this carries the pending decision; the modal records trust/deny into the persisted
    *  grants (+ `decided`) so the run-time hosts never re-prompt. Null = no pending decision. */
@@ -101,19 +96,11 @@ export const useUiStore = create<UiState>((set) => ({
   settingsSection: 'app',
   openSettings: (section) => set({ settingsOpen: true, settingsSection: section ?? 'app' }),
   closeSettings: () => set({ settingsOpen: false }),
-  workflowEditorOpen: false,
-  workflowEditorFragmentPackId: null,
-  openWorkflowEditor: (opts) =>
-    set({
-      workflowEditorOpen: true,
-      workflowEditorFragmentPackId: opts?.fragmentPackId ?? null
-    }),
-  consumeWorkflowEditorFragmentPackId: () => set({ workflowEditorFragmentPackId: null }),
-  closeWorkflowEditor: () =>
-    set({
-      workflowEditorOpen: false,
-      workflowEditorFragmentPackId: null
-    }),
+  agentWorkspaceOpen: false,
+  agentWorkspaceAgentId: null,
+  openAgentWorkspace: (opts) =>
+    set({ agentWorkspaceOpen: true, agentWorkspaceAgentId: opts?.agentId ?? null }),
+  closeAgentWorkspace: () => set({ agentWorkspaceOpen: false, agentWorkspaceAgentId: null }),
   launcherWorldId: null,
   setLauncherWorldId: (launcherWorldId) => set({ launcherWorldId }),
   duelPopupOpen: false,

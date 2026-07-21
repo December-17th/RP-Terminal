@@ -1,4 +1,5 @@
 import { PromptMarker } from '../types/preset'
+import { selectPromptOrder } from '../../shared/agentPresetEnvelope'
 import { parseSPresetConfig, projectSPreset } from '../../shared/spreset'
 
 /**
@@ -33,28 +34,11 @@ const num = (v: unknown): number | undefined =>
   typeof v === 'number' && !Number.isNaN(v) ? v : undefined
 
 /**
- * Select the single `prompt_order` list ST's Prompt Manager would resolve against.
- * `prompt_order` is an array of `{ character_id, order: [{ identifier, enabled }] }`;
- * ST resolves order via the dummy character id 100001, so prefer that record, else
- * the first entry that carries an `order` array, else the first entry outright.
- *
- * Returns that entry's `order` array (possibly empty), or `null` when there is no
- * usable `prompt_order` at all (caller then falls back to the raw `prompts` order).
- *
- * SHARED so `computePresetInventory` (presetService) resolves enablement from the
- * exact same list this parser assembles from — the two MUST NOT drift (a first-seen
- * union across every list reports wrong enabled counts on dual-order-list presets).
+ * Re-exported from `shared/agentPresetEnvelope` so the renderer's bundled-envelope gate resolves
+ * order against the EXACT list this parser assembles from. Moved there, not copied — importers here
+ * are unaffected. See that module for the selection rule and the drift hazard.
  */
-export const selectPromptOrder = (
-  raw: any
-): Array<{ identifier: string; enabled?: boolean }> | null => {
-  if (!Array.isArray(raw?.prompt_order)) return null
-  const block =
-    raw.prompt_order.find((o: any) => o?.character_id === 100001 && Array.isArray(o?.order)) ||
-    raw.prompt_order.find((o: any) => Array.isArray(o?.order)) ||
-    raw.prompt_order[0]
-  return block && Array.isArray(block.order) ? block.order : null
-}
+export { selectPromptOrder }
 
 /**
  * Normalize a parsed SillyTavern chat-completion preset into our Preset shape

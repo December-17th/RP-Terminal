@@ -166,6 +166,20 @@ afterEach(() => {
 })
 
 describe('full-PNG cartridge import → panel serving (end-to-end seam)', () => {
+  it('treats a Yuzu takeover entry as cartridge-backed card code', () => {
+    const card = RPTerminalCardSchema.parse({
+      data: {
+        name: 'Yuzu World',
+        extensions: {
+          rp_terminal: {
+            yuzu: { version: 1, surface: { entry: 'card-code:yuzu/index.html' } }
+          }
+        }
+      }
+    })
+    expect(cardDeclaresCardCode(card)).toBe(true)
+  })
+
   it('a full PNG (appended cartridge) installs the code and the declared surface serves', () => {
     const res = importCharacterFromFile(P, writeFullPng(panelCard(), cartridgeZip()))
     expect(res).not.toBeNull()

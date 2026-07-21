@@ -2,15 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getDefaultSettings } from '../../src/main/services/settingsService'
 import { getDefaultPreset } from '../../src/main/types/preset'
 import type { FloorFile } from '../../src/main/types/chat'
-import { NARRATOR_SPINE_DOC as DEFAULT_GRAPH } from '../fixtures/narratorSpineDoc'
 
-// Proves generate() actually consumes workflowService.resolveEffectiveDoc (rather than a
-// hardcoded 'default' literal + a fixed doc) and threads the resolved id through to
-// buildTurnContext — the wiring Task 5 adds on top of Task 3 (resolver) + Task 4 (ctx arg).
-// (agent-packs plan WP1.3: the single doc-resolution call site moved from resolveWorkflowDoc to
-// resolveEffectiveDoc — the narrator composed with enabled packs. With no packs the effective doc
-// IS the narrator, so this test's behavior is unchanged; only the mocked collaborator name +
-// its return shape { id, doc, warnings } changed.)
+// Post-workflow entry shape (execution-plan M5c-1): `generate()` no longer resolves a workflow doc,
+// builds a node RunContext, broadcasts a run trace, or persists run history — the detached post-turn
+// chain is gone and the turn takes the direct orchestration. The doc-resolution / trace / run-history
+// cases those behaviors pinned were removed here as a deliberate characterization update; the
+// still-valid cases are the ST-faithful serialization + player-preempts-script behaviors `generate()`
+// still owns. The workflow module mocks below are now inert (generate() imports none of them) and are
+// retained only so the file's hoisted stubs load.
 
 const settings = (() => {
   const s = getDefaultSettings()
@@ -62,6 +61,8 @@ vi.mock('../../src/main/services/chatService', () => ({
   getChatLorebookIds: () => null,
   getChatMode: () => 'explore',
   isYuzuMode: () => false,
+  // M5a single-path direct: the table-export stage always runs and reads this (null ⇒ empty).
+  getChatTableTemplateId: () => null,
   getChatWorkflowId: () => null,
   getCachedWorldInfo: () => null,
   setCachedWorldInfo: () => {},
@@ -113,109 +114,30 @@ const defaultStream = async (
   return 'You open the door.'
 }
 
-const { resolveEffectiveDoc, buildTurnContext, notifyWorkflowTrace } = vi.hoisted(() => ({
-  resolveEffectiveDoc: vi.fn(),
-  buildTurnContext: vi.fn(),
-  notifyWorkflowTrace: vi.fn()
-}))
-// setEnabledFragmentsProvider is added to the mock only for module-load completeness: generate() now
-// transitively imports headlessRunService → agentPackService (the WP2.2 turn-boundary hook), and
-// agentPackService calls setEnabledFragmentsProvider at import time. generate() itself never calls it;
-// this stub just keeps the partial workflowService mock loadable. No assertion depends on it.
-vi.mock('../../src/main/services/workflowService', () => ({
-  resolveEffectiveDoc,
-  setEnabledFragmentsProvider: () => {}
-}))
-vi.mock('../../src/main/services/workflowEvents', () => ({ notifyWorkflowTrace }))
-// Run-history persistence (WP2.3): the turn path persists on the SAME detached promise as the trace
-// broadcast. Mock the store (its sqlite table can't load under Node) and assert the annotated record.
-const { appendRun } = vi.hoisted(() => ({ appendRun: vi.fn(() => undefined) }))
-vi.mock('../../src/main/services/runHistoryStore', () => ({ appendRun }))
-vi.mock('../../src/main/services/nodes/turnContext', async (orig) => {
-  const actual = await orig<Record<string, unknown>>()
-  buildTurnContext.mockImplementation((actual as any).buildTurnContext)
-  return { ...actual, buildTurnContext }
-})
-
 import { generate } from '../../src/main/services/generationService'
 
 describe('generate() — resolves the active workflow', () => {
   beforeEach(() => {
     capturedFloor = null
     appendFloorCalled = false
-    resolveEffectiveDoc
-      .mockReset()
-      .mockReturnValue({ id: 'custom-1', doc: DEFAULT_GRAPH, warnings: [] })
-    buildTurnContext.mockClear()
-    appendRun.mockReset().mockReturnValue(undefined)
     streamProviderMock.mockReset().mockImplementation(defaultStream)
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2020-06-01T12:00:00.000Z'))
   })
   afterEach(() => vi.useRealTimers())
 
-  it('calls resolveEffectiveDoc(profileId, chatId) and threads its id into buildTurnContext', async () => {
+  it('runs the turn directly and persists the floor (no doc resolution)', async () => {
     const floor = await generate('profile1', 'chat1', 'open the door')
 
-    expect(resolveEffectiveDoc).toHaveBeenCalledWith('profile1', 'chat1')
-    expect(buildTurnContext).toHaveBeenCalledWith(
-      expect.objectContaining({ workflowId: 'custom-1' })
-    )
     expect(floor).not.toBeNull()
     expect(appendFloorCalled).toBe(true)
     expect(capturedFloor).not.toBeNull()
   })
 
-  it('returns the floor from the doc-declared main-output node, not a hardcoded id', async () => {
-    // A hand-authored graph names its nodes freely — rename every default id and re-point edges.
-    const renamed = structuredClone(DEFAULT_GRAPH)
-    const rename = (id: string): string => `${id}-x`
-    renamed.nodes = renamed.nodes.map((n) => ({ ...n, id: rename(n.id) }))
-    renamed.edges = renamed.edges.map((e) => ({
-      from: { ...e.from, node: rename(e.from.node) },
-      to: { ...e.to, node: rename(e.to.node) }
-    }))
-    resolveEffectiveDoc.mockReturnValue({ id: 'custom-2', doc: renamed, warnings: [] })
-
-    const floor = await generate('profile1', 'chat1', 'open the door')
-    expect(floor).not.toBeNull()
-    expect(appendFloorCalled).toBe(true)
-  })
-
-  it('delivers the floor at the phase boundary — a slow post-phase LLM never blocks the turn', async () => {
-    vi.useRealTimers() // this test coordinates real promises, not timers
-    // Default graph + a post-phase side LLM (not an ancestor of write → post phase).
-    const doc = structuredClone(DEFAULT_GRAPH)
-    doc.nodes.push({ id: 'llm2', type: 'llm.sample', config: { stream: false } })
-    doc.edges.push(
-      { from: { node: 'ctx', port: 'gen' }, to: { node: 'llm2', port: 'gen' } },
-      { from: { node: 'assemble', port: 'sendMessages' }, to: { node: 'llm2', port: 'sendMessages' } },
-      { from: { node: 'assemble', port: 'params' }, to: { node: 'llm2', port: 'params' } }
-    )
-    resolveEffectiveDoc.mockReturnValue({ id: 'custom-3', doc, warnings: [] })
-
-    // Call 1 = the main sample (fast). Call 2 = the side job — held open by the test.
-    let releaseSideJob!: (v: string) => void
-    const sideJob = new Promise<string>((r) => {
-      releaseSideJob = r
-    })
-    streamProviderMock
-      .mockImplementationOnce(defaultStream)
-      .mockImplementationOnce(async () => sideJob)
-    notifyWorkflowTrace.mockClear()
-
-    // The player's floor arrives while the side job is still in flight…
-    const floor = await generate('profile1', 'chat1', 'open the door')
-    expect(floor).not.toBeNull()
-    expect(streamProviderMock).toHaveBeenCalledTimes(2) // side job started…
-    expect(notifyWorkflowTrace).not.toHaveBeenCalled() // …but the run hasn't settled
-
-    // …and the trace lands once the detached post phase completes.
-    releaseSideJob('background job result')
-    await vi.waitFor(() => expect(notifyWorkflowTrace).toHaveBeenCalledTimes(1))
-    const trace = notifyWorkflowTrace.mock.calls[0][0]
-    expect(trace.nodes.find((n: { nodeId: string }) => n.nodeId === 'llm2')?.status).toBe('ran')
-  })
+  // M5c-1 note: the doc-resolution / run-trace / run-history cases were removed as a deliberate
+  // characterization update. `generate()` no longer resolves a workflow doc, builds a node RunContext,
+  // broadcasts a trace, or persists run history — the detached post-turn chain is deleted and memory
+  // maintenance fires from the M3 trigger runtime instead. (M5a already removed two earlier cases.)
 
   it('rejects a SECOND concurrent generate for the same chat (ST-faithful serialization)', async () => {
     vi.useRealTimers() // real promise coordination
@@ -272,45 +194,4 @@ describe('generate() — resolves the active workflow', () => {
     await scriptTurn // the preempted turn settles without throwing
   })
 
-  it('broadcasts the run trace after the turn (spec §13 run/trace panel)', async () => {
-    notifyWorkflowTrace.mockClear()
-    await generate('profile1', 'chat1', 'open the door')
-
-    expect(notifyWorkflowTrace).toHaveBeenCalledTimes(1)
-    const trace = notifyWorkflowTrace.mock.calls[0][0]
-    expect(trace).toMatchObject({ chatId: 'chat1', workflowId: 'custom-1', ok: true })
-    // The default graph's nodes appear with real statuses; the LLM node ran.
-    const llm = trace.nodes.find((n: { nodeType: string }) => n.nodeType === 'llm.sample')
-    expect(llm?.status).toBe('ran')
-    // Output previews never leak the Context bundle.
-    const ctxNode = trace.nodes.find((n: { nodeType: string }) => n.nodeType === 'input.context')
-    expect(ctxNode?.outputs).toBeUndefined()
-  })
-
-  it('persists a run-history record with origin "turn" (WP2.3), packIds [] for a plain narrator', async () => {
-    vi.useRealTimers() // detached persist promise resolves on a microtask, not a timer
-    appendRun.mockClear()
-    await generate('profile1', 'chat1', 'open the door')
-
-    // Persist rides the same DETACHED promise as the trace broadcast — wait for it to settle.
-    await vi.waitFor(() => expect(appendRun).toHaveBeenCalled())
-    const [profileId, record] = appendRun.mock.calls[0] as [string, Record<string, unknown>]
-    expect(profileId).toBe('profile1')
-    expect(record.origin).toBe('turn')
-    // DEFAULT_GRAPH carries no composition meta → no pack nodes → []; no trigger on a turn.
-    expect(record.packIds).toEqual([])
-    expect(record.trigger).toBeUndefined()
-    expect((record.trace as { chatId: string }).chatId).toBe('chat1')
-  })
-
-  it('a run-history persist failure never breaks the turn (WP2.3 fail-safe)', async () => {
-    vi.useRealTimers()
-    appendRun.mockImplementation(() => {
-      throw new Error('db down')
-    })
-    // The floor still returns normally despite the persist throw (caught + logged on the detached path).
-    const floor = await generate('profile1', 'chat1', 'open the door')
-    expect(floor).not.toBeNull()
-    expect(appendFloorCalled).toBe(true)
-  })
 })

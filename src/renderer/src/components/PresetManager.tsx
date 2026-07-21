@@ -115,7 +115,7 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
           type="number"
           step="0.01"
           value={v ?? ''}
-          placeholder={required ? '' : 'unset'}
+          placeholder={required ? '' : t('preset.param.unsetPh')}
           onChange={(e) =>
             setParam(key, e.target.value === '' ? undefined : Number(e.target.value))
           }
@@ -273,9 +273,9 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
 
             <h4 style={{ marginBottom: 8 }}>{t('preset.genParams')}</h4>
             <div className="param-grid">
-              {numField('temperature', 'Temperature', true)}
-              {numField('max_tokens', 'Max Tokens', true)}
-              {OPTIONAL_PARAMS.map((k) => numField(k, k.replace(/_/g, ' ')))}
+              {numField('temperature', t('preset.param.temperature'), true)}
+              {numField('max_tokens', t('preset.param.max_tokens'), true)}
+              {OPTIONAL_PARAMS.map((k) => numField(k, t(`preset.param.${k}`)))}
             </div>
 
             <div
@@ -326,7 +326,7 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                     {markerLabel ? (
                       <span className="marker-badge">{markerLabel}</span>
                     ) : (
-                      <span className="role-badge">{block.role}</span>
+                      <span className="role-badge">{t(`preset.role.${block.role}`)}</span>
                     )}
                     {block.injection_depth != null && (
                       <span className="marker-badge" title={t('preset.injectedAtDepth')}>
@@ -405,9 +405,9 @@ export const PresetManager: React.FC<Props> = ({ profileId }) => {
                   updateBlock(editing, { role: e.target.value as 'system' | 'user' | 'assistant' })
                 }
               >
-                <option value="system">system</option>
-                <option value="user">user</option>
-                <option value="assistant">assistant</option>
+                <option value="system">{t('preset.role.system')}</option>
+                <option value="user">{t('preset.role.user')}</option>
+                <option value="assistant">{t('preset.role.assistant')}</option>
               </select>
 
               <label className="field-label">{t('common.content')}</label>

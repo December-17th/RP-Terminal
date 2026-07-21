@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { resolveEffectiveDoc } from './workflowService'
-import { memoryMaintainConfig } from './nodes/builtin/memoryNodes'
+import { memoryMaintainConfig } from './memory/maintainerCompose'
+import { resolveEffectiveMaintainConfig } from './memory/maintainConfig'
 
 /**
  * Resolve the chat's effective `memory.maintain` node config — the exact maintainer config an automatic
@@ -16,16 +16,12 @@ import { memoryMaintainConfig } from './nodes/builtin/memoryNodes'
 type MemoryMaintainConfig = z.infer<typeof memoryMaintainConfig>
 
 /**
- * Resolve the chat's effective `memory.maintain` node config. Returns null when the resolved doc has no
- * `memory.maintain` node (or its config is malformed).
+ * Resolve the chat's effective maintainer config for the preview. As of M5c-2 this is the built-in
+ * default ⊕ the Memory Maintenance Agent's profile-local override (the workflow doc is gone); `chatId`
+ * is retained for the IPC signature but the config is profile-scoped. Returns null only on a corrupt
+ * override (the default alone is always valid).
  */
 export const resolveMaintainConfig = (
   profileId: string,
-  chatId: string
-): MemoryMaintainConfig | null => {
-  const { doc } = resolveEffectiveDoc(profileId, chatId)
-  const node = doc.nodes.find((n) => n.type === 'memory.maintain')
-  if (!node) return null
-  const parsed = memoryMaintainConfig.safeParse(node.config ?? {})
-  return parsed.success ? parsed.data : null
-}
+  _chatId: string
+): MemoryMaintainConfig | null => resolveEffectiveMaintainConfig(profileId)

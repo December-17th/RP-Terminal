@@ -32,6 +32,8 @@ export const GATED_CHANNELS = [
   // whole-entity deletion (conservative default) + native card import/export dialogs (characterIpc)
   'delete-character',
   'import-character-dialog',
+  'confirm-character-import',
+  'cancel-character-import',
   'export-character-dialog',
   // save (session) export/import native dialogs (saveTransferIpc) — host-path read/write
   'export-save-dialog',
@@ -44,14 +46,12 @@ export const GATED_CHANNELS = [
   // table-template import/export native dialogs (tableMemoryIpc) — host-path read/write
   'table-template-import-dialog',
   'table-template-export-dialog',
-  // import/export native dialogs (presetIpc / regexIpc / lorebookIpc / scriptIpc / workflowIpc)
+  // import/export native dialogs (presetIpc / regexIpc / lorebookIpc / scriptIpc)
   'import-preset-dialog',
   'import-regex-dialog',
   'import-lorebook-dialog',
   'export-lorebook-dialog',
   'import-script-dialog',
-  'import-workflow-dialog',
-  'export-workflow-dialog',
   // preset high-trust opt-in (a card must not unlock its own remote-code preset scripts) (presetIpc)
   'preset-set-high-trust',
   // plugin/grant mutation (a card must not grant itself trust) + plugin install dialogs (pluginIpc)
@@ -60,13 +60,37 @@ export const GATED_CHANNELS = [
   'plugins-set-enabled',
   'plugins-install-dialog',
   'plugins-install-zip-dialog',
-  // agent-pack / module / recipe transfer dialogs (agentPackIpc)
-  'agent-pack-export-dialog',
-  'agent-pack-import-dialog',
-  'module-export-dialog',
-  'module-import-dialog',
-  'recipe-export-dialog',
-  'recipe-import-dialog'
+  // Full Agent Run records contain prompts/evidence; cancellation controls active model work.
+  'agent-runs-list',
+  'agent-run-get',
+  'agent-run-cancel',
+  // Agent library management (agentCatalogIpc). Installing, disabling, deleting, and role-binding
+  // Agents decide what model work the app runs — a trusted card must still never reach these.
+  'agent-catalog-list',
+  'agent-catalog-get',
+  'agent-catalog-sync-folder',
+  'agent-catalog-set-enabled',
+  'agent-catalog-delete',
+  'agent-catalog-bind-role',
+  'agent-catalog-role-bindings',
+  'agent-catalog-create',
+  'agent-catalog-edit',
+  'agent-catalog-restore',
+  'agent-catalog-export',
+  'agent-catalog-inspect-upgrade',
+  'agent-catalog-upgrade',
+  // Profile-local per-Agent invocation config (M5b) — the API preset the triggered dispatch runs an
+  // Agent against decides what model work fires; a trusted card must still never reach these.
+  'agent-catalog-get-invocation-config',
+  'agent-catalog-set-invocation-config',
+  // Manual Invocation from the Agent Workspace: starts real model work on the latest committed floor.
+  'agent-catalog-run',
+  // Inline card Agent transport. Main validates its explicit card scope against the authoritative chat.
+  'card-agent-run',
+  'card-agent-run-plan',
+  'card-agent-cancel',
+  'card-agent-tool-register',
+  'card-agent-tool-unregister'
 ] as const
 
 export type GatedChannel = (typeof GATED_CHANNELS)[number]

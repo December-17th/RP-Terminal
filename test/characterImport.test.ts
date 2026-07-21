@@ -7,7 +7,6 @@ import {
   collectBundledPresets,
   collectBundledLorebooks,
   collectBundledScripts,
-  collectBundledWorkflows,
   collectBundledTableTemplates,
   summarizeCardBundle,
   hasBundle,
@@ -108,17 +107,14 @@ describe('collectBundledScripts', () => {
   })
 })
 
-describe('collectBundledWorkflows / collectBundledTableTemplates', () => {
-  it('reads workflows[] and table_templates[] from rp_terminal, filtering non-objects', () => {
+describe('collectBundledTableTemplates', () => {
+  it('reads table_templates[] from rp_terminal, filtering non-objects', () => {
     const c = card({
       rp_terminal: {
-        workflows: [{ id: 'w', name: 'W', nodes: [], edges: [] }, null, 'nope'],
         table_templates: [{ mate: { type: 'chatSheets', version: 2 } }, 3, null]
       }
     })
-    expect(collectBundledWorkflows(c)).toHaveLength(1)
     expect(collectBundledTableTemplates(c)).toHaveLength(1)
-    expect(collectBundledWorkflows(card({}))).toEqual([])
     expect(collectBundledTableTemplates(card({}))).toEqual([])
   })
 })
@@ -163,7 +159,6 @@ describe('summarizeCardBundle + hasBundle', () => {
       uiWidgets: 0,
       presets: 0,
       lorebooks: 0,
-      workflows: 0,
       tableTemplates: 0
     })
     expect(hasBundle(s)).toBe(false)
@@ -188,15 +183,7 @@ describe('summarizeCardBundle + hasBundle', () => {
     expect(hasBundle(s)).toBe(true)
   })
 
-  it('counts bundled workflows + table templates, and each alone warrants the confirm', () => {
-    const withWf = summarizeCardBundle({
-      card: card({ rp_terminal: { workflows: [{ id: 'w', name: 'W', nodes: [], edges: [] }] } }),
-      lorebook: null
-    } as any)
-    expect(withWf.workflows).toBe(1)
-    expect(withWf.tableTemplates).toBe(0)
-    expect(hasBundle(withWf)).toBe(true)
-
+  it('counts bundled table templates, which alone warrants the confirm', () => {
     const withTt = summarizeCardBundle({
       card: card({
         rp_terminal: { table_templates: [{ mate: { type: 'chatSheets', version: 2 } }] }
@@ -204,12 +191,46 @@ describe('summarizeCardBundle + hasBundle', () => {
       lorebook: null
     } as any)
     expect(withTt.tableTemplates).toBe(1)
-    expect(withTt.workflows).toBe(0)
     expect(hasBundle(withTt)).toBe(true)
   })
 })
 
 describe('parseCardFile (lossless)', () => {
+  it('strictly validates bundled Agents + role recommendations while preserving a legacy workflows[] key losslessly (M5c-2: dropped from the schema, still round-trips as an unknown key)', () => {
+    const file = writeJson({
+      spec: 'chara_card_v3',
+      data: {
+        name: 'Agent World',
+        extensions: {
+          rp_terminal: {
+            agents: [textAgentForCard('Card Narrator')],
+            agent_role_recommendations: { 'classic.narrator': 'Card Narrator' },
+            workflows: [{ id: 'legacy-readable' }]
+          }
+        }
+      }
+    })
+    const parsed = parseCardFile(file)!
+    const rpt = parsed.card.data.extensions.rp_terminal!
+    expect(rpt.agents?.[0].name).toBe('Card Narrator')
+    expect(rpt.agent_role_recommendations).toEqual({ 'classic.narrator': 'Card Narrator' })
+    // Round-trip lossless pin: `workflows` is no longer in RPTerminalExtSchema, but parseCardFile
+    // preserves the entire extensions object, so the unknown key survives at runtime.
+    expect((rpt as Record<string, unknown>).workflows).toEqual([{ id: 'legacy-readable' }])
+  })
+
+  it('rejects malformed bundled Agents instead of silently retaining them through catchall', () => {
+    const file = writeJson({
+      name: 'Broken Agent World',
+      extensions: {
+        rp_terminal: {
+          agents: [{ format: 'rpt-agent', formatVersion: 1, name: 'Broken' }]
+        }
+      }
+    })
+    expect(parseCardFile(file)).toBeNull()
+  })
+
   it('preserves the full extensions object from a wrapped v3 card', () => {
     const file = writeJson({
       spec: 'chara_card_v3',
@@ -249,6 +270,14 @@ describe('parseCardFile (lossless)', () => {
   it('returns null for unreadable input', () => {
     expect(parseCardFile(path.join(os.tmpdir(), 'nope.json'))).toBeNull()
   })
+})
+
+const textAgentForCard = (name: string) => ({
+  format: 'rpt-agent',
+  formatVersion: 1,
+  name,
+  prompt: [{ role: 'system', content: 'Narrate.' }],
+  result: { mode: 'text' }
 })
 
 describe('buildWorldCardExport (S4) — round-trips with import', () => {

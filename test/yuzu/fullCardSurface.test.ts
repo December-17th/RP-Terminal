@@ -45,7 +45,8 @@ describe('Yuzu full-card surface MVP', () => {
           profileId: 'p1',
           chatId: 'c1',
           entry: 'card-code:yuzu/index.html',
-          enableVnMode
+          enableVnMode,
+          onExit: () => {}
         })
       )
     })

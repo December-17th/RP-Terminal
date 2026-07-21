@@ -32,6 +32,16 @@ test/yuzu/p0/results/
 /CONTEXT.md
 /AGENTS.md
 /docs/**
+!/CONTEXT.md
+!/docs/agent-system/
+!/docs/agent-system/**
+!/docs/adr/
+!/docs/adr/000[1-9]-*.md
+!/docs/adr/001[01]-*.md
+!/docs/adr/0020-agent-runtime-replaces-workflow-system.md
+!/docs/adr/0021-agents-assemble-prompts-through-the-existing-engine.md
+!/docs/agentic-mode-design.md
+!/docs/documentation-catalog.md
 !/docs/sdk/
 !/docs/sdk/**
 !/docs/rpt-api.md
@@ -39,3 +49,5 @@ test/yuzu/p0/results/
 !/docs/compat-comparison.md
 !/docs/workflows/
 !/docs/workflows/**
+/.worktrees/
+/test-agents/

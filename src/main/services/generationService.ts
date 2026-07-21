@@ -13,16 +13,11 @@ import { Lorebook } from '../types/character'
 import { applyEvent } from './generation/foldState'
 import { resetWriteLoopGuard } from './generation/varsWrite'
 import { listVarsOps, VarsOpRow } from './varsOpsService'
-import { buildTurnContext } from './nodes/turnContext'
-import { builtinRegistry } from './nodes/builtin'
-import { runWorkflow } from './workflowEngine'
-import { resolveEffectiveDoc } from './workflowService'
-import { summarizeRun, derivePackIds } from '../../shared/workflow/trace'
-import { CompositionMeta } from '../../shared/workflow/compose'
-import { notifyWorkflowTrace } from './workflowEvents'
-import { appendRun } from './runHistoryStore'
-import { evaluateTriggers, evaluateDocTriggers } from './headlessRunService'
-import { randomUUID } from 'crypto'
+import { floorStateForChat } from './agentRuntime/floorState'
+import { RunContext } from './generation/runContext'
+import { runClassicTurnDirect } from './generation/classicTurn'
+import { waitForNextTurnBarriers } from './agentRuntime/InvocationRuntimeService'
+import { ABORTED_BY_SIGNAL, raceAbortSignal } from './generation/abortRace'
 
 // Re-exported so existing consumers/tests (test/generationService.test.ts) keep working; the
 // implementation now lives in generation/assemble.ts (its only real call site).
@@ -70,6 +65,10 @@ export type TurnSource = 'player' | 'script'
 // serialize. Each entry knows its SOURCE (so a player turn can preempt a script turn, never the
 // reverse) and exposes a `settled` promise the preemptor awaits before taking the slot.
 const activeTurns = new Map<string, { source: TurnSource; settled: Promise<void> }>()
+
+/** READ-ONLY: is a MAIN turn in flight for any chat? (Classic Narrator plan, Milestone 4 — one of
+ *  the three sources unioned into `hasActiveBackgroundWork()`.) Synchronous, no mutation exposed. */
+export const hasActiveTurns = (): boolean => activeTurns.size > 0
 
 export const generate = async (
   profileId: string,
@@ -132,112 +131,52 @@ export const generate = async (
   const controller = new AbortController()
   activeControllers.set(chatId, controller)
   try {
-    // Effective doc = the resolved narrator composed with every enabled agent pack (WP1.3). With no
-    // packs enabled this is byte-identical to the narrator (compose's zero-fragments identity).
-    const { id: workflowId, doc, warnings } = resolveEffectiveDoc(profileId, chatId)
-    // Compose warnings are visible, never silent (ADR 0002) — log them via the existing log() sink
-    // (no new UI here; the Agents workspace surfaces them later). Each names the pack + checkpoint.
-    for (const w of warnings)
-      log(
-        'error',
-        `agent-pack compose: pack "${w.packId}" attachment skipped — ${w.reason}${w.checkpoint ? ` at checkpoint "${w.checkpoint}"` : ''}`
-      )
-    // Panel headers for opt-in node output panels (spec D4): node id → its doc panel label.
-    const panelLabels: Record<string, string> = {}
-    for (const n of doc.nodes) if (n.panel?.show && n.panel.label) panelLabels[n.id] = n.panel.label
-    const ctx = buildTurnContext({
+    // blocksNextTurn barrier (execution-plan M3, decision D5 = fail-open, warned). A required Agent that
+    // declared blocksNextTurn holds the NEXT turn until it settles, so the turn's prompt reads the
+    // Agent's committed writes. Awaited HERE — before `buildGenContext`/assembly reads variables, and on
+    // the seam that covers normal generate, regenerate, and swipe (all funnel through generate()).
+    // Policy is fail-open: a failed/cancelled required Agent releases the barrier and the turn proceeds;
+    // a Stop cancels the invocation, which also releases it. The wait is RACED against this turn's own
+    // abort (Finding 3) so a hung blocksNextTurn run can never pin the next turn with no escape — a Stop
+    // during the barrier exits the turn down its normal abort path (return null, no floor).
+    const barrier = await raceAbortSignal(waitForNextTurnBarriers(chatId), controller.signal)
+    if (barrier === ABORTED_BY_SIGNAL) return null
+    if (barrier.status === 'failed') {
+      for (const failure of barrier.failures) {
+        log(
+          'error',
+          `blocksNextTurn Agent failed for chat ${chatId} — proceeding fail-open (D5): ${failure.code}: ${failure.message}`
+        )
+      }
+    }
+
+    // SINGLE-PATH, WORKFLOW-FREE CLASSIC (execution-plan M5a single-path → M5c-1 workflow-free). Every
+    // Classic turn takes the DIRECT orchestration (`runClassicTurnDirect` — eight awaited service calls,
+    // no engine, no doc, no run-trace/run-history/trigger chain). The detached post-turn chain that fed
+    // the deleted workflow trace / run-history / doc-and-pack trigger evaluation is gone; memory
+    // maintenance now fires from the M3 floor-commit trigger runtime, not `evaluateDocTriggers`. The
+    // turn's evidence is the byte-accurate request/response logs + `gen.executionRecord` persisted by the
+    // stages themselves, unchanged.
+    //
+    // Two-signal abort split: the graph signal (`ctx.signal`, aborted only on abort-with-empty via
+    // `abortGraph`) vs the user's Stop (`ctx.modelSignal` = `controller.signal`, aborts the stream). The
+    // panel / node-state hooks are inert no-ops on this path. `runClassicTurnDirect` returns the persisted
+    // floor, `null` on abort, or throws on a fatal stage (surfaced by the IPC caller as a real error).
+    const graphController = new AbortController()
+    const ctx: RunContext = {
       profileId,
       chatId,
       userAction,
       generationType: genType,
-      workflowId,
-      signal: controller.signal,
-      onDelta,
-      panelLabels
-    })
-    // The turn result comes off the doc's main-output node — by ID FROM THE DOC, not a
-    // hardcoded 'write' (a hand-authored graph names its nodes differently). Validation
-    // guarantees exactly one.
-    const mainId = doc.nodes.find((n) => n.isMainOutput)!.id
-
-    // Deliver at the phase boundary (spec §5/D6): the engine fires onResponseReady right after
-    // the main-output node completes, handing over the outputs so far — the floor returns to the
-    // renderer THEN, and the post-response phase (side jobs, compaction) continues detached,
-    // fail-open. A §11-style background llm.sample can no longer hold the player's turn hostage.
-    let earlyFloor: FloorFile | null = null
-    let ready!: () => void
-    const responseReady = new Promise<void>((resolve) => {
-      ready = resolve
-    })
-    ctx.onResponseReady = (outputs) => {
-      earlyFloor = (outputs?.get(mainId)?.floor as FloorFile | undefined) ?? null
-      ready()
+      signal: graphController.signal,
+      modelSignal: controller.signal,
+      abortGraph: () => graphController.abort(),
+      streamMain: (delta) => onDelta(delta),
+      emitPanel: () => {},
+      getNodeState: () => undefined,
+      setNodeState: () => {}
     }
-
-    const startedAt = Date.now()
-    const runPromise = runWorkflow(doc, builtinRegistry, ctx)
-    // Broadcast the run trace when the FULL run settles (post phase included) — ok, aborted,
-    // AND fatal — the trace panel is most useful when a turn just failed (spec §13).
-    void runPromise
-      .then((res) => {
-        const trace = summarizeRun(doc, builtinRegistry.descriptors(), res, {
-          chatId,
-          workflowId,
-          startedAt,
-          durationMs: Date.now() - startedAt
-        })
-        // Live debug panel broadcast — UNCHANGED (WP2.3 does not touch this behavior).
-        notifyWorkflowTrace(trace)
-        // Persist the run to durable history for the phase-3 Runs timeline (WP2.3). SAME detached
-        // promise — never the turn's critical path (the floor already returned via onResponseReady).
-        // origin 'turn'; packIds derived from the effective doc's composition meta (which packs
-        // spliced), no trigger (turns aren't triggered). A persistence failure must NEVER break the
-        // run — swallow it (ADR 0003); the .catch below also covers it.
-        try {
-          const composition = (doc.meta?.composition as CompositionMeta | undefined) ?? undefined
-          appendRun(profileId, {
-            runId: randomUUID(),
-            seq: 0, // assigned by the store
-            origin: 'turn',
-            packIds: derivePackIds(trace, composition),
-            trace
-          })
-        } catch (err) {
-          log('error', `run-history persist (turn) failed — ${(err as Error)?.message || String(err)}`)
-        }
-      })
-      .catch((err) => log('error', `workflow trace failed — ${err?.message || String(err)}`))
-      // Turn-boundary trigger evaluation (agent-packs plan WP2.2; ADR 0004: a turn commit is one of
-      // the two evaluation moments). FIRE-AND-FORGET — chained on the DETACHED trace promise, never
-      // on the turn's critical path (the floor already returned via the onResponseReady race above),
-      // so a turn NEVER waits on headless work (ADR 0003). depth 0: a turn starts a fresh chain.
-      // evaluateTriggers is internally guarded per chat against reentrancy (a turn landing mid-chain
-      // skips — the chain re-evaluates on its own commit).
-      .then(() => evaluateTriggers(profileId, chatId, 'turn', 0))
-      .catch((err) => log('error', `headless trigger eval failed — ${err?.message || String(err)}`))
-      // One-canvas rebuild (WP6.1; ADR 0011): the DOC-DRIVEN trigger evaluation runs at the SAME turn
-      // commit boundary, alongside the pack path (both coexist until WP6.2/6.5). Also fire-and-forget,
-      // guarded per chat, depth-capped. A doc with no trigger.* nodes evaluates nothing.
-      .then(() => evaluateDocTriggers(profileId, chatId, 'turn', 0))
-      .catch((err) => log('error', `headless doc-trigger eval failed — ${err?.message || String(err)}`))
-
-    // Race: on the normal path onResponseReady fires first (before the post phase runs) and the
-    // floor returns immediately. Fatal / aborted / validation-rejected runs never fire it — the
-    // settled result arrives instead and is handled exactly as before.
-    const settled = await Promise.race([
-      responseReady.then(() => null),
-      runPromise as Promise<Awaited<typeof runPromise> | null>
-    ])
-    if (settled) {
-      // A pre-phase node failure (provider error, assembly throw, …) reaches us as a fatal
-      // RESULT, not a rejection — re-surface it (spec §10: unwired + failed ⇒ the turn aborts
-      // with the error surfaced). Without this a hard failure returns null and reads exactly
-      // like a user Stop: no renderer error banner, the action text silently lost.
-      if (settled.error) throw new Error(settled.error.message)
-      if (!settled.ok || settled.aborted) return null
-      return (settled.outputs.get(mainId)?.floor as FloorFile | undefined) ?? null
-    }
-    return earlyFloor
+    return await runClassicTurnDirect(ctx)
   } finally {
     activeTurns.delete(chatId)
     activeControllers.delete(chatId)
@@ -273,11 +212,9 @@ export const getRenderMarkers = (
  * the suffix instead of rewriting the whole transcript. Default 0 = the full from-scratch replay
  * (the Re-evaluate button / parser-change path).
  *
- * INTENDED divergence on manual edits (review 2026-07-15): `setFloorStatData` (the Variables-view
- * debug editor) is deliberately un-journaled, so a FULL replay recomputes over it — that is the
- * editor's documented contract. A SUFFIX replay seeds from stored state and therefore PRESERVES a
- * manual edit made below `fromFloor`: a card mutating floor K must not silently revert the user's
- * debug edits on untouched earlier floors. Pinned in test/reevaluateSuffix.test.ts.
+ * Real session databases delegate replay to FloorState, which includes general floor-scoped
+ * model/card/user/Agent operations and publishes the whole suffix atomically. The legacy fold below
+ * remains only for no-database unit seams.
  */
 export const reevaluateVariables = (
   profileId: string,
@@ -286,6 +223,11 @@ export const reevaluateVariables = (
 ): FloorFile[] => {
   const floors = getAllFloors(profileId, chatId)
   const start = Math.min(Math.max(0, fromFloor), floors.length)
+  const floorState = floorStateForChat(chatId)
+  if (floorState && start < floors.length) {
+    floorState.replay(chatId, floors[start].floor)
+    return getAllFloors(profileId, chatId)
+  }
   const stat: Record<string, unknown> =
     start > 0
       ? JSON.parse(
@@ -345,9 +287,9 @@ export const withStatData = (floor: FloorFile, statData: unknown): FloorFile => 
   variables: { ...floor.variables, stat_data: statData, delta_data: [] }
 })
 
-/** Replace a floor's stat_data wholesale (the Variables-view editor's write path) and persist.
- *  Deliberately NOT journaled to `vars_ops` (unlike card writes): the debug editor's contract is
- *  re-derive-from-scratch, so a subsequent re-evaluate is expected to overwrite it. */
+/** Replace a floor's stat_data wholesale (the Variables-view editor's write path). Real sessions
+ * journal the edit as a user operation and replay later floors atomically; the direct save is the
+ * no-database unit-seam fallback. */
 export const setFloorStatData = (
   profileId: string,
   chatId: string,
@@ -356,6 +298,13 @@ export const setFloorStatData = (
 ): FloorFile | null => {
   const f = getFloor(profileId, chatId, floor)
   if (!f) return null
+  const floorState = floorStateForChat(chatId)
+  if (floorState) {
+    floorState.append(chatId, floor, 'user', [
+      { kind: 'set', path: 'variables.stat_data', value: statData }
+    ])
+    return getFloor(profileId, chatId, floor)
+  }
   const updated = withStatData(f, statData)
   saveFloor(profileId, chatId, updated)
   return updated

@@ -1,8 +1,8 @@
 // Full-window Memory Manager (Memory Manager WP1) — the SQL-table memory feature's rich full-screen
 // home, mirroring the shujuku 数据库 plugin's full-takeover "Visualizer". Hosted as a centered
 // full-window popup like DuelPopup / AssetsPopup so it layers above BOTH the reconfigurable Workspace
-// and a card's static panel_ui layout, and above the workflow editor overlay it is launched from
-// (.modal-overlay sits in the top z-index band; the editor overlay is far below it).
+// and a card's static panel_ui layout (.modal-overlay sits in the top z-index band). Opened from the
+// Memory chip in the TopStrip and from Settings.
 //
 // Layout (mirrors the Visualizer): a LEFT RAIL (template-binding row + a sheet list, one entry per
 // table with a row·column count and a maintenance badge, click to activate) · a MAIN AREA (a topbar +
@@ -30,7 +30,7 @@ import type { TableStatusLike } from '../workspace/tableGridModel'
 import { TableCards, type CellChange } from './TableCards'
 import { RefillWorkbench } from './RefillWorkbench'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { MemoryPreview } from '../workflow/MemoryMaintainPanel'
+import { MemoryPreview } from './MemoryMaintainPanel'
 import { groupOpsByFloor, rewindConsequence, type HistoryOp } from './historyModel'
 import {
   describeStagedOp,
@@ -854,6 +854,168 @@ const NotesTab: React.FC<{ profileId: string; chatId: string }> = ({ profileId, 
 }
 
 /**
+ * Memory Maintenance Agent settings strip (execution-plan M5b2, task B). The re-home moved the OLD
+ * workflow-doc memory-group settings onto the built-in Memory Maintenance Agent; this small strip is
+ * their new home in the app UI: cadence (the Agent's floor-commit trigger), API preset (the Agent's
+ * profile-local invocation config), and the on/off switch (the Agent's enabled flag). Reads/writes go
+ * straight through the agentCatalog IPC — the Agent is identified by its stable built-in source key
+ * ('memory-maintenance'), not its display name. Self-contained local state (no global store coupling)
+ * keeps this off the shared agent-workspace snapshot the app-wide surfaces subscribe to.
+ */
+export function MemoryMaintenanceSettings({
+  profileId
+}: {
+  profileId: string
+}): React.JSX.Element | null {
+  const t = useT()
+  const [agentId, setAgentId] = React.useState<string | null>(null)
+  const [def, setDef] = React.useState<Record<string, unknown> | null>(null)
+  const [enabled, setEnabled] = React.useState(true)
+  const [cadence, setCadence] = React.useState(3)
+  const [presetId, setPresetId] = React.useState('')
+  const [presets, setPresets] = React.useState<{ id: string; name: string }[]>([])
+  const [busy, setBusy] = React.useState(false)
+
+  const load = React.useCallback(async () => {
+    try {
+      const agents = (await api().listAgentCatalog(profileId)) ?? []
+      const agent = (agents as any[]).find(
+        (a) => a.sourceKind === 'builtin' && a.sourceKey === 'memory-maintenance'
+      )
+      if (!agent) {
+        setAgentId(null)
+        return
+      }
+      setAgentId(agent.id)
+      setEnabled(agent.enabled !== false)
+      const [definition, cfg, settings] = await Promise.all([
+        api().getAgentDefinition(profileId, agent.id),
+        api().getAgentInvocationConfig(profileId, agent.id),
+        api().getSettings(profileId)
+      ])
+      setDef((definition as Record<string, unknown>) ?? null)
+      const everyN = (definition as any)?.trigger?.onFloorCommitted?.everyNFloors
+      setCadence(typeof everyN === 'number' && everyN >= 1 ? everyN : 3)
+      setPresetId(typeof cfg?.apiPresetId === 'string' ? cfg.apiPresetId : '')
+      setPresets(((settings?.api_presets ?? []) as { id: string; name: string }[]).map((p) => ({ id: p.id, name: p.name })))
+    } catch {
+      setAgentId(null)
+    }
+  }, [profileId])
+
+  React.useEffect(() => {
+    void load()
+  }, [load])
+
+  const commitEnabled = async (next: boolean): Promise<void> => {
+    if (!agentId) return
+    setEnabled(next)
+    setBusy(true)
+    try {
+      const res = await api().setAgentEnabled(profileId, agentId, next)
+      if (res && res.ok === false) {
+        useToastStore.getState().push(t('memoryManager.agent.saveFailed'))
+        await load()
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const commitPreset = async (next: string): Promise<void> => {
+    if (!agentId) return
+    setPresetId(next)
+    setBusy(true)
+    try {
+      await api().setAgentInvocationConfig(profileId, agentId, next ? { apiPresetId: next } : {})
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Cadence is a definition edit (customization) — persist on blur with an int>=1 clamp, patching the
+  // trigger onto the last-loaded definition so no other field is disturbed.
+  const commitCadence = async (): Promise<void> => {
+    if (!agentId || !def) return
+    const n = Math.max(1, Math.floor(cadence) || 1)
+    setCadence(n)
+    const currentTrigger = (def.trigger as Record<string, unknown> | undefined) ?? {}
+    const currentCommit = (currentTrigger.onFloorCommitted as Record<string, unknown> | undefined) ?? {}
+    if (currentCommit.everyNFloors === n) return
+    setBusy(true)
+    try {
+      const patched = {
+        ...def,
+        trigger: { ...currentTrigger, onFloorCommitted: { ...currentCommit, everyNFloors: n } }
+      }
+      const res = await api().editAgent(profileId, agentId, patched)
+      if (res && res.ok === false) {
+        useToastStore.getState().push(t('memoryManager.agent.saveFailed'))
+        await load()
+      } else {
+        setDef(patched)
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!agentId) return null
+
+  return (
+    <section className="rpt-mm-maint-section rpt-mm-agent-strip">
+      <div className="rpt-mm-agent-strip-head">
+        <strong>{t('memoryManager.agent.title')}</strong>
+        <p className="rpt-mm-maint-intro">{t('memoryManager.agent.intro')}</p>
+      </div>
+      <div className="rpt-mm-agent-strip-row">
+        <label className="rpt-mm-agent-field">
+          <span className="rpt-mm-agent-label">{t('memoryManager.agent.cadence')}</span>
+          <input
+            className="rpt-mm-select rpt-mm-agent-cadence"
+            type="number"
+            min={1}
+            step={1}
+            value={cadence}
+            disabled={busy || !enabled}
+            onChange={(e) => setCadence(Number(e.target.value))}
+            onBlur={() => void commitCadence()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void commitCadence()
+            }}
+          />
+        </label>
+        <label className="rpt-mm-agent-field">
+          <span className="rpt-mm-agent-label">{t('memoryManager.agent.apiPreset')}</span>
+          <select
+            className="rpt-mm-select"
+            value={presetId}
+            disabled={busy || !enabled}
+            onChange={(e) => void commitPreset(e.target.value)}
+          >
+            <option value="">{t('memoryManager.agent.apiPresetDefault')}</option>
+            {presets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="rpt-mm-agent-toggle">
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={busy}
+            onChange={(e) => void commitEnabled(e.target.checked)}
+          />
+          <span>{t('memoryManager.agent.enabled')}</span>
+        </label>
+      </div>
+    </section>
+  )
+}
+
+/**
  * The Maintenance tab (table-refill WS6 Phase A) — hosts the Refill workbench (the ONE manual-fill
  * surface: table multi-select + range + live consequence line + run rail + resume banner;
  * RefillWorkbench.tsx) plus the collapsible composed-prompt preview. The legacy run-now section and
@@ -881,6 +1043,8 @@ const MaintenanceTab: React.FC<{
 
   return (
     <div className="rpt-mm-maint">
+      <MemoryMaintenanceSettings profileId={profileId} />
+
       <RefillWorkbench
         profileId={profileId}
         chatId={chatId}

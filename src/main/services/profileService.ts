@@ -7,17 +7,34 @@ import * as settingsService from './settingsService'
 import { deleteChatFully, chatIdsForProfile } from './chatDeleteService'
 import * as sessionDbService from './sessionDbService'
 import { Profile } from '../types/models'
+import { AgentCatalog } from './agentRuntime/catalog'
+import { seedMemoryMaintenanceSettings } from './memoryMaintenanceSettingsSeed'
 
 export const getProfiles = (): Profile[] => {
-  return getDb()
+  const db = getDb()
+  const profiles = db
     .prepare(
       'SELECT id, name, avatar_path as avatar_path, password_hash, created_at, last_active FROM profiles ORDER BY last_active DESC'
     )
     .all() as Profile[]
+  for (const profile of profiles) {
+    new AgentCatalog(profile.id, db)
+    // One-time re-home of the OLD memory-group settings onto the Memory Maintenance Agent (M5b2). The
+    // DB marker makes this a single cheap SELECT once the profile is seeded — same per-profile ensure
+    // idiom as the AgentCatalog builtin seeding right above it.
+    seedMemoryMaintenanceSettings(profile.id)
+  }
+  return profiles
 }
 
 export const getProfile = (id: string): Profile | undefined => {
-  return getDb().prepare('SELECT * FROM profiles WHERE id = ?').get(id) as Profile | undefined
+  const db = getDb()
+  const profile = db.prepare('SELECT * FROM profiles WHERE id = ?').get(id) as Profile | undefined
+  if (profile) {
+    new AgentCatalog(profile.id, db)
+    seedMemoryMaintenanceSettings(profile.id)
+  }
+  return profile
 }
 
 export const createProfile = (name: string, passwordHash?: string): Profile => {
@@ -31,16 +48,21 @@ export const createProfile = (name: string, passwordHash?: string): Profile => {
   }
   getDb()
     .prepare(
-      'INSERT INTO profiles (id, name, password_hash, created_at, last_active) VALUES (?, ?, ?, ?, ?)'
+      // memory_settings_seeded = 1: a brand-new profile has no OLD doc-group memory settings to inherit
+      // (M5b2 seed), so it is born re-homed — the seed's marker precedent mirrors createChat writing 1.
+      'INSERT INTO profiles (id, name, password_hash, created_at, last_active, memory_settings_seeded) VALUES (?, ?, ?, ?, ?, 1)'
     )
     .run(profile.id, profile.name, profile.password_hash ?? null, now, now)
+  new AgentCatalog(profile.id)
   return profile
 }
 
 export const updateProfileActivity = (id: string): void => {
-  getDb()
+  const db = getDb()
+  db
     .prepare('UPDATE profiles SET last_active = ? WHERE id = ?')
     .run(new Date().toISOString(), id)
+  new AgentCatalog(id, db)
 }
 
 // Per-profile file content to remove on a debug wipe. The API connection config lives in the
@@ -106,6 +128,9 @@ export const wipeProfile = (profileId: string): void => {
   //    no-op for these). The characters delete runs after. Profile + reset settings rows stay.
   for (const chatId of chatIdsForProfile(profileId)) deleteChatFully(profileId, chatId)
   db.prepare('DELETE FROM characters WHERE profile_id = ?').run(profileId)
+  db.prepare('DELETE FROM agent_role_bindings WHERE profile_id = ?').run(profileId)
+  db.prepare('DELETE FROM agent_catalog WHERE profile_id = ?').run(profileId)
+  new AgentCatalog(profileId, db)
 
   // 3. File-based per-profile content (includes the whole `chats/` per-session store).
   wipeProfileFiles(profileId)

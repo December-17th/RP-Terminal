@@ -103,7 +103,7 @@ through the host bridge as RFC-6902 JSON Patch.
 - `Mvu.setMvuVariable(path, value)` · `insertOrAssignVariables(vars, option)` · `updateVariablesWith(fn)` — ✅ (→ selected scope; default `stat_data` uses `applyVariableOps` JSONPatch → persisted)
 - `Mvu.replaceMvuData(d)` / `replaceVariables(vars)` — ✅
 - `insertVariables(vars)` — ✅ insert-if-**absent** (never overwrites an existing key); the no-overwrite sibling of `insertOrAssignVariables`, used to seed initial MVU vars.
-- `injectPrompts(prompts, {once})` / `uninjectPrompts(ids)` — 🟡 **safe no-op** (returns the `{ uninject }` handle). The prompt is assembled in the MAIN process, so a renderer-side injection doesn't reach the build yet; cards that call these per-turn degrade gracefully instead of throwing. Depth-positioned injection into the build is a future bridge. A separate main-side **pre-dispatch mutation seam** (issue 19 / ADR 0017 — the `CHAT_COMPLETION_PROMPT_READY` analogue) rewrites the FINAL message array at the 18e dispatch boundary; every real change is delta-recorded as an `opaque` execution-record entry (script id + hook + before/after hashes, never a raw swap). Wiring a live high-trust card's late-hook into it across the realm boundary is F2/F3-guarded (docs-silent event name + payload mutability). See `src/main/services/nodes/dispatchHooks.ts` + `promptArtifact.applyDispatchTransforms`.
+- `injectPrompts(prompts, {once})` / `uninjectPrompts(ids)` — 🟡 **safe no-op** (returns the `{ uninject }` handle). The prompt is assembled in the MAIN process, so a renderer-side injection doesn't reach the build yet; cards that call these per-turn degrade gracefully instead of throwing. Depth-positioned injection into the build is a future bridge. A separate main-side **pre-dispatch mutation seam** (issue 19 / ADR 0017 — the `CHAT_COMPLETION_PROMPT_READY` analogue) rewrites the FINAL message array at the 18e dispatch boundary; every real change is delta-recorded as an `opaque` execution-record entry (script id + hook + before/after hashes, never a raw swap). Wiring a live high-trust card's late-hook into it across the realm boundary is F2/F3-guarded (docs-silent event name + payload mutability). See `src/main/services/generation/dispatchHooks.ts` + `promptArtifact.applyDispatchTransforms`.
 - **Script scope** — `getVariables({type:'script'})` / `insertOrAssignVariables(obj, {type:'script'})` / `insertVariables(obj, {type:'script'})` / `updateVariablesWith(fn, {type:'script'})` — ✅ (sync read) a card-owned KV store (owner `card:<id>`), **per-card across all its chats**, not in-prompt. Backed by `pluginStorageService` (`profiles/<profileId>/plugin-storage/card:<id>.json`).
 - **Chat scope** — `getVariables({type:'chat'})` / `insertOrAssignVariables(obj, {type:'chat'})` / `insertVariables(obj, {type:'chat'})` / `updateVariablesWith(fn, {type:'chat'})` / `replaceVariables(obj, {type:'chat'})` — ✅ (sync read) a per-chat, card-scoped KV store, **general scope for session UI/state** (e.g., adaptive-regex selections and the 命定之诗 party panel). Not in-prompt. **Namespace your keys** (e.g. `party.members`) to avoid collisions across multiple widgets in the same chat. **NOT `stat_data`** — use this for UI state, not story variables. Backed by `chatCardVarsService` (`profiles/<profileId>/chat-card-vars.json`), exposed via `Host.getChatVars`/`setChatVars`.
 - **Global scope** — `getVariables({type:'global'})` / `insertOrAssignVariables(obj, {type:'global'})` / `insertVariables(obj, {type:'global'})` / `replaceVariables(obj, {type:'global'})` / `updateVariablesWith(fn, {type:'global'})` — ✅ (sync read) a **per-profile** KV bag shared across every chat and character; survives restarts, not in-prompt. Use it for app-wide UI prefs a card persists everywhere (e.g. the 艾莉亚 beautification's UI settings under `dialog_beauty.ui`). **Namespace your keys.** Backed by the per-profile globals (`profiles/<profileId>/template-globals.json`, `templateService`), exposed via `Host.getGlobalVarsSync`/`setGlobalVars`. Editable in the Variables panel's **全局变量 / Global variables** tab. (Per-key STScript access — `triggerSlash('/setglobalvar key val')` / `'/getglobalvar key'` — hits the SAME store via `Host.getGlobalVars`/`setGlobalVar`.)
@@ -152,6 +152,43 @@ through the host bridge as RFC-6902 JSON Patch.
 - `triggerSlash` (STScript) — ✅ a subset (pipes/closures/`{{pipe}}`/macros, chat + global vars,
   `/gen`·`/genraw`·`/trigger`·`/send`) via the shared [`stscript`](../src/shared/stscript.ts) interpreter.
   `while`/loops + the long-tail command set — ⬜.
+
+### Card Agent scheduling - implemented but HELD, not a shipped contract (RPT-only)
+
+> **Do not treat this as an available card API yet.** The `rpt.agents.*` surface exists in code at both
+> transports (`src/shared/thRuntime/agentHostFacet.ts`, `AgentHostSession.ts`, `agentRunIpc.ts`,
+> `wcvIpc.ts`, `CardToolRegistry.ts`), but the owner
+> decision is to hold it dormant (`docs/agent-system/execution-plan-2026-07-19.md` §3 D2) — it is not
+> released and a card must not depend on it. The behaviour below documents the code surface for when it
+> ships; until then the only way an installed Agent runs is a manual **Run now** in the Agent Workspace or
+> a folder scan. The signatures are stable but unshipped.
+
+- `await rpt.agents.run(name, options?)` invokes one enabled Agent. `options.input` is direct JSON; `options.floor` must name an existing committed floor and otherwise defaults to the latest committed floor. An `AbortSignal` cancels the invocation.
+- `await rpt.agents.runPlan(plan, { signal }?)` runs the validated top-level sequence / flat-parallel plan form. The same Agent cannot appear twice on one floor.
+- `rpt.agents.registerTool(binding, handler)` registers a card-owned implementation for one declared Agent tool and returns an unregister function. Calls are correlated and abortable; arguments and results are size-bounded; staged variable operations commit only with a valid Agent result. Missing, incompatible, duplicate, or unmounted implementations fail before provider dispatch.
+- `rpt.agents.onFloorCommitted(handler)` supplies `{ floor, variables, previousVariables }` once for a newly committed floor. Result incorporation and Forward Replay emit state refreshes, never this scheduling event.
+- Scope is authoritative. Inline main IPC validates profile/chat/card against the chat; WCV main IPC derives it from the mounted sender. Caller-supplied scope cannot redirect a run or tool callback.
+- Scheduling belongs to card JavaScript; RP Terminal has no variable/time scheduler. Repeated same-Agent calls for one floor coalesce to the existing invocation/result.
+
+```js
+const stop = rpt.agents.onFloorCommitted(async ({ floor, variables, previousVariables }) => {
+  const month = variables.stat_data?.world?.month
+  if (month === previousVariables.stat_data?.world?.month) return
+  await Promise.all([
+    rpt.agents.run('Monthly Property', { floor, input: { month } }),
+    rpt.agents.run('World Progression', { floor, input: { month } })
+  ])
+})
+```
+
+The inline and isolated WCV transports share one Agent Host Facet implementation
+(`src/shared/thRuntime/agentHostFacet.ts`) and the public runtime shape
+(`src/shared/thRuntime/index.ts`). Main dispatch, completion authority, and lifecycle share one Agent
+Host Session (`src/main/services/agentRuntime/AgentHostSession.ts`); the IPC files retain only scope
+resolution and wire delivery. Shared semantic coverage lives in `test/agentHostFacet.test.ts` and
+`test/agentRuntime/agentHostSession.test.ts`, with narrow transport coverage in
+`test/inlineAgentHost.test.ts`, `test/wcvAgentHost.test.ts`, `test/agentRuntime/agentRunIpc.test.ts`,
+and `test/wcvIpcCtxBinding.test.ts` (ADR 0022).
 
 ### Regex — ✅
 

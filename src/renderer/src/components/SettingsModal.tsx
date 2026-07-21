@@ -9,6 +9,7 @@ import { PersonaPanel } from './PersonaPanel'
 import { PresetManager } from './PresetManager'
 import { LorebookManager } from './LorebookManager'
 import { WorldPanel } from './WorldPanel'
+import { AgentsPanel } from './AgentsPanel'
 import { useUiStore, type SettingsSection } from '../stores/uiStore'
 import { useCharacterStore } from '../stores/characterStore'
 import { useChatStore } from '../stores/chatStore'
@@ -17,8 +18,8 @@ import { useT } from '../i18n'
 /**
  * The single Settings popup — the app's config hub. Since the tab nav was retired (panels are now
  * game + debug only), every config/authoring surface lives here: App prefs + Connection, the active
- * world's editable pieces (Preset / Lorebook / Persona / Assets / Regex / Scripts), and the Workflow
- * editor launcher. A VS Code-style category rail (grouped App / World / Automation) on the LEFT,
+ * world's editable pieces (Preset / Lorebook / Persona / Assets / Regex / Scripts). A VS Code-style
+ * category rail (grouped App / World / Automation) on the LEFT,
  * the selected section on the RIGHT. Opened via useUiStore.openSettings(section) — the TopStrip
  * dropdowns deep-link straight to a section; the launcher gear opens it at App.
  */
@@ -26,7 +27,6 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
   const open = useUiStore((s) => s.settingsOpen)
   const close = useUiStore((s) => s.closeSettings)
   const initialSection = useUiStore((s) => s.settingsSection)
-  const openWorkflowEditor = useUiStore((s) => s.openWorkflowEditor)
   const openAssetsPopup = useUiStore((s) => s.openAssetsPopup)
   const openMemoryManager = useUiStore((s) => s.openMemoryManager)
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
@@ -68,6 +68,8 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
         )
       case 'connection':
         return <ApiSettingsPanel profileId={profileId} />
+      case 'agents':
+        return <AgentsPanel profileId={profileId} />
       case 'worlds':
         return <WorldPanel profileId={profileId} onSelectPanel={() => {}} />
       case 'preset':
@@ -119,25 +121,6 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
             activeChatId={activeChatId ?? null}
             card={activeCharacter?.card ?? null}
           />
-        )
-      case 'workflow':
-        return (
-          <div className="settings-launch">
-            <div className="settings-launch-icon" aria-hidden>
-              ⧉
-            </div>
-            <h3 className="settings-launch-title">{t('settings.workflowTitle')}</h3>
-            <p className="settings-launch-body">{t('settings.workflowBody')}</p>
-            <button
-              className="btn-accent"
-              onClick={() => {
-                close()
-                openWorkflowEditor()
-              }}
-            >
-              {t('settings.workflowOpen')}
-            </button>
-          </div>
         )
       case 'memory':
         return (
@@ -192,9 +175,9 @@ export function SettingsModal({ profileId }: { profileId: string }): React.React
           {railItem('regex', t('settings.regex'))}
           {railItem('scripts', t('settings.scripts'))}
           <div className="settings-rail-group">{t('settings.groupAutomation')}</div>
-          {railItem('workflow', t('settings.workflow'))}
           {railItem('memory', t('settings.memory'))}
           {railItem('variables', t('settings.variables'))}
+          {railItem('agents', t('settings.agents'))}
         </div>
         <div className="settings-content">
           {section === 'app' ? content() : <div className="world-settings">{content()}</div>}

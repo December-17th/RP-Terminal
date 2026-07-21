@@ -14,8 +14,17 @@
 // capability = a spec row + this stays untouched (ADR 0013).
 import { ipcRenderer } from 'electron'
 import type { Host, CardCtx } from '../shared/thRuntime/types'
+import {
+  createAgentHostFacet,
+  type AgentToolCompletion,
+  type AgentToolRequest
+} from '../shared/thRuntime/agentHostFacet'
 import type { VarsOrigin } from '../shared/thRuntime/types'
-import { WCV_CHANNEL_SPEC, WCV_RESIDUE_CHANNELS } from '../shared/thRuntime/wcvChannelSpec'
+import {
+  WCV_AGENT_CHANNELS,
+  WCV_CHANNEL_SPEC,
+  WCV_RESIDUE_CHANNELS
+} from '../shared/thRuntime/wcvChannelSpec'
 import type { WcvSpecMember } from '../shared/thRuntime/wcvChannelSpec'
 
 type Deps = {
@@ -54,11 +63,57 @@ export function createWcvHost(deps: Deps): Host {
     generated[member] = buildMember(WCV_CHANNEL_SPEC[member])
   }
 
+  const agentHost = createAgentHostFacet<void>({
+    invocation: {
+      run: ({ kind: _kind, ...command }) => ipcRenderer.invoke(WCV_AGENT_CHANNELS.run, command),
+      runPlan: ({ kind: _kind, ...command }) =>
+        ipcRenderer.invoke(WCV_AGENT_CHANNELS.runPlan, command),
+      cancel: (requestId) => ipcRenderer.invoke(WCV_AGENT_CHANNELS.cancel, requestId)
+    },
+    tools: {
+      register: (binding) =>
+        ipcRenderer.invoke(WCV_AGENT_CHANNELS.registerTool, binding).then(() => undefined),
+      unregister: (name) => ipcRenderer.invoke(WCV_AGENT_CHANNELS.unregisterTool, name),
+      complete: (_lease, completion: AgentToolCompletion) => {
+        const { result: _result, ...errorCompletion } = completion
+        ipcRenderer.send(
+          WCV_AGENT_CHANNELS.toolResult,
+          completion.error ? errorCompletion : completion
+        )
+      },
+      onRequest: (handler: (request: AgentToolRequest) => void) => {
+        const listener = (_event: unknown, request: AgentToolRequest): void => handler(request)
+        ipcRenderer.on('wcv-agent-tool-request', listener)
+        return () => ipcRenderer.removeListener('wcv-agent-tool-request', listener)
+      },
+      onAbort: (handler: (requestId: string) => void) => {
+        const listener = (_event: unknown, request: { requestId?: unknown }): void => {
+          if (typeof request?.requestId === 'string') handler(request.requestId)
+        }
+        ipcRenderer.on('wcv-agent-tool-abort', listener)
+        return () => ipcRenderer.removeListener('wcv-agent-tool-abort', listener)
+      }
+    },
+    floors: {
+      subscribe: (handler) => {
+        const listener = (_event: unknown, event: Parameters<typeof handler>[0]): void =>
+          handler(event)
+        void ipcRenderer.invoke(WCV_AGENT_CHANNELS.floorSubscribe)
+        ipcRenderer.on(WCV_AGENT_CHANNELS.floorCommitted, listener)
+        return () => {
+          ipcRenderer.removeListener(WCV_AGENT_CHANNELS.floorCommitted, listener)
+          void ipcRenderer.invoke(WCV_AGENT_CHANNELS.floorUnsubscribe)
+        }
+      }
+    }
+  })
+
   const wbNames = (): any => ipcRenderer.sendSync(WCV_RESIDUE_CHANNELS.worldbookNames)
 
   // Hand-written residue (same bodies as before) spread over the generated members.
   return {
     ...(generated as unknown as Host),
+    ...agentHost,
     ctx: deps.ctx,
     // Worldbook getters normalize main's response shape (not a static fallback ⇒ residue).
     worldbookNames: () => {

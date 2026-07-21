@@ -150,7 +150,17 @@ export const VariablesView: React.FC<{ profileId: string }> = ({ profileId }) =>
           ))}
         {tab === 'kv' && <JsonEditor value={cardKv ?? {}} onChange={onKvChange} />}
         {tab === 'global' && <JsonEditor value={globals ?? {}} onChange={onGlobalChange} />}
-        {tab === 'floor' && <JsonEditor value={latest ?? {}} readOnly />}
+        {tab === 'floor' && (
+          <>
+            {/* Agent Result Slots live at variables.__rpt.agent_results and are runtime-owned: the
+                runtime writes them on Result Incorporation and floor deletion rewinds them, so they
+                are shown but never editable here (Session 10). */}
+            <div style={{ opacity: 0.6, fontSize: 11, marginBottom: 4 }}>
+              <em>{t('variables.rptReadOnly')}</em>
+            </div>
+            <JsonEditor value={latest ?? {}} readOnly />
+          </>
+        )}
       </div>
     </div>
   )

@@ -12,7 +12,7 @@ import {
   callModelResilient,
   validateOutput
 } from '../../src/main/services/generation/resilientCall'
-import { NodeRunFailure } from '../../src/main/services/nodes/types'
+import { NodeRunFailure } from '../../src/main/services/generation/runContext'
 import type { GenContext } from '../../src/main/services/generation/types'
 
 const gen = {

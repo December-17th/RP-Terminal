@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractTagAllWithAttrs } from '../src/main/services/nodes/builtin/parseNodes'
+import { extractTagAllWithAttrs } from '../src/shared/memory/tagExtract'
 
 // PLOT-RECALL WP6 — the pure attribute-aware tag extractor beside extractTagAll. Powers the
 // notes.maintain `<MemoryNote section= mode=>` parse; kept pure so it is unit-testable in isolation.

@@ -1,15 +1,16 @@
 import { IpcMain } from 'electron'
 import * as notesMemoryService from '../services/notesMemoryService'
 import { buildGenContext } from '../services/generation/genContext'
-import { chatTemplate } from '../services/nodes/builtin/memoryCore'
+import { chatTemplate } from '../services/memory/memoryCore'
 import { readAllTables } from '../services/tableDbService'
 import { renderCatalog } from '../services/tableExportService'
 import { parseNotesSections } from '../../shared/memory/notesGrep'
-import { recallConfig, composeRecallMessages } from '../services/nodes/builtin/recallNodes'
 import {
+  recallConfig,
+  composeRecallMessages,
   notesMaintainConfig,
   composeNotesMaintainerMessages
-} from '../services/nodes/builtin/notesNodes'
+} from '../services/memory/plotRecallCompose'
 
 /** A clearly-preview stand-in for the pending player action: at real run time `memory.recall` fires
  *  PRE-turn with the player's input in the `{{action}}` slot, but a preview has no pending action, so

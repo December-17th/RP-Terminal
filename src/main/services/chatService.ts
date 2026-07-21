@@ -9,6 +9,7 @@ import { buildInitialStatData, mergeDefaults } from './mvuSchema'
 import { extractMvuSchema, schemaDefaults } from './mvuZod'
 import {
   saveFloor,
+  getFloor,
   deleteFloorAndSubsequent,
   updateFloorFields,
   refreshChatSummary
@@ -18,8 +19,10 @@ import { getTableTemplateById } from './tableTemplateService'
 import * as tableDbService from './tableDbService'
 import * as tableOpsService from './tableOpsService'
 import * as tableProgressService from './tableProgressService'
-import * as varsOpsService from './varsOpsService'
 import { deleteChatFully } from './chatDeleteService'
+import { floorStateForChat } from './agentRuntime/floorState'
+import { emitCardFloorCommitted } from './agentRuntime/cardAgentEvents'
+import type { JsonObject } from '../../shared/agentRuntime'
 
 interface ChatRow {
   id: string
@@ -357,6 +360,7 @@ export const createChat = async (profileId: string, characterId: string): Promis
       events: [],
       variables: Object.keys(statData).length ? { stat_data: statData } : {}
     }
+    floorStateForChat(id)?.setBaseline(id, greeting.variables)
     appendFloor(profileId, id, greeting)
   }
 
@@ -365,7 +369,15 @@ export const createChat = async (profileId: string, characterId: string): Promis
 
 /** Persist a floor and bump the chat's updated_at. floor_count is derived, not stored. */
 export const appendFloor = (profileId: string, chatId: string, floor: FloorFile): void => {
-  saveFloor(profileId, chatId, floor)
+  const previousVariables = getFloor(profileId, chatId, floor.floor - 1)?.variables ?? {}
+  saveFloor(profileId, chatId, floor, (isNewFloor) => {
+    if (!isNewFloor) return
+    emitCardFloorCommitted(profileId, chatId, {
+      floor: floor.floor,
+      variables: structuredClone(floor.variables ?? {}) as JsonObject,
+      previousVariables: structuredClone(previousVariables) as JsonObject
+    })
+  })
   touch(chatId)
 }
 
@@ -374,9 +386,8 @@ export const appendFloor = (profileId: string, chatId: string, floor: FloorFile)
  *  (issue 03 rewind hook). Cheap no-op when no template is assigned. */
 export const truncateFloors = (profileId: string, chatId: string, fromFloor: number): void => {
   deleteFloorAndSubsequent(profileId, chatId, fromFloor)
-  // Roll back journaled CARD variable writes at/after the cut (manual-pass issue 02). Unconditional
-  // — vars ops exist regardless of whether table memory is on for this chat.
-  varsOpsService.deleteVarsOpsFrom(chatId, fromFloor)
+  // FloorState already removed general and legacy variable operations in the same transaction as
+  // the floors. Table-memory journals remain a separate store and rebuild boundary.
   const templateId = getChatTableTemplateId(profileId, chatId)
   if (templateId) {
     tableOpsService.deleteOpsFrom(profileId, chatId, fromFloor)

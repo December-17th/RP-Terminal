@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AgentDefinitionSchema } from '../../shared/agentRuntime'
 
 /**
  * A single World Info / Lorebook entry. Mirrors the ST `character_book` entry
@@ -194,12 +195,20 @@ export const RPTerminalExtSchema = z
       .object({
         version: z.number().int().positive(),
         opening: z.string().optional(),
-        surface: z
-          .object({
-            entry: z.string().min(1),
-            /** Presentation and generation are orthogonal. Opt in only when this UI consumes YSS. */
-            enable_vn_mode: z.boolean().optional()
-          })
+          surface: z
+            .object({
+              /** MUST be a card-code path (`card-code:...`) served from the card's own embedded code
+               * dir — never a bare/remote URL. Without this a card could auto-load an arbitrary remote
+               * document full-screen on session open. Matches wcvManager's CODE_ENTRY_PREFIX. */
+              entry: z
+                .string()
+                .startsWith('card-code:', 'Yuzu surface entry must use the card-code: scheme')
+                .refine((s) => s.length > 'card-code:'.length, {
+                  message: 'Yuzu surface entry needs a path after card-code:'
+                }),
+              /** Presentation and generation are orthogonal. Opt in only when this UI consumes YSS. */
+              enable_vn_mode: z.boolean().optional()
+            })
           .catchall(z.any())
           .optional()
       })
@@ -215,10 +224,20 @@ export const RPTerminalExtSchema = z
     regex: z.array(z.any()).optional(),
     presets: z.array(z.any()).optional(),
     lorebooks: z.array(z.any()).optional(),
-    /** Bundled generation/memory workflow docs (node-graphs). Loose element shape — imported +
-     *  validated against the builtin node registry on install; the first successfully-imported one
-     *  becomes this world's default workflow. */
-    workflows: z.array(z.any()).optional(),
+    // Legacy `workflows: []` (bundled node-graph docs) was dropped from the active surface in
+    // execution-plan M5c-2 (workflow system deleted). A card that still carries the key round-trips
+    // losslessly — `parseCardFile` preserves the entire `extensions` object — it is simply no longer
+    // read or imported.
+    /** Declarative Agent Runtime definitions bundled by this card. Unlike legacy workflows these are
+     * strict at the card import boundary and normalize through AgentContracts. */
+    agents: z.array(AgentDefinitionSchema).optional(),
+    /** A card recommendation only; the player's profile role binding remains authoritative. */
+    agent_role_recommendations: z
+      .strictObject({
+        'classic.narrator': z.string().trim().min(1).optional(),
+        'yuzu.sceneDirector': z.string().trim().min(1).optional()
+      })
+      .optional(),
     /** Bundled memory-table templates (chatSheets v2, or our native TableTemplate). Dropped into the
      *  profile's template library on install (never auto-assigned — assignment is destructive). */
     table_templates: z.array(z.any()).optional(),

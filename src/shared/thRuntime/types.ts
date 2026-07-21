@@ -8,7 +8,8 @@ import type {
   SurfaceHost,
   AssetHost,
   GenHost,
-  EngineHost
+  EngineHost,
+  AgentHost
 } from './hostFacets'
 
 // Re-export the facets so `import { VarsHost, … } from '.../types'` and `.../hostFacets` both work.
@@ -20,7 +21,8 @@ export type {
   SurfaceHost,
   AssetHost,
   GenHost,
-  EngineHost
+  EngineHost,
+  AgentHost
 } from './hostFacets'
 
 // Re-export the primitive aliases (now defined in the leaf `hostPrimitives.ts`, so `hostFacets.ts`
@@ -52,7 +54,8 @@ export type Host = { ctx: CardCtx } & VarsHost &
   SurfaceHost &
   AssetHost &
   GenHost &
-  EngineHost
+  EngineHost &
+  AgentHost
 
 /** What createThRuntime returns — spread onto the card window by each transport. */
 export type ThGlobals = Record<string, any>

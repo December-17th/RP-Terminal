@@ -4,6 +4,7 @@ import Database from 'better-sqlite3'
 import { getAppDir, ensureDir } from './storageService'
 import { getDb } from './db'
 import { log } from './logService'
+import { FLOOR_OPERATIONS_SCHEMA } from './agentRuntime/floorState/FloorState'
 
 /**
  * Per-CHAT session SQLite — the "decentralized save" store (decentralize-save-system plan §B2).
@@ -90,6 +91,9 @@ CREATE TABLE IF NOT EXISTS vars_ops (
 );
 CREATE INDEX IF NOT EXISTS idx_vars_ops_chat_floor ON vars_ops(chat_id, floor);
 
+-- General floor-owned state journal. Legacy vars_ops remains intact and is imported lazily.
+${FLOOR_OPERATIONS_SCHEMA}
+
 CREATE TABLE IF NOT EXISTS table_progress (
   chat_id TEXT NOT NULL,
   sql_name TEXT NOT NULL,
@@ -126,6 +130,20 @@ CREATE TABLE IF NOT EXISTS execution_records (
   record TEXT NOT NULL,
   PRIMARY KEY (chat_id, floor)
 );
+
+-- Immutable, floor-owned Agent invocation evidence. The JSON record is a complete snapshot; the
+-- projected columns make lifecycle reads/deletion cheap without coupling callers to its internals.
+CREATE TABLE IF NOT EXISTS agent_runs (
+  invocation_id TEXT PRIMARY KEY,
+  chat_id TEXT NOT NULL,
+  floor INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  record TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_chat_floor ON agent_runs(chat_id, floor);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_chat_started ON agent_runs(chat_id, started_at);
 `
 
 // ---- pure helpers (unit-tested) --------------------------------------------------------------

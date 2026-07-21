@@ -54,6 +54,12 @@ const RAW =
 let capturedSend: unknown = null
 let capturedParams: any = null
 let capturedFloor: FloorFile | null = null
+let capturedSavedFloor: FloorFile | null = null
+let capturedTruncations: number[] = []
+
+const generationCalls = vi.hoisted(
+  () => [] as Array<{ userAction: string | undefined; generationType: string | undefined }>
+)
 
 // Project Yuzu WP-S1: a hoisted toggle so the SAME mocked module serves both the classic baseline
 // (off → byte-identical) and the VN-mode case (on → overlay + raised ceiling). Off by default.
@@ -88,13 +94,19 @@ vi.mock('../../src/main/services/chatService', () => ({
   getChatLorebookIds: () => null,
   getChatMode: () => 'explore',
   isYuzuMode: () => yuzuFlag.on,
+  // M5a: generate() is now single-path direct, which always runs the table-export stage — it reads
+  // getChatTableTemplateId (null ⇒ no table memory, empty projection). NARRATOR_SPINE_DOC has no
+  // table.export node, so the pre-M5a workflow path never reached this; the direct path always does.
+  getChatTableTemplateId: () => null,
   getChatWorkflowId: () => null,
   getCachedWorldInfo: () => null,
   setCachedWorldInfo: () => {},
   appendFloor: (_p: string, _c: string, f: FloorFile) => {
     capturedFloor = f
   },
-  truncateFloors: () => {}
+  truncateFloors: (_p: string, _c: string, fromFloor: number) => {
+    capturedTruncations.push(fromFloor)
+  }
 }))
 vi.mock('../../src/main/services/characterService', () => ({ getCharacter: () => card }))
 vi.mock('../../src/main/services/settingsService', async (orig) => ({
@@ -114,8 +126,27 @@ vi.mock('../../src/main/services/floorService', () => ({
   getFloor: () => floors[floors.length - 1],
   getFloorRequest: () => undefined,
   getFloorCount: () => floors.length,
-  saveFloor: () => {}
+  saveFloor: (_p: string, _c: string, f: FloorFile) => {
+    capturedSavedFloor = f
+  }
 }))
+// M5c-1: generate() no longer builds a node RunContext — the direct path threads userAction +
+// generationType straight into `buildGenContext`. Capture the forwarded pair there instead.
+vi.mock('../../src/main/services/generation/genContext', async (orig) => {
+  const actual = await orig<typeof import('../../src/main/services/generation/genContext')>()
+  return {
+    ...actual,
+    buildGenContext: (
+      profileId: string,
+      chatId: string,
+      userAction: string,
+      generationType?: string
+    ) => {
+      generationCalls.push({ userAction, generationType })
+      return actual.buildGenContext(profileId, chatId, userAction, generationType)
+    }
+  }
+})
 vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [], getWorldInfoRules: () => [] }))
 vi.mock('../../src/main/services/templateService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
@@ -123,18 +154,8 @@ vi.mock('../../src/main/services/templateService', async (orig) => ({
   saveGlobals: () => {}
 }))
 vi.mock('../../src/main/services/logService', () => ({ log: () => {} }))
-// Pin resolution to the plain narrator spine fixture (the parity baseline pins narrator behavior). The
-// builtin fallback is now the SQL-table memory doc, whose in-turn recall nodes (trim/export) reach for
-// chatService.getChatTableTemplateId — not mocked here — and whose memory group would fire on the
-// detached post-turn trigger pass. resolveEffectiveDoc returns the narrator directly (no packs here).
-vi.mock('../../src/main/services/workflowService', async () => {
-  const { NARRATOR_SPINE_DOC } = await import('../fixtures/narratorSpineDoc')
-  return {
-    BUILTIN_WORKFLOW_ID: 'default',
-    resolveEffectiveDoc: () => ({ id: 'default', doc: NARRATOR_SPINE_DOC, warnings: [] }),
-    setEnabledFragmentsProvider: () => {}
-  }
-})
+// M5c-2: generate() no longer resolves a workflow doc — the direct path runs the fixed Classic spine
+// against the mocked chat/card/settings above, so no workflowService mock is needed.
 vi.mock('../../src/main/services/apiService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   streamProvider: async (_s: unknown, messages: unknown, params: unknown) => {
@@ -146,13 +167,18 @@ vi.mock('../../src/main/services/apiService', async (orig) => ({
   }
 }))
 
-import { generate } from '../../src/main/services/generationService'
+import { generate, generateSwipe, regenerate } from '../../src/main/services/generationService'
 
 describe('generate() — parity baseline', () => {
   beforeEach(() => {
     capturedSend = null
     capturedParams = null
     capturedFloor = null
+    capturedSavedFloor = null
+    capturedTruncations = []
+    generationCalls.length = 0
+    delete floors[1].swipes
+    delete floors[1].swipe_id
     yuzuFlag.on = false
     provider.queue = []
     provider.calls = 0
@@ -168,6 +194,29 @@ describe('generate() — parity baseline', () => {
     // the two things the parity contract pins:
     expect(capturedSend).toMatchSnapshot('sendMessages')
     expect(capturedFloor).toMatchSnapshot('writtenFloor')
+  })
+
+  it('regenerate truncates the latest floor and replays its action with generation type regenerate', async () => {
+    const floor = await regenerate('profile1', 'chat1')
+
+    expect(capturedTruncations).toEqual([1])
+    expect(generationCalls).toEqual([
+      { userAction: 'look around', generationType: 'regenerate' }
+    ])
+    expect(floor?.user_message.content).toBe('look around')
+  })
+
+  it('generateSwipe preserves prior alternates, appends the reroll, and marks it active', async () => {
+    floors[1].swipes = ['A first look.', 'You see a door.']
+    floors[1].swipe_id = 1
+
+    const floor = await generateSwipe('profile1', 'chat1')
+
+    expect(capturedTruncations).toEqual([1])
+    expect(generationCalls).toEqual([{ userAction: 'look around', generationType: 'swipe' }])
+    expect(floor?.swipes).toEqual(['A first look.', 'You see a door.', RAW])
+    expect(floor?.swipe_id).toBe(2)
+    expect(capturedSavedFloor).toBe(floor)
   })
 
   // Project Yuzu WP-S1: VN mode on. The classic pipeline gains ONE extra system block (the YSS overlay)

@@ -40,6 +40,9 @@ export const foldState = (
   // workingVars already holds any template setvar() mutations from this build;
   // apply this turn's rpt-events on top, then persist global vars.
   const variables = ctx.workingVars
+  if (ctx.chat.floor_count === 0 && !ctx.floorStateBaseline) {
+    ctx.floorStateBaseline = JSON.parse(JSON.stringify(variables)) as Record<string, unknown>
+  }
   for (const evt of parsed.events) applyEvent(variables, evt)
   if (mvu.commands.length || mvu.patches.length) {
     if (typeof variables.stat_data !== 'object' || variables.stat_data === null) {

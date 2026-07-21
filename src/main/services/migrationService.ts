@@ -8,6 +8,7 @@ import { saveFloor } from './floorService'
 import { log } from './logService'
 import { RPTerminalCard } from '../types/character'
 import { FloorFile } from '../types/chat'
+import { AgentCatalog } from './agentRuntime/catalog'
 
 /**
  * One-time import of the legacy file-per-JSON store (rp-terminal-data/profiles/…)
@@ -123,4 +124,5 @@ const migrateProfileInner = (p: any): void => {
       saveFloor(p.id, chatId, floor)
     }
   }
+  new AgentCatalog(p.id, db)
 }

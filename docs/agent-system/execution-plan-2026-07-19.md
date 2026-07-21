@@ -1,0 +1,480 @@
+# Agent System execution plan v2
+
+**Status:** Point-in-time plan, drafted 2026-07-19 on `agent-system` (33 commits ahead of `main`,
+head `ef8ab9f`, gate green at 4322 tests). Supersedes the **remaining sessions (8, 9, 11, 12)** of the
+[implementation plan](implementation-plan.md) and closes out the
+[Classic Narrator first execution plan](classic-narrator-first-execution-plan.md), whose six
+milestones have all landed. Sessions 0–7 and 10 of the original plan, and ADR
+[0020](../adr/0020-agent-runtime-replaces-workflow-system.md) /
+[0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md), are the baseline this
+plan starts from — none of that work is re-planned here.
+
+Milestone 1's decision package requires owner sign-off before Milestones 3–5 start. Milestones 0 and
+2 need no new approval.
+
+## 1. Audit — what is actually true on the branch today
+
+### 1.1 Implemented and committed
+
+- **Runtime (Sessions 0–7):** contracts, ProviderDispatch, AgentHarness (`execute` +
+  `executePrepared`), AgentCatalog, AgentRunStore, FloorState journal/replay, InvocationRuntime
+  (lanes, plans, coalescing, deletion, barriers), card `rpt.agents` API at inline/WCV parity.
+- **Classic Narrator plan M1–M6:** the `executePrepared` seam inside `callModelResilient`; the
+  turn-dependency characterization; the **two-path** direct Classic orchestration
+  (`generation/classicTurn.ts` behind the `classicShape` predicate, `runWorkflow` fallback for
+  edited docs and open pack gates); the active-work exit guard; the
+  [parser-backed design](parser-backed-agent-design.md) (design only, unapproved); the
+  [debloat audit](debloat-audit.md) (decision-support, owner deferred).
+- **Session 10 Agent Workspace** (`9036935` + follow-ups): AgentsPanel, AgentEditor,
+  AgentPlanEditor, run list/detail with cancel, folder-scan import of `.rptagent` files with
+  hash-versioned upgrade and edit-conflict handling (`agentFolder.ts`, `agentCatalogIpc.ts`).
+- **ADR 0021, fully implemented:** every Agent prompt renders through the template engine; a
+  `preset` bundle turns on full `assemblePrompt` assembly against the owning floor's `GenContext`;
+  parameter precedence gains one bundle layer; assembly failure is fail-open but **visible**
+  (Run Record warning + "Degraded" badge); guaranteed-inert envelopes are rejected at save time
+  (`shared/agentPresetEnvelope.ts`).
+- **Two real converted Agents** (`test-agents/*.rptagent`, from the shujuku 命定之诗 plot preset)
+  exercising the runtime end to end — via manual **Run now** only.
+
+### 1.2 Facts that have changed under the standing documents
+
+These are the load-bearing findings; each invalidates something a standing doc still asserts.
+
+1. **The debloat audit's governing premise is stale.** The audit's one governing sentence was
+   "Classic reaches exactly one entry point — `executePrepared` — and everything else is reached
+   only from card-facing IPC or tests," which made "does the card Agent API stay?" the single
+   decision. That is no longer true: the Workspace's Run now calls `invocationRuntime().run(...)`
+   from `agentCatalogIpc.ts:333`, and preset Agents run the **full `execute` path** (tools, retries,
+   Result Contract — ADR 0021 routed them through `execute` deliberately). `AgentHarness.execute`,
+   `InvocationRuntime`, `HarnessRunAdapter`, `AgentRunStore`'s writer, `FloorState.incorporateAgent`,
+   and `ProviderDispatch.resolve` all have production consumers now. **Branch B (delete ~9,300
+   lines) is dead.** The still-genuinely-unreached surface has shrunk to: the card channels
+   (`CARD_AGENT_CHANNELS` / WCV twins / preload / bridge / host facets), `runPlan`
+   (`agentRunIpc.ts:203`, `wcvIpc.ts:520` — card-only; the Plan editor authors/exports JSON, it does
+   not run it), the tool registries (no tool user), and the next-turn barrier
+   (`InvocationRuntime.waitForNextTurnBarriers` has no production caller).
+2. **The trigger gap is now the product-critical hole.** Design §11 says RPT owns no scheduler;
+   cards observe variables and invoke Agents. But the card API is unshipped and its shipping is
+   owner-deferred, so **the only way any Agent runs today is a manual click**.
+   `character-progression.rptagent` declares `blocksNextTurn: true` and the flag is recorded,
+   displayed, and inert (`test-agents/README.md` documents this honestly). An imported progression
+   Agent that cannot fire is a demo, not a feature.
+3. **Session 9 (Yuzu Scene Director) is obsolete as written.** After ADR 0008/0019, Yuzu rides the
+   Classic pipeline: `vnMode` is resolved in `generation/genContext.ts:44` and applied inside
+   `assemble.ts` (overlay at `:185`, token budget at `:324`) — both of which the direct
+   `classicTurn` path already uses. There is no separate Yuzu generation path left to cut over. What
+   remains of Session 9 is verification plus a decision about whether a distinct
+   `yuzu.sceneDirector` role should exist at all.
+4. **The builtin catalog rows are decoys, and now user-visible ones.** `CLASSIC_NARRATOR` and
+   `YUZU_SCENE_DIRECTOR` are seeded into every profile, undeletable (`SOURCE_BACKED`), role-bound
+   under a DB `CHECK` constraint — and Classic does not read them (its prompt comes from
+   `classicTurn.ts`). Since Session 10 they are displayed in the Workspace as if they were the
+   production configuration. The audit rated resolving them **High** risk (migration + possible
+   table rebuild); leaving them is now actively misleading in the UI.
+5. **Workflow deletion (Session 11) has three unresolved prerequisites**, none of which the original
+   session text accounts for: (a) `memory.maintain` — the only production automatic model-backed
+   operation — is triggered by `trigger.cadence`/`trigger.state` nodes in the user-editable doc via
+   `evaluateDocTriggers`; deleting the doc orphans it, and the parser-backed design calls the
+   re-homing of its cadence settings "the single hardest problem in the conversion." (b) Edited
+   docs and open pack gates route real users through `runWorkflow` (the `classicShape` predicate
+   fails closed), so deletion is a behavior change for them, not a cleanup. (c) Card `workflows[]`
+   import is still live.
+6. **Status headers were stale** (design doc claimed Sessions 7–12 unimplemented; the plan claimed
+   Session 10 in progress). Corrected 2026-07-19 alongside this plan. The design doc's §3/§10 have
+   not yet been reconciled with ADR 0021's prompt/preset model.
+7. **The renderer has no mount-level test seam.** `2ce4277` fixed a whole-app blank screen
+   (AgentRunActivity on session entry) that shipped past a fully green gate. Every Workspace
+   milestone below inherits this risk until a smoke-mount seam exists.
+8. **Pending Floor was never built** (Session 8's residue). The direct Classic path commits through
+   the existing `persistFloor` transaction. Nothing currently motivating it has surfaced; it stays
+   deferred rather than being carried as fake scope.
+
+## 2. Design review — what should change
+
+**Reframe the governing decision.** "Does the card Agent API stay?" was the right question when the
+runtime's only consumers were hypothetical cards. The Workspace ended that. The question that now
+governs the remaining work is: **what triggers an Agent?** Everything still blocked — the progression
+Agents being real, the `memory.maintain` conversion, `blocksNextTurn`, workflow deletion, and (as a
+dependent, not a driver) the card API — hangs off that one answer.
+
+**Recommended answer: a minimal declarative commit-boundary trigger, owned by the Agent Runtime.**
+An optional `trigger` on the effective definition / role binding, of exactly one kind:
+`onFloorCommitted` with an `everyNFloors` cadence (and, only if the memory conversion demonstrates
+the need, the existing unprocessed-count condition as a second predicate). Evaluated only when a new
+floor commits — the same boundary ADR 0004 already fixed for workflow triggers — with no timers, no
+variable watching, no cron. Rationale:
+
+- It is **required anyway**: the `memory.maintain` conversion has no home for its cadence settings
+  once the doc dies (parser-backed design, risk 1). A definition-level trigger *is* that home, and
+  dissolves the "hardest problem" without a node-adapter framework.
+- It makes imported Agents real **without** coupling their fate to the card-API ship decision.
+  Card-owned scheduling remains the designed path for *variable-predicate* triggers (month
+  boundaries, quest states) exactly as design §11 says — cadence is the only piece RPT takes, and it
+  is calendar-free.
+- It honors ADR 0004's boundary rule and the design's "deliberately does less" stance. This is not
+  a scheduler; it is one predicate at one existing event.
+
+**Secondary design corrections:**
+
+- **No inert contract fields.** `blocksNextTurn` must either be wired (the barrier exists;
+  generation must await `waitForNextTurnBarriers` before resolving Narrator input) or removed from
+  the accepted schema until it is. The same lesson as `ef8ab9f`: degraded or dormant behavior must
+  be visible, not plausible. Wiring requires an owner policy: does a failed required Agent block the
+  turn (fail-closed) or release it without the result (fail-open, warned)?
+- **Retire Session 9; keep the role question.** Yuzu needs a characterization test proving vnMode
+  parity through the direct path, and a decision to either drop the `yuzu.sceneDirector` role
+  concept or leave it bound to the future. No new execution path.
+- **Resolve the decoys with the deletion milestone, not before.** The builtin-rows migration and the
+  `CHECK` constraint decision belong with the catalog/role rework that deletion forces anyway;
+  doing it twice would mean two migrations. Interim mitigation is cheap: label the two rows in the
+  Workspace as placeholders not yet used by generation.
+- **Deletion becomes a migration project, not a directory removal.** Session 11's inventory and
+  removal searches remain valid, but the session must be re-scoped around the three prerequisites in
+  §1.2.5 and an explicit policy for edited-doc users.
+- **Add the missing test seam** before more Workspace surface lands: one smoke-mount test that
+  renders the app shell with a chat open and the Workspace routes reachable, so a top-level render
+  crash fails the gate.
+
+## 3. Decisions required (Milestone 1 package)
+
+| # | Decision | Options | Recommendation |
+| --- | --- | --- | --- |
+| D1 | Trigger surface | (a) declarative commit-boundary cadence in RPT + card scheduling later; (b) ship the card API now and keep RPT trigger-free; (c) manual only | **(a)** — see §2 |
+| D2 | Card `rpt.agents` API | ship next release / hold dormant / delete the card channels only | **hold** — it no longer blocks anything, costs nothing (audit: restorable, zero compat risk), and D1(a) removes the pressure to ship it half-baked |
+| D3 | `memory.maintain` conversion | approve parser-backed CONVERT (+ the collapse-only subset) / collapse-only / neither | **approve both** — it is the second real Harness consumer and the deletion prerequisite; the collapse-only subset (`table.gate` remove; `table.read`/`table.apply`/`parse.extract` collapse) is safe under any branch |
+| D4 | Workflow deletion policy | for edited docs and pack gates: hard cutover to the fixed pipeline (accept behavior change, documented) vs. any preservation mechanism | **hard cutover** — ADR 0020 already forbids converters and dual runtimes; preserving edited-doc semantics would rebuild the engine |
+| D5 | `blocksNextTurn` failure policy | fail-closed (block the turn) / fail-open with visible warning | **fail-open, warned** — consistent with ADR 0021's degraded-run stance; a lost progression beat is recoverable, a hung turn is not |
+| D6 | Builtin decoy rows | migrate away with the D4 catalog rework / keep as real config by making Classic read them | **migrate away in M5** — making Classic read the catalog is a second cutover with no user benefit yet |
+
+## 4. Milestones
+
+Delivery rules, gates (`typecheck`, `check:deps`, `test`, `check:docs` vs. the 61-broken-link
+baseline), and the one-module-per-change rule from the implementation plan §1 all carry over
+unchanged. Each milestone ends with an implementation-log entry in this file.
+
+### M0 — Truth and reconciliation (docs only, no approval needed)
+
+- Reconcile `agent-runtime-design.md` §3 (AgentDefinition) and §10 (portability) with ADR 0021's
+  `prompt`/`preset` model; correct its status header (done 2026-07-19).
+- Mark implementation-plan Sessions 8, 9, 11, 12 as superseded by this plan (done 2026-07-19).
+- Verify `docs/sdk/` and `docs/rpt-api.md` against the Session 7 card surface and the Session 10
+  import format: `rpt.agents.*`, `.rptagent` (`format: "rpt-agent"`), and the scan-folder flow must
+  be documented or explicitly marked unshipped. `docs/sdk/README.md`'s mapping decides the exact
+  files.
+- Exit: no standing doc asserts a stale governing fact from §1.2.
+
+### M1 — Decision package to the owner
+
+- Present §3 with the audit evidence behind each row (this file is the package; a grilling pass on
+  D1/D4 is worthwhile before sign-off).
+- Exit: D1–D6 each have a recorded owner answer; answers gate M3–M5 scope below. If an answer
+  contradicts a recommendation, this plan's affected milestone is re-scoped before it starts,
+  not improvised during it.
+
+### M2 — Workspace hardening (no approval needed; parallel with M1)
+
+- Add the smoke-mount renderer test seam (§2, last bullet): app shell + open chat + Agents panel +
+  Workspace popup render without throwing, under the real store wiring. This is the regression net
+  for the `2ce4277` class of failure.
+- Sweep the Session 10 exit checklist against what shipped and close the genuine gaps (candidates
+  from the original session text: diff/restore surfaces beyond the scan-conflict flow, role-binding
+  replacement before disable/delete, keyboard navigation). Verify rather than assume — some of this
+  landed in `429090f`/`ef8ab9f`.
+- Confirm every Workspace string routes through `t()` with keys in both locales (the panel added
+  ~133 keys each; the check is for stragglers in later fixes).
+- Exit: gate green including the new smoke seam; Session 10 marked complete in this log.
+
+### M3 — Trigger runtime and barrier wiring (gated on D1, D5)
+
+Scope assuming D1(a), D5 fail-open:
+
+- Add the optional `trigger` block (`onFloorCommitted` + `everyNFloors`) to `AgentContracts` schema,
+  the effective-definition calculation, and the editor. Reject any other trigger kind at parse time.
+- Evaluate triggers in main at the same commit boundary that emits `emitCardFloorCommitted`
+  (`chatService.ts` — single emit site, `isNewFloor`-guarded), dispatching through the existing
+  `invocationRuntime().run` identity path so coalescing, lanes, and floor ownership apply unchanged.
+  Replay and re-incorporation must not fire triggers (same invariant the card event already keeps).
+- Wire `blocksNextTurn`: the Classic direct path awaits `waitForNextTurnBarriers(chatId)` before
+  resolving Narrator input; a failed required Agent releases the barrier with a visible warning on
+  the turn (D5). The workflow fallback path is deliberately **not** wired — it predates the feature
+  and dies in M5.
+- Tests: cadence fires on the Nth commit and not on replay; duplicate coalescing across
+  trigger+manual; barrier blocks/releases/fails per policy; Stop during a barrier; exit-guard signal
+  covers triggered runs (it already reads `InvocationRuntime.hasActiveWork`).
+- Exit: an imported `.rptagent` with a cadence runs unattended; `blocksNextTurn` is live or the
+  field is gone; no timers, no variable watching anywhere in the diff.
+
+### M4 — memory.maintain becomes a built-in Agent (gated on D3)
+
+- Implement parser-backed CONVERT per the approved design §6, with its non-negotiables: the
+  three-way `no-tag`/`empty-tag`/`sql` discrimination preserved verbatim; caller-supplied
+  `AbortSignal` only, no new cancel semantics; the staleness fence (`transcriptEpoch`) bracketing
+  compose→apply; `composeMaintainerMessages` staying shared with the preview IPC byte-for-byte.
+- Re-home the cadence/mode/preset settings onto the built-in Agent's definition + role binding
+  (M3's trigger is the cadence home); the memory panel's settings UI reads/writes those instead of
+  doc group settings.
+- Land the collapse-only subset in a separate commit: remove `table.gate`, collapse
+  `table.read`/`table.apply`/`parse.extract` wrappers onto their services. Both builtin packs and
+  saved docs still reference these until M5 — so this commit only lands **with or after** the M5
+  routing decision is fixed, or scoped to leave registry entries as thin deprecated stubs until M5.
+  Sequence this at execution time; do not let it fork the doc-trigger path into two behaviors.
+- Exit: the default profile's memory maintenance runs through `AgentHarness.execute` with a Run
+  Record; `evaluateDocTriggers` no longer fires it; due-table pointer semantics proven by a test
+  that distinguishes empty-tag from no-tag outcomes.
+
+### M5 — Single-path Classic and workflow deletion (gated on D4, D6; the old Session 11)
+
+- Remove the `classicShape` predicate and the `runWorkflow` fallback: every Classic turn takes the
+  direct path. Edited-doc users cut over hard (D4); release notes name the change.
+- Delete the workflow surface per the original Session 11 inventory (engine, nodes, canvas, packs,
+  formats, IPC, stores, `@xyflow/react`, `workflows[]` import) with its removal searches as the
+  acceptance check. Legacy data stays inert on disk.
+- Builtin decoy migration (D6): unbind and delete the two seeded rows via a migration path that
+  bypasses `SOURCE_BACKED`, and settle the `role` `CHECK` constraint (`db.ts:84`) and
+  `character.ts` role-recommendation schema in the same change. Test against a profile fixture that
+  already holds the seeded rows — a fresh profile cannot reproduce the orphan case.
+- Yuzu verification (old Session 9 residue): characterization test for vnMode overlay/token-budget
+  parity through the direct path; drop or explicitly defer the `yuzu.sceneDirector` role.
+- Exit: original Session 11 exit criteria, plus: both FloorState guard suites pass untouched, the
+  M2 smoke seam passes, and a pre-branch database migrates cleanly (compare `sqlite_master`).
+
+### M6 — Living contracts and merge gate (the old Session 12, trimmed)
+
+Unchanged in substance from Session 12: update the living docs and catalogs, supersede
+`docs/sdk/workflow-module-format.md`, run the full gate plus `build`, and the manual matrix — with
+these matrix edits: Yuzu cases run as vnMode-on-Classic; "monthly card Agent call" is replaced by a
+cadence-triggered imported Agent (card-trigger case only if D2 shipped the API); add
+"cadence Agent + Classic turn on the same commit boundary" and "blocksNextTurn failure releases the
+turn with a visible warning."
+
+Exit: the completion definition in implementation plan §7, reread against D1–D6's answers — any
+clause invalidated by an owner decision (e.g. "cards own scheduling") is amended there in the same
+commit, not silently ignored.
+
+## 5. Deferred (carried, not planned)
+
+- Pending Floor lifecycle (Session 8 residue) — no motivating defect on record.
+- App-restart resumption of in-flight invocations.
+- `runPlan` execution from the Workspace (the editor stays author/export-only).
+- Card API ship (D2 hold), card-owned variable-predicate scheduling, and the WCV agent-channel
+  line-by-line diff the audit flagged as unread.
+- Making Classic read its catalog definition (rejected for now under D6).
+
+## 6. Risks
+
+1. **FloorState replay entanglement** (audit risk 1): `incorporateAgent` shares transaction and
+   snapshot validation with `updateTranscript`, which every edit/regenerate uses. M4/M5 changes near
+   it require `floorState.test.ts` and `floorDeletionAtomic.test.ts` to pass untouched.
+2. **Comparator rot inverted:** M5 deletes the `classicShape` comparator; until then any
+   `defaultMemoryTemplate` change silently reroutes users to the fallback. The rot pin in
+   `classicShape.test.ts` remains the tripwire and must not be deleted before M5 lands.
+3. **Trigger double-fire:** M3's commit-boundary evaluation and M4's converted maintenance must
+   share one dispatch identity, or a cadence Agent could fire from both the new trigger and a
+   leftover `evaluateDocTriggers` path during the M4→M5 window. The M4 exit criterion
+   ("`evaluateDocTriggers` no longer fires it") is the guard; test it explicitly.
+4. **Catalog migration blast radius:** `AgentCatalog` construction runs in `profileService` and
+   `migrationService` on every profile open; a wrong migration surfaces at first launch after
+   upgrade, far from the change. Suite green is insufficient — use the `sqlite_master` comparison.
+5. **Template engine init race** (ADR 0021 known gap): `initTemplates()` is fire-and-forget, so an
+   early triggered Agent can fall open to raw prompt text. M3 makes unattended early invocations
+   possible for the first time — either await engine readiness before the first trigger dispatch or
+   accept and document the degraded-warned first run.
+6. **The two shujuku prompts embed `$U`/`$C`/`$1` shujuku placeholders** that RPT's engine does not
+   substitute; they currently reach the provider as literals. Harmless for plumbing tests,
+   misleading for quality judgments — convert or annotate before using them as acceptance evidence
+   in M3/M6.
+
+## 7. Implementation log
+
+### 2026-07-19 — Final review and fixes
+
+A fresh-context reviewer audited the whole span (`c7df7f9..e97ee4b`) against this plan and returned
+**MERGE-READY WITH FIXES**: six findings, all now fixed in the same day's closing commit. (1)
+CONFIRMED blocker — the memory-maintenance apply step was attached only to the trigger dispatch, so
+a manual Run now billed the provider and silently discarded its `<TableEdit>`; the apply now lives
+in one composition-root seam (`withMemoryMaintenanceApply`) covering every entry path, and a manual
+run with nothing due returns a visible "nothing due" skip instead of a fake success. (2) CONFIRMED —
+a failed required barrier was never cleared, re-logging the D5 warning every turn forever; observed
+failed barriers now clear after one warning. (3) the barrier wait now races the turn's abort signal,
+so Stop escapes a hung `blocksNextTurn` run. (5) barriers now register at enqueue, so a queued
+`blocksNextTurn` invocation behind its lane predecessor is no longer invisible to the next turn.
+(6) floor-0 greeting commits no longer evaluate triggers (the old post-turn boundary never saw
+them). (4) the deleted parity suite's hazard pins are restored as
+`test/generation/classicTurnHazards.test.ts` (workingVars by-reference into the persisted floor,
+executionRecord identity, floor-0 baseline). Reviewer-verified holds worth keeping on record: no
+double-fire path, three-way tag discrimination with the epoch fence, seed cannot clobber user
+edits, preview/run byte-parity, rewind-correct cadence, prompt bytes untouched by the barrier
+await. Closing gate: typecheck / check:deps 507 modules / **3011 tests green**.
+
+### 2026-07-19 — M6 implemented (living docs, residue, merge gate)
+
+**Residue cleanup.** Purged the dead React-Flow / WorkflowEditor selectors from
+`memoryMaintainPanel.css` (kept only the `.rpt-mm-*` classes + `.rpt-assemble-preview-text` that
+`MemoryMaintainPanel.tsx` renders). Deleted the orphaned `previewService.ts` + `previewSections.ts`
+(the workflow next-prompt preview; their IPC handler and the `AgentsView` preview pane died with the
+editor) and their tests, plus the fully-orphaned renderer twin `previewDisplay.ts` + its test —
+restoration path: git history at `2780f7e` (direct-assembly `previewService`) / earlier for the pane.
+Swept active-code comments that described workflow as current — `activeWork.ts` (preview registry /
+`runWorkflow` node coverage), `agentActivityStore.ts` (the deleted `workflow-activity` feed), and the
+renderer's workflow-editor-overlay references (`App.tsx`, `viewRegistry.tsx`, `uiStore.ts`,
+`SettingsModal.tsx`, `TopStrip.tsx`, `wcvFreezeStore.ts`, `useWcvSuppression.ts`,
+`MemoryManagerView.tsx`, `ChatView.tsx`) → the Agent Workspace is now the single full-window surface.
+Dead locale keys removed from **both** locales: `nav.flow` (the retired Workflow button, now Agents)
+plus the `preview.*` / `runDrawer.*` / `runs.*` clusters (the removed workflow trace / run drawer /
+agent-pack preview panes; the live run UI uses `agentRuns.activity.*`). The kept
+`workflowEditor.memoryMaintain.*` keys are the last `workflowEditor.*` survivors and are still used by
+`MemoryMaintainPanel.tsx`, so they were left (rename = churn). ~141 other locale keys are unreferenced
+by any `t()` call but predate this branch (e.g. `nav.api`, `combat.*`, `duel.*`, `settings.language`);
+they are a pre-existing condition, out of "from the deletion" scope, and left for a focused follow-up.
+
+**Living docs.** README (agent section rewritten; workflow/node-graph/`@xyflow/react` claims removed),
+CLAUDE.md (module-boundary section gains the `shared/agentRuntime` purity rule; notes no workflow
+rules remain), `current-status.md` + `documentation-catalog.md` (cutover reflected; deleted-subject
+docs get superseded/historical lifecycle notes), SDK `README.md` + `component-inventory.md` (workflow
+"if you touch X" mapping row → agent-runtime; `workflows[]` card slot → removed/inert; importer prose
+→ `agents[]` install), `world-card-design.md` status header, `workflow-module-format.md` (superseded
+banner, body kept for history), and the design/implementation-plan status headers (cutover complete on
+`agent-system`, remaining = owner review/merge). `test-agents/README.md`: `blocksNextTurn` section
+rewritten to "live, fail-open" (M3) and the card-trigger example annotated as held (D2), cadence as
+the live path. CONTEXT.md, `rpt-api.md`, `plugin-api.md`, `compat-comparison.md` already carried no
+active workflow surface — left as-is.
+
+**Gate.** typecheck ✓; check:deps ✓ (505 modules, down 3 from the deleted preview files);
+test 2998 passed / 10 skipped (274 files; −33 = the three deleted preview test files, no regressions);
+build ✓. `check:docs` broken-link baseline recounted after M5's deletions: **85 → 76** (this milestone's
+edits net-removed 9 and added zero — every new src citation resolves). Owner manual matrix added as §8.
+
+### 2026-07-19 — M5 implemented (five slices, a–c2)
+
+**M5a** (`b7c9423`): classicShape predicate and runWorkflow fallback removed — every Classic turn is
+direct (D4 hard cutover); the VN acceptance gate (repair ladder, effect fold, yuzu_trace) was found
+living in the `parse.response` node and ported verbatim into `classicTurn` (the direct path had been
+bypassing it — a latent Yuzu regression fixed, not introduced); decoy builtin rows deleted by
+idempotent migration with a seeded-rows fixture and byte-identical `sqlite_master` (D6, no table
+rebuild, CHECK kept); vnMode overlay/token-budget pinned riding the direct path (retires Session 9).
+**M5b** (`2780f7e`): load-bearing helpers relocated out of node files (tagExtract,
+maintainerCompose, classicStages, mainSample); previewService rewritten as direct assembly with no
+engine and no provider call (closes the audited preview `memory.recall` real-call hole);
+profile-local `invocation_config` home for the memory agent's API preset (never exported — pinned).
+**M5b2** (`9bc8752`): one-time per-profile settings seed (marker `profiles.memory_settings_seeded`,
+pristine-builtin-only, reads legacy docs raw off disk) + the Memory sheet Maintenance settings strip
+(cadence / API preset / enabled) over new gated invocation-config IPC.
+**M5c-1** (`d03f8f5`): turn path severed — generationService drops doc resolution, buildTurnContext,
+the builtin registry, RunResult/NodeTrace synthesis, and the detached
+summarize/appendRun/trigger-evaluation chain; the memory bridge drops `resolveEffectiveDoc`
+(scaffold = `DEFAULT_MEMORY_MAINTAIN_CONFIG` ⊕ `invocation_config.maintain`, seed extended;
+profiles seeded before the extension fall back to default scaffold — documented acceptable loss).
+**M5c-2** (`cb477ff`): the workflow system deleted — 185 files (engine, shared model, all 29 node
+files, workflow/agent-pack services + IPC + preload, editor/canvas/trace renderer, ~409
+workflow-only locale keys per locale, `workflows[]` card schema with unknown keys preserved,
+`@xyflow/react`); survivors relocated (MemoryMaintainPanel, recall/notes compose cores,
+maintainConfig resolver); acceptance searches clean of runtime imports; Legacy Workflow Data inert
+on disk, `chats.workflow_id` unread. Gate after the sweep: typecheck / check:deps 508 modules /
+**3031 tests green** (workflow suites deleted with their subjects). Known residue for M6: dead
+React-Flow selectors in the relocated `memoryMaintainPanel.css`; `previewService`/`previewSections`
+orphaned (their IPC/UI died with the editor); stray workflow-named prose comments.
+
+### 2026-07-19 — M4 implemented
+
+`memory.maintain` is CONVERTED to the built-in **Memory Maintenance** Agent (parser-backed design §6),
+routed through the Agent Runtime's `execute` path with a Run Record. A third `BUILTIN_AGENTS` row
+(`catalog/builtins.ts`, `trigger.onFloorCommitted.everyNFloors: 3`, `required: false`,
+`blocksNextTurn: false`, `maxRetryAttempts: 5`) is seeded, NOT role-bound. Following ADR 0021's
+registration-slot + bridge pattern, `agentRuntime/memoryMaintenanceSlot.ts` owns an empty slot and
+`services/memoryMaintenanceAgentBridge.ts` (imported once from `main/index.ts`) installs the real
+closure — `agentRuntime` still imports neither `nodes/` nor `generation/`. The prompt planner
+(`prompt/agentPresetAssembler.ts`) substitutes the bridge's `composeMaintainerMessages` output via
+`HarnessExecuteRequest.prompt` (the SAME shared composer the `memory-maintain-preview` IPC uses). The
+trigger dispatch is factored into a testable `createTriggerDispatch` (`triggerRuntime.ts`): the
+INTERNAL due-gate (`dueTables`, plus the live doc's `mode` off-switch) short-circuits BEFORE `run()`,
+so a nothing-to-do window opens no empty Run Record; on success the three-way `<TableEdit>`
+discrimination (no-tag → report; empty-tag → advanceProgress; sql → applyTableEdit) runs verbatim,
+bracketed by the `transcriptEpoch` staleness fence captured at compose. `evaluateDocTriggers` now
+strips `memory.maintain` from every doc-trigger closure (`headlessRunService.ts` `runDocHeadless`,
+M4/M5-commented) so a cadence window can never double-fire (plan §6 risk 3). **Settings mapping,
+bounded:** the chat's effective doc still owns the maintain config, mode (off), and API-preset choice;
+the bridge reads them LIVE at dispatch/compose (`resolveEffectiveDoc`), mapping `api_preset_id` →
+`InvocationOptions.apiPresetId` (the smallest supported ProviderDispatch mapping). The Agent's
+`everyNFloors: 3` trigger owns cadence. **Deltas reported:** a doc `everyNFloors` ≠ 3 is not re-homed
+onto the Agent trigger (uses 3 until M5); `trigger.state` async backlog-threshold is approximated by
+the internal due-gate; the `execute` path wraps the maintainer prompt with the harness policy prefix +
+serialized-input suffix (accepted for the Run Record / retry machinery). Settings-UI rewrite and the
+doc retirement are M5. Gate: typecheck / check:deps (583 modules) / test 4356 passed, 10 skipped
+(374 files); new `test/agentRuntime/memoryMaintenanceAgent.test.ts` + a double-fire pin in
+`test/headlessDocTriggers.test.ts`.
+
+### 2026-07-19 — M3 implemented
+
+`trigger: { onFloorCommitted: { everyNFloors } }` on the Agent contract (strict schema, any other
+kind rejected at parse); commit-boundary evaluation subscribes to the existing single
+`onCardFloorCommitted` emit and dispatches through `invocationRuntime().run` so coalescing, lanes,
+and floor ownership apply unchanged. Cadence is **derived** from `AgentRunStore.latestRunFloor` —
+due when `committedFloor − latestRunFloor ≥ everyNFloors` — which matches workflow `trigger.cadence`
+first-fire/advance semantics verbatim and is rewind-correct for free (deleting floors deletes runs,
+so the Agent refires). `blocksNextTurn` is live: `run()` already started barriers; the Classic
+direct path now awaits `waitForNextTurnBarriers` before assembly (generate/regenerate/swipe),
+fail-open per D5. The workflow fallback path is deliberately not gated (dies in M5). Failure
+visibility: the failed run shows in the Runs activity UI; the fail-open release itself surfaces as
+a structured main log line — the existing failure banner is workflow-trace-specific and was not
+extended (noted for M5/M6). Template readiness (`whenTemplatesReady`) gates the first trigger
+dispatch, closing §6 risk 5. Editor gained the Trigger section; both locales updated; `.rptagent`
+docs updated. Gate: typecheck / check:deps (581 modules) / test 4337 passed, 373 files.
+
+### 2026-07-19 — M0 and M2 implemented
+
+M0 (`c7df7f9`): design doc §3.1/§10 reconciled with ADR 0021; `rpt.agents` marked held (D2) in
+`docs/sdk/component-inventory.md` and `docs/rpt-api.md`; `.rptagent` scan-folder import documented;
+link baseline unchanged at 61 (this plan's earlier "72" citation corrected — 61 is the baseline).
+M2 (`8bf1ad6`): renderer smoke-mount seam `test/renderer/agentSurfacesSmoke.test.tsx` (ChatView +
+AgentRunActivity + Workspace popup + AgentsPanel under real stores, Proxy-stubbed `window.api`);
+acceptance proven by reverting the `2ce4277` guard and watching the seam fail. Session 10 checklist
+swept: everything shipped except one reported gap — folder-scan name-collision rename has no UI
+(upgrade conflicts do). i18n sweep clean (142 keys, both locales).
+
+### 2026-07-19 — M1: owner decisions recorded
+
+The owner directed implementation to proceed "in accordance to the plan" after reviewing the §3
+decision package; the recommended answers are therefore adopted as the decisions of record:
+**D1 = (a)** declarative commit-boundary cadence trigger in RPT, card scheduling stays deferred;
+**D2 = hold** the card `rpt.agents` API dormant; **D3 = approve** both the parser-backed
+`memory.maintain` CONVERT and the collapse-only subset; **D4 = hard cutover** for edited docs and
+pack gates; **D5 = fail-open, warned** for `blocksNextTurn` failure; **D6 = migrate the builtin
+decoy rows away in M5**. Milestones 3–5 are unblocked with these scopes.
+
+### 2026-07-19 — Plan created
+
+Audit performed against `ef8ab9f`; findings in §1. Stale status headers in
+`agent-runtime-design.md` and `implementation-plan.md` corrected in the same change. No code
+changed. M1 decision package awaiting owner.
+
+## 8. Owner manual verification matrix
+
+Run these in a dev build (`npm run dev`) on the `agent-system` branch. Each row is self-contained:
+the action, the expected result, and where in the UI to look. "Agent Workspace" = the full-window
+popup opened by the **Agents** button in the play-mode top strip (TopStrip). "Memory sheet" = the
+full-window Memory Manager opened by the **Memory** chip in the top strip. "Run activity" = the
+per-chat agent-run indicator in the chat view (AgentRunActivity); "Runs" = the run list/detail inside
+the Agent Workspace.
+
+Set up a world/session first (launcher → pick a world → open a chat) so a chat is active.
+
+| # | Action | Expected result | Where to look |
+| --- | --- | --- | --- |
+| 1 | **Classic — generate.** Type a message in the composer and Send. | A reply streams in token by token, then commits as a new floor. | ChatView message list + streaming area. |
+| 2 | **Classic — stop.** Send, then click **Stop** mid-stream. | Streaming halts promptly; the partial reply is kept/committed and the UI returns to idle (no freeze). | ChatView Stop control. |
+| 3 | **Classic — regenerate.** On the latest reply, use **Regenerate**. | A fresh reply replaces the current one on the same floor (a new swipe/alternate). | ChatView reply controls. |
+| 4 | **Classic — swipe.** With ≥2 alternates, swipe left/right. | Navigates between stored alternates without re-calling the model. | ChatView swipe arrows / counter. |
+| 5 | **Yuzu vnMode turn.** In a VN-mode session (chat `vn_mode` on), take a turn. | The turn renders as a scene (VN overlay + token budget applied); output is identical in substance to Classic riding the direct path. | Play area (VN stage). |
+| 6 | **Cadence-triggered imported Agent.** Import an Agent with `trigger.onFloorCommitted.everyNFloors: N` (or rely on the built-in Memory Maintenance, N=3). Play N floors. | On the Nth commit the Agent fires **unattended** — a run appears with no manual click; not on replay. | Run activity indicator; Runs list (origin "on its own"). |
+| 7 | **Manual Run now.** Agent Workspace → pick an Agent → **Run now** with JSON input. | The Agent runs against the latest committed floor; a run record appears with its result. | Agent Workspace → Runs (origin "run by you"). |
+| 8 | **Same-Agent consecutive floors.** Give one Agent `everyNFloors: 1` and play several floors. | It runs once per floor, serialized in its lane (no overlap, no skipped/duplicated floor). | Runs list — one run per floor, in order. |
+| 9 | **Parallel independent Agents.** Enable two different cadenced Agents due on the same commit. | Both fire on that one commit boundary, tracked as two independent runs; neither blocks the other. | Run activity (two entries); Runs list. |
+| 10 | **Late-result replay.** Trigger a slow Agent, then take more Classic turns before it finishes. | Its result inserts at its **Invocation Floor** (not the latest), and later floors are rebuilt by Forward Replay — earlier floor's state changes appear where they belong. | ChatView floors; VariablesView on the affected floors. |
+| 11 | **In-flight floor deletion.** While an Agent is running on floor F, delete floor F. | The run is cancelled, no result is incorporated, and its Run Record is gone; no orphaned "running" row. | Runs list (run disappears/cancelled); ChatView. |
+| 12 | **Variable edit + replay.** In VariablesView, edit a variable on an earlier floor. | The edit is journaled; later floors Forward-Replay so the change propagates; deleting that floor removes the edit. | VariablesView; later floors' state. |
+| 13 | **Builtin edit / restore.** Agent Workspace → open **Memory Maintenance** (built-in) → change a field, save → then **Restore to default**. | The edit applies profile-wide; Restore returns the reviewed baseline; the row cannot be deleted (only disabled). | Agent Workspace editor + Restore control. |
+| 14 | **.rptagent import + collision.** Settings → Agents → **Scan agent folder** with a new `.rptagent`; then add a second file whose Agent name collides. | First imports as a `user-imported` row; the colliding import is **blocked** with a rename prompt (no silent overwrite). Re-scanning an edited file is an upgrade, not a duplicate. | Agent Workspace library; scan/import dialog. |
+| 15 | **Run Record inspection + Stop.** Open a completed run's detail; then Stop a running one. | Detail shows effective version/hash, prompt, model/preset, result, attempts, tokens, latency; Stop cancels an in-flight run. | Agent Workspace → Runs → detail + Stop. |
+| 16 | **Memory maintenance settings + run.** In the Memory sheet's **Maintenance** strip, set cadence / API preset / enabled; play enough floors to hit the cadence (or Run now). | Maintenance runs through the Agent Harness (a Run Record appears) and the SQL-table memory updates; disabling stops it firing. | Memory sheet Maintenance strip; Tables view; Runs list. |
+| 17 | **`blocksNextTurn` fail-open.** Use an Agent with `blocksNextTurn: true` that fails (e.g. bad API preset), then take the next turn. | The next turn is **not** hung — the barrier releases and the turn proceeds **with a visible warning** about the failed required Agent (fail-open, D5). | ChatView (turn proceeds + warning); Runs (failed run). |
+| 18 | **App-exit warning with active work.** Start long-running work (a table backfill/refill, or a running Agent), then quit (Cmd/Ctrl-Q, window close, or restart). | A warning dialog appears before discarding in-flight work; confirming quits once, cancelling keeps the app running. With nothing active, exit is immediate (no dialog). | OS quit / window close → confirm dialog. |

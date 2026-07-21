@@ -241,6 +241,7 @@ export const saveCharacter = (
 
 export const deleteCharacter = (profileId: string, characterId: string): void => {
   const db = getDb()
+  cardAgentHooks?.removeAgents(profileId, characterId)
   db.prepare('DELETE FROM characters WHERE id = ? AND profile_id = ?').run(characterId, profileId)
   // Cascade the character's sessions (chats) through the SAME centralized per-chat teardown as
   // chatService.deleteChat (the leaf chatDeleteService — no characterService ↔ chatService cycle),
@@ -258,10 +259,6 @@ export const deleteCharacter = (profileId: string, characterId: string): void =>
   // mirrors deletePreset's cleanup of its preset-scoped artifacts.
   regexService.deleteScriptsByOwner(profileId, 'world', characterId)
   scriptService.deleteScriptsByOwner(profileId, 'world', characterId)
-  // Remove the world-bound workflows this card brought in on import (tagged meta.world_owner);
-  // deleteWorkflowsByOwner also clears the world-default selection ref. Bundled table templates are
-  // library artifacts (never world-bound, like presets/lorebooks) and are deliberately left in place.
-  cardWorkflowHooks?.deleteWorkflowsByOwner(profileId, characterId)
   const avatar = getAvatarPath(characterId)
   if (fs.existsSync(avatar)) fs.unlinkSync(avatar)
   const thumb = getAvatarThumbPath(characterId)
@@ -291,8 +288,6 @@ export interface ImportSummary {
   uiWidgets: number
   presets: number
   lorebooks: number
-  /** Bundled workflow docs imported + bound as this world's default (Track S / card-import). */
-  workflows: number
   /** Bundled memory-table templates dropped into the profile's template library. */
   tableTemplates: number
   /** Bundled plugins detected but NOT installed yet (package format/grant flow TBD). */
@@ -338,12 +333,6 @@ export const collectBundledPresets = (card: RPTerminalCard): any[] => {
 export const collectBundledLorebooks = (card: RPTerminalCard): any[] => {
   const b = getRpExt(card)?.lorebooks
   return Array.isArray(b) ? b.filter((x) => x && typeof x === 'object') : []
-}
-
-/** Bundled generation/memory workflow docs from `rp_terminal.workflows[]` (world-bound on import). */
-export const collectBundledWorkflows = (card: RPTerminalCard): any[] => {
-  const w = getRpExt(card)?.workflows
-  return Array.isArray(w) ? w.filter((x) => x && typeof x === 'object') : []
 }
 
 /** Bundled memory-table templates from `rp_terminal.table_templates[]` (library-drop on import). */
@@ -396,7 +385,6 @@ export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
     uiWidgets: Array.isArray(rpt?.ui_layout) ? rpt.ui_layout.length : 0,
     presets: collectBundledPresets(parsed.card).length,
     lorebooks: collectBundledLorebooks(parsed.card).length,
-    workflows: collectBundledWorkflows(parsed.card).length,
     tableTemplates: collectBundledTableTemplates(parsed.card).length,
     pluginsSkipped: Array.isArray(rpt?.plugins) ? rpt.plugins.length : 0,
     assetsImported: 0
@@ -420,7 +408,6 @@ export const hasBundle = (s: ImportSummary): boolean =>
   s.uiWidgets > 0 ||
   s.presets > 0 ||
   s.lorebooks > 0 ||
-  s.workflows > 0 ||
   s.tableTemplates > 0
 
 /**
@@ -474,19 +461,112 @@ export const parseCardFile = (filePath: string): ParsedCard | null => {
   return { card: result.data, lorebook }
 }
 
-/**
- * Workflow operations are injected to keep characterService out of workflowService's dependency cycle.
- */
-export interface CardWorkflowHooks {
-  importWorkflow: (profileId: string, doc: unknown, owner: string) => string | null
-  setWorldWorkflow: (profileId: string, characterId: string, workflowId: string) => void
-  deleteWorkflowsByOwner: (profileId: string, owner: string) => void
+/** Injected by cardAgentCatalogBridge so card import remains independently testable and avoids
+ * coupling the broad character module to the Agent Catalog implementation. */
+export interface CardAgentHooks {
+  inspectAgents: (
+    profileId: string,
+    characterId: string,
+    sourceVersion: string,
+    agents: unknown[],
+    roleRecommendations: Partial<
+      Record<'classic.narrator' | 'yuzu.sceneDirector', string>
+    >,
+    incomingRenames: Record<string, string>
+  ) => CardAgentCollision[]
+  installAgents: (
+    profileId: string,
+    characterId: string,
+    sourceVersion: string,
+    agents: unknown[],
+    roleRecommendations: Partial<
+      Record<'classic.narrator' | 'yuzu.sceneDirector', string>
+    >,
+    incomingRenames: Record<string, string>
+  ) => void
+  replaceAgents: (
+    profileId: string,
+    previousCharacterId: string,
+    characterId: string,
+    sourceVersion: string,
+    agents: unknown[],
+    roleRecommendations: Partial<
+      Record<'classic.narrator' | 'yuzu.sceneDirector', string>
+    >,
+    incomingRenames: Record<string, string>
+  ) => void
+  removeAgents: (profileId: string, characterId: string, purge?: boolean) => void
 }
 
-let cardWorkflowHooks: CardWorkflowHooks | null = null
+export interface CardAgentCollision {
+  incomingName: string
+  existing: { id: string; name: string }
+}
 
-export const setCardWorkflowHooks = (hooks: CardWorkflowHooks | null): void => {
-  cardWorkflowHooks = hooks
+export interface CharacterAgentImportOptions {
+  agentRenames?: Record<string, string>
+  /** Existing card source whose Agents should reconcile during a destructive replacement. */
+  previousCharacterId?: string
+}
+
+let cardAgentHooks: CardAgentHooks | null = null
+
+export const setCardAgentHooks = (hooks: CardAgentHooks | null): void => {
+  cardAgentHooks = hooks
+}
+
+export const inspectCharacterAgentCollisions = (
+  profileId: string,
+  characterId: string,
+  card: RPTerminalCard,
+  incomingRenames: Record<string, string> = {}
+): CardAgentCollision[] => {
+  const rpt = getRpExt(card)
+  return (
+    cardAgentHooks?.inspectAgents(
+      profileId,
+      characterId,
+      card.data.character_version || '1',
+      rpt?.agents ?? [],
+      rpt?.agent_role_recommendations ?? {},
+      incomingRenames
+    ) ?? []
+  )
+}
+
+export const inspectCharacterAgentImport = (
+  profileId: string,
+  filePath: string,
+  characterId = 'new-card-inspection'
+): CardAgentCollision[] | null => {
+  const parsed = parseCardFile(filePath)
+  return parsed ? inspectCharacterAgentCollisions(profileId, characterId, parsed.card) : null
+}
+
+export const characterAgentImportInspection = (
+  profileId: string,
+  filePath: string,
+  characterId = 'new-card-inspection'
+): {
+  incomingAgents: string[]
+  collisions: CardAgentCollision[]
+  requiredRenames: string[]
+} | null => {
+  const parsed = parseCardFile(filePath)
+  if (!parsed) return null
+  const incomingAgents = (getRpExt(parsed.card)?.agents ?? [])
+    .map((agent) =>
+      agent && typeof agent === 'object' && typeof (agent as { name?: unknown }).name === 'string'
+        ? (agent as { name: string }).name
+        : null
+    )
+    .filter((name): name is string => name !== null)
+  const collisions = inspectCharacterAgentCollisions(profileId, characterId, parsed.card)
+  return {
+    incomingAgents,
+    collisions,
+    requiredRenames: collisions.map(({ incomingName }) => incomingName)
+  }
 }
 
 interface BundleCounts {
@@ -494,7 +574,6 @@ interface BundleCounts {
   scripts: number
   presets: number
   lorebooks: number
-  workflows: number
   tableTemplates: number
   assetsImported: number
   /** See {@link ImportSummary.cartridgeError}. */
@@ -515,8 +594,25 @@ const installBundleArtifacts = (
   card: RPTerminalCard,
   filePath: string,
   assetZipPath: string | undefined,
-  opts: { installExtraLorebooks: boolean; installTableTemplates: boolean }
+  opts: {
+    installExtraLorebooks: boolean
+    installTableTemplates: boolean
+    agentRenames?: Record<string, string>
+    agentsAlreadyInstalled?: boolean
+  }
 ): BundleCounts => {
+  const rpt = getRpExt(card)
+  if (!opts.agentsAlreadyInstalled) {
+    cardAgentHooks?.installAgents(
+      profileId,
+      characterId,
+      card.data.character_version || '1',
+      rpt?.agents ?? [],
+      rpt?.agent_role_recommendations ?? {},
+      opts.agentRenames ?? {}
+    )
+  }
+
   // Route each bundled ST regex script into the profile regex store (one file each), scoped to this world
   // so it only fires when this card is loaded (Track S §6). A card's UI regexes (status/home/…) import as
   // normal INLINE display regexes by default — the user can later promote one to a docked WCV panel.
@@ -560,21 +656,6 @@ const installBundleArtifacts = (
         lorebooks++
       }
     }
-  }
-
-  let workflows = 0
-  let worldWorkflowId: string | null = null
-  for (const doc of collectBundledWorkflows(card)) {
-    const id = cardWorkflowHooks?.importWorkflow(profileId, doc, characterId) ?? null
-    if (id) {
-      workflows++
-      worldWorkflowId ??= id
-    } else {
-      log('info', 'Bundled workflow not imported (invalid, unsupported, or bridge unwired)')
-    }
-  }
-  if (worldWorkflowId) {
-    cardWorkflowHooks?.setWorldWorkflow(profileId, characterId, worldWorkflowId)
   }
 
   // Templates are library artifacts without world ownership. Install them only on a fresh import so a
@@ -649,7 +730,6 @@ const installBundleArtifacts = (
     scripts,
     presets,
     lorebooks,
-    workflows,
     tableTemplates,
     assetsImported,
     cartridgeError
@@ -666,7 +746,6 @@ const buildImportSummary = (parsed: ParsedCard, counts: BundleCounts): ImportSum
     counts.scripts
   summary.presets = counts.presets
   summary.lorebooks = counts.lorebooks
-  summary.workflows = counts.workflows
   summary.tableTemplates = counts.tableTemplates
   summary.assetsImported = counts.assetsImported
   summary.cartridgeError = counts.cartridgeError
@@ -682,7 +761,8 @@ const buildImportSummary = (parsed: ParsedCard, counts: BundleCounts): ImportSum
 export const importCharacterFromFile = (
   profileId: string,
   filePath: string,
-  assetZipPath?: string
+  assetZipPath?: string,
+  options: CharacterAgentImportOptions = {}
 ): ImportResult | null => {
   let newId: string | null = null
   try {
@@ -691,18 +771,53 @@ export const importCharacterFromFile = (
     const { card, lorebook } = parsed
 
     newId = crypto.randomUUID()
-    saveCharacter(profileId, newId, card)
-    if (lorebook) saveCharacterLorebook(profileId, newId, lorebook)
+    const collisions = inspectCharacterAgentCollisions(
+      profileId,
+      options.previousCharacterId ?? newId,
+      card,
+      options.agentRenames ?? {}
+    )
+    if (collisions.some(({ incomingName }) => !options.agentRenames?.[incomingName]?.trim())) {
+      return null
+    }
+    getDb().transaction(() => {
+      saveCharacter(profileId, newId!, card)
+      if (lorebook) saveCharacterLorebook(profileId, newId!, lorebook)
+      const rpt = getRpExt(card)
+      if (options.previousCharacterId) {
+        cardAgentHooks?.replaceAgents(
+          profileId,
+          options.previousCharacterId,
+          newId!,
+          card.data.character_version || '1',
+          rpt?.agents ?? [],
+          rpt?.agent_role_recommendations ?? {},
+          options.agentRenames ?? {}
+        )
+      } else {
+        cardAgentHooks?.installAgents(
+          profileId,
+          newId!,
+          card.data.character_version || '1',
+          rpt?.agents ?? [],
+          rpt?.agent_role_recommendations ?? {},
+          options.agentRenames ?? {}
+        )
+      }
+    })()
 
     const counts = installBundleArtifacts(profileId, newId, card, filePath, assetZipPath, {
       installExtraLorebooks: true,
-      installTableTemplates: true
+      installTableTemplates: true,
+      agentRenames: options.agentRenames,
+      agentsAlreadyInstalled: true
     })
     return { id: newId, summary: buildImportSummary(parsed, counts) }
   } catch (error) {
     log('error', 'Failed to import character:', error)
     if (newId) {
       try {
+        cardAgentHooks?.removeAgents(profileId, newId, true)
         deleteCharacter(profileId, newId)
       } catch (cleanupError) {
         log('error', `Failed to roll back partial character import ${newId}:`, cleanupError)
@@ -727,15 +842,36 @@ export const updateCharacterInPlace = (
   profileId: string,
   characterId: string,
   filePath: string,
-  assetZipPath?: string
+  assetZipPath?: string,
+  options: CharacterAgentImportOptions = {}
 ): ImportResult | null => {
   try {
     const parsed = parseCardFile(filePath)
     if (!parsed) return null
     const { card, lorebook } = parsed
+    const collisions = inspectCharacterAgentCollisions(
+      profileId,
+      characterId,
+      card,
+      options.agentRenames ?? {}
+    )
+    if (collisions.some(({ incomingName }) => !options.agentRenames?.[incomingName]?.trim())) {
+      return null
+    }
 
-    saveCharacter(profileId, characterId, card) // upsert overwrites the stored blob
-    if (lorebook) saveCharacterLorebook(profileId, characterId, lorebook)
+    getDb().transaction(() => {
+      saveCharacter(profileId, characterId, card) // upsert overwrites the stored blob
+      if (lorebook) saveCharacterLorebook(profileId, characterId, lorebook)
+      const rpt = getRpExt(card)
+      cardAgentHooks?.installAgents(
+        profileId,
+        characterId,
+        card.data.character_version || '1',
+        rpt?.agents ?? [],
+        rpt?.agent_role_recommendations ?? {},
+        options.agentRenames ?? {}
+      )
+    })()
 
     // C8a: overwriting the lorebook stales cached world-info on this world's chats — drop it so the next
     // turn re-matches. Scoped to this character (characterService already writes the chats table, cf.
@@ -752,11 +888,12 @@ export const updateCharacterInPlace = (
     // a rejected or archive-less update from destroying a working installation.
     regexService.deleteScriptsByOwner(profileId, 'world', characterId)
     scriptService.deleteScriptsByOwner(profileId, 'world', characterId)
-    cardWorkflowHooks?.deleteWorkflowsByOwner(profileId, characterId)
 
     const counts = installBundleArtifacts(profileId, characterId, card, filePath, assetZipPath, {
       installExtraLorebooks: false,
-      installTableTemplates: false
+      installTableTemplates: false,
+      agentRenames: options.agentRenames,
+      agentsAlreadyInstalled: true
     })
     return { id: characterId, summary: buildImportSummary(parsed, counts) }
   } catch (error) {
@@ -773,9 +910,13 @@ export const replaceCharacterFromFile = (
   profileId: string,
   characterId: string,
   filePath: string,
-  assetZipPath?: string
+  assetZipPath?: string,
+  options: CharacterAgentImportOptions = {}
 ): ImportResult | null => {
-  const imported = importCharacterFromFile(profileId, filePath, assetZipPath)
+  const imported = importCharacterFromFile(profileId, filePath, assetZipPath, {
+    ...options,
+    previousCharacterId: characterId
+  })
   if (!imported) return null
   try {
     deleteCharacter(profileId, characterId)

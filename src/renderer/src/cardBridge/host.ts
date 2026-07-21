@@ -15,6 +15,13 @@ import { categoryForType } from '../../../shared/worldAssets/types'
 import type { AssetType } from '../../../shared/worldAssets/types'
 import type { Host, CardCtx, FloorLike, HostPresetView } from '../../../shared/thRuntime/types'
 import type { VarOp } from '../../../shared/thRuntime/ops'
+import {
+  createAgentHostFacet,
+  type AgentToolCompletion,
+  type AgentToolRequest,
+  type CardAgentToolBinding,
+  type CardFloorCommit
+} from '../../../shared/thRuntime/agentHostFacet'
 
 // Global vars are per-PROFILE, so ALL inline card hosts in this renderer realm share ONE cache per profile
 // (each card iframe builds its own createInlineHost, but they all run in the same parent renderer realm).
@@ -124,7 +131,62 @@ export function createInlineHost(ctx: CardCtx): Host {
     globalVarCaches.set(ctx.profileId, cache)
     return cache
   }
+  const scope = (): { profileId: string; chatId: string; characterId: string } => ({
+    profileId: ctx.profileId,
+    chatId: ctx.chatId,
+    characterId: cardCharacterId()
+  })
+  const agentHost = createAgentHostFacet<string>({
+    invocation: {
+      run: ({ kind: _kind, ...command }) => window.api.cardAgentRun({ ...scope(), ...command }),
+      runPlan: ({ kind: _kind, ...command }) =>
+        window.api.cardAgentRunPlan({ ...scope(), ...command }),
+      cancel: (requestId) => window.api.cardAgentCancel(requestId)
+    },
+    tools: {
+      register: async (binding: CardAgentToolBinding) => {
+        const registration = await window.api.cardAgentRegisterTool({ ...scope(), binding })
+        if (typeof registration?.completionCapability !== 'string') {
+          throw new Error('Card tool registration did not return a completion capability')
+        }
+        return registration.completionCapability
+      },
+      unregister: (name) => window.api.cardAgentUnregisterTool({ ...scope(), name }),
+      complete: (completionCapability: string, completion: AgentToolCompletion) =>
+        window.api.cardAgentToolResult({
+          ...scope(),
+          completionCapability,
+          ...completion
+        }),
+      onRequest: (handler: (request: AgentToolRequest) => void) =>
+        window.api.onCardAgentToolRequest((request: any) => {
+          const requestScope = request?.scope
+          if (
+            requestScope?.profileId !== ctx.profileId ||
+            requestScope?.chatId !== ctx.chatId ||
+            requestScope?.characterId !== cardCharacterId()
+          )
+            return
+          handler(request)
+        }),
+      onAbort: (handler: (requestId: string) => void) =>
+        window.api.onCardAgentToolAbort((request: { requestId: string }) =>
+          handler(request.requestId)
+        )
+    },
+    floors: {
+      subscribe: (handler: (event: CardFloorCommit) => void) =>
+        window.api.onCardFloorCommitted(
+          (payload: { profileId: string; chatId: string; event: CardFloorCommit }) => {
+            if (payload.profileId === ctx.profileId && payload.chatId === ctx.chatId) {
+              handler(payload.event)
+            }
+          }
+        )
+    }
+  })
   return {
+    ...agentHost,
     ctx,
     statData: () => statOf(),
     floors: () => floorsOf(),

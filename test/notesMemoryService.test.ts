@@ -24,7 +24,12 @@ import { deleteChat } from '../src/main/services/chatService'
 // better-sqlite3's shape (transaction(fn) returns fn, the caller invokes it) so the fn still runs.
 vi.mock('../src/main/services/db', () => ({
   getDb: () => ({
-    prepare: () => ({ run: () => ({ changes: 0 }) }),
+    prepare: (sql: string) => {
+      if (sql.includes('SELECT profile_id')) {
+        throw new Error('Known-profile chat deletion must not re-resolve central ownership')
+      }
+      return { run: () => ({ changes: 0 }) }
+    },
     transaction: (fn: () => unknown) => fn
   })
 }))
@@ -93,7 +98,7 @@ describe('removeNotes', () => {
 })
 
 describe('deleteChat notes cleanup', () => {
-  it('removes the chat notes file (the file lives outside the app DB)', () => {
+  it('removes the chat notes file without re-resolving its known profile', () => {
     writeNotes(P, 'chatF', '## keep-until-delete\nbody')
     expect(fs.existsSync(notesFilePath(P, 'chatF'))).toBe(true)
     deleteChat(P, 'chatF')

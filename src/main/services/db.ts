@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { getAppDir, ensureDir } from './storageService'
 import { classifyStatement } from './tableSql'
+import { normalizeAgentName } from '../../shared/agentRuntime'
 
 let db: Database.Database | null = null
 
@@ -50,6 +51,46 @@ CREATE TABLE IF NOT EXISTS chats (
   cached_world_info TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chats_profile ON chats(profile_id);
+
+-- Profile-wide Agent Runtime catalog. Baselines remain source-faithful; customization_ops is a
+-- deterministic path/value overlay, and effective_definition/effective_hash are the activation
+-- snapshot derived from both. Names are unique case-insensitively across every source kind.
+CREATE TABLE IF NOT EXISTS agent_catalog (
+  id TEXT NOT NULL,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL COLLATE NOCASE,
+  name_key TEXT NOT NULL,
+  source_kind TEXT NOT NULL CHECK(source_kind IN ('builtin','user-created','user-imported','card')),
+  source_key TEXT NOT NULL,
+  source_version TEXT NOT NULL,
+  source_present INTEGER NOT NULL DEFAULT 1,
+  available_source_version TEXT,
+  available_definition TEXT,
+  baseline_definition TEXT NOT NULL,
+  customization_ops TEXT NOT NULL DEFAULT '[]',
+  effective_definition TEXT NOT NULL,
+  effective_hash TEXT NOT NULL,
+  -- PROFILE-LOCAL per-Agent invocation config (execution-plan M5b). JSON { apiPresetId?: string }.
+  -- Deliberately SEPARATE from baseline/customization/effective so it NEVER travels into an exported
+  -- .rptagent (design section 10 forbids user-local preset refs): export serializes effective only.
+  invocation_config TEXT NOT NULL DEFAULT '{}',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (profile_id, id),
+  UNIQUE (profile_id, name_key)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_catalog_source
+  ON agent_catalog(profile_id, source_kind, source_key, name);
+
+CREATE TABLE IF NOT EXISTS agent_role_bindings (
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK(role IN ('classic.narrator','yuzu.sceneDirector')),
+  agent_id TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (profile_id, role),
+  FOREIGN KEY (profile_id, agent_id) REFERENCES agent_catalog(profile_id, id) ON DELETE RESTRICT
+);
 
 CREATE TABLE IF NOT EXISTS floors (
   chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -381,6 +422,42 @@ export const migrateAgentPacksToVersioned = (database: Database.Database): void 
 }
 
 /**
+ * D6 / execution-plan M5a: purge the retired `Classic Narrator` and `Yuzu Scene Director` built-in
+ * decoy rows and their role bindings from every profile. Those two were seeded into `agent_catalog`
+ * (source_kind 'builtin') and role-bound, but generation never read them (Classic's prompt comes from
+ * `generation/classicTurn.ts`; Yuzu rides the same path via `vnMode`). A FRESH profile no longer seeds
+ * them; this migration removes the ORPHANED rows a pre-M5a profile already holds — the orphan case a
+ * fresh profile cannot reproduce (plan §6 risk 4).
+ *
+ * A MIGRATION-INTERNAL path that bypasses the `AgentCatalog` `SOURCE_BACKED` delete guard: plain DELETE
+ * statements, no table rebuild (the `agent_role_bindings` table, its `role` CHECK constraint, and the
+ * card role-recommendation schema are KEPT — a harmless constraint over an empty table; cards may still
+ * recommend roles). Bindings are deleted FIRST because their FK to `agent_catalog` is `ON DELETE
+ * RESTRICT`. Idempotent: no matching rows ⇒ a no-op. Runs across all profiles in one pass (the DB is
+ * shared; `agent_catalog` is profile-scoped by column, not by file).
+ */
+export const migrateRemoveDecoyBuiltinAgents = (database: Database.Database): void => {
+  const cols = database.prepare(`PRAGMA table_info(agent_catalog)`).all() as Array<{ name: string }>
+  if (cols.length === 0) return // no catalog table yet (a fresh DB before SCHEMA) — nothing to purge
+  // The retired built-in source keys (agentRuntime/catalog/builtins.ts RETIRED_BUILTIN_KEYS). Inlined
+  // here so the low-level db module keeps no dependency on the catalog module.
+  const RETIRED = "('classic-narrator','yuzu-scene-director')"
+  database.transaction(() => {
+    database.exec(
+      `DELETE FROM agent_role_bindings
+        WHERE agent_id IN (
+          SELECT id FROM agent_catalog
+           WHERE source_kind = 'builtin' AND source_key IN ${RETIRED}
+        )`
+    )
+    database.exec(
+      `DELETE FROM agent_catalog
+        WHERE source_kind = 'builtin' AND source_key IN ${RETIRED}`
+    )
+  })()
+}
+
+/**
  * One-time backfill for the `table_ops.target_table` column (WS1). Rows logged before the column
  * existed carry NULL; classify each with the write-path classifier and store the target table, or
  * `'*'` when the raw SQL no longer classifies (the always-replay defensive tail). Since only
@@ -433,6 +510,45 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'chats', 'mode', 'mode TEXT')
   addColumnIfMissing(db, 'chats', 'cached_world_info', 'cached_world_info TEXT')
   addColumnIfMissing(db, 'chats', 'pending_lore', 'pending_lore TEXT')
+  // M5b2: one-time per-profile marker for the memory-maintenance settings SEED (the re-home of the old
+  // workflow-doc memory group settings onto the Memory Maintenance Agent). 0 = not yet seeded (a
+  // pre-existing profile whose OLD doc-group customizations must be inherited on next open); 1 = seeded
+  // or born re-homed (createProfile writes 1). Mirrors the `chats.session_migrated` per-entity marker
+  // precedent — a column on the entity table, not a parallel marker mechanism.
+  addColumnIfMissing(
+    db,
+    'profiles',
+    'memory_settings_seeded',
+    'memory_settings_seeded INTEGER NOT NULL DEFAULT 0'
+  )
+  addColumnIfMissing(db, 'agent_catalog', 'name_key', 'name_key TEXT')
+  addColumnIfMissing(
+    db,
+    'agent_catalog',
+    'source_present',
+    'source_present INTEGER NOT NULL DEFAULT 1'
+  )
+  addColumnIfMissing(db, 'agent_catalog', 'available_source_version', 'available_source_version TEXT')
+  addColumnIfMissing(db, 'agent_catalog', 'available_definition', 'available_definition TEXT')
+  // M5b: the profile-local per-Agent invocation config (API-preset choice re-homed off the memory doc).
+  addColumnIfMissing(db, 'agent_catalog', 'invocation_config', "invocation_config TEXT NOT NULL DEFAULT '{}'")
+  const agentNames = db
+    .prepare('SELECT profile_id, id, name FROM agent_catalog WHERE name_key IS NULL')
+    .all() as Array<{ profile_id: string; id: string; name: string }>
+  const updateAgentNameKey = db.prepare(
+    'UPDATE agent_catalog SET name_key = ? WHERE profile_id = ? AND id = ?'
+  )
+  db.transaction(() => {
+    for (const row of agentNames) {
+      updateAgentNameKey.run(normalizeAgentName(row.name), row.profile_id, row.id)
+    }
+  })()
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_catalog_name_key ON agent_catalog(profile_id, name_key)'
+  )
+  // D6 / M5a: delete the retired Classic Narrator / Yuzu Scene Director decoy rows + role bindings from
+  // any pre-M5a profile (no-op on a fresh DB; no table rebuild — see migrateRemoveDecoyBuiltinAgents).
+  migrateRemoveDecoyBuiltinAgents(db)
   // Session-tier workflow override (node-workflow spec §12); null = inherit world/global/builtin.
   addColumnIfMissing(db, 'chats', 'workflow_id', 'workflow_id TEXT')
   // Project Yuzu (ADR 0008 §7): opt-in VN play mode for the session — ORTHOGONAL to `mode` (the FSM

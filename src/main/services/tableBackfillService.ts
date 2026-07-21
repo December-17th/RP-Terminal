@@ -67,6 +67,16 @@ export interface BackfillState {
 // One AbortController + live state per chat with a backfill in flight (or just finished, for re-mount).
 const runs = new Map<string, { controller: AbortController; state: BackfillState }>()
 
+/** READ-ONLY: is a manual table backfill mid-job? (Classic Narrator plan, Milestone 4 — one of the
+ *  sources unioned into `hasActiveBackgroundWork()`.) A backfill is a long-running multi-batch LLM
+ *  job that writes memory tables and reaches the provider through `callModelResilient`, which never
+ *  registers in `activeControllers` — so no other source can see it. Reads `state.running`, NOT the
+ *  map size: a finished run's entry is kept so a re-mounted view can still read its final state. */
+export const hasActiveBackfill = (): boolean => {
+  for (const entry of runs.values()) if (entry.state.running) return true
+  return false
+}
+
 /**
  * PURE (unit-tested): the ascending batch spans over the chosen scope. `totalFloors` is the chat's
  * floor COUNT; scope = the last X floors (`start = max(0, N - X)`, or 0 for 'all'), split into
@@ -193,7 +203,18 @@ export const startBackfill = async (
   const retries = Math.max(0, Math.min(5, opts.retries))
 
   // Kick off the async run; do NOT await it here (the IPC caller returns immediately).
-  void runBatches(profileId, chatId, gen, template, floors, spans, allTables, retries, state, controller.signal)
+  void runBatches(
+    profileId,
+    chatId,
+    gen,
+    template,
+    floors,
+    spans,
+    allTables,
+    retries,
+    state,
+    controller.signal
+  )
 }
 
 /** The sequential batch loop (extracted for readability; state is mutated in place + broadcast). */
@@ -250,7 +271,10 @@ const runBatches = async (
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)
         state.failures.push({ span, reason })
-        log('info', `table backfill batch ${span.from}-${span.to} failed (chat ${chatId}): ${reason}`)
+        log(
+          'info',
+          `table backfill batch ${span.from}-${span.to} failed (chat ${chatId}): ${reason}`
+        )
         notifyBackfillProgress({
           chatId,
           batchIndex: i,
@@ -310,7 +334,11 @@ const processBatch = async (
   // The backfill treats the WHOLE batch as one 交互 and maintains every table regardless of per-table
   // cadence — the resolved frequency here only shapes the rendered header cadence line (off → 手动维护).
   const globalDefault = getSettings(profileId).tables?.default_update_frequency ?? 3
-  const tablesBlock = composeTablesBlock(template, readAllTables(profileId, chatId, template), globalDefault)
+  const tablesBlock = composeTablesBlock(
+    template,
+    readAllTables(profileId, chatId, template),
+    globalDefault
+  )
 
   const transcript = buildBatchTranscript(floors, span.from, span.to)
   const system = backfillMaintainerPrompt(tablesBlock, transcript, span.from, span.to)

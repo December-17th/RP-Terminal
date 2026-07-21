@@ -5,7 +5,6 @@ import { useCharacterStore } from '../stores/characterStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useRegexStore } from '../stores/regexStore'
 import { StreamingView } from './StreamingView'
-import { NodePanels } from './NodePanels'
 import { FloorBlock, type FloorMenuTarget, type RenderedFloor } from './FloorBlock'
 import { ChatToolbar } from './ChatToolbar'
 import { ScriptActionsBar } from './ScriptActionsBar'
@@ -16,19 +15,14 @@ import { expandMacros } from '../../../shared/macros'
 import { stripRptEvents, stripThinking, extractThinking } from '../../../shared/responseView'
 import { renderTemplate } from '../plugin/renderTemplate'
 import { useUiStore } from '../stores/uiStore'
-import { useAgentFailureStore } from '../stores/agentFailureStore'
-import {
-  useRecallFailOpenStore,
-  shouldShowRecallBanner
-} from '../stores/recallFailOpenStore'
 import {
   useAgentActivityStore,
   currentActivityLabelKey
 } from '../stores/agentActivityStore'
 import { useT } from '../i18n'
 
-// Local copy of the workflow editors' `inEditable` shape (do NOT import across modules): true when
-// focus is inside a text-entry element, so keyboard paging never fires while typing in the composer.
+// Local `inEditable` guard (do NOT import across modules): true when focus is inside a text-entry
+// element, so keyboard paging never fires while typing in the composer.
 const inEditable = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
   (target.tagName === 'INPUT' ||
@@ -73,18 +67,6 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const openDuelPopup = useUiStore((s) => s.openDuelPopup)
   const settings = useSettingsStore((s) => s.settings)
   const regexRules = useRegexStore((s) => s.rules)
-  // Last headless-agent failure for THIS chat (App records it off the workflow-trace flow) — shown as
-  // a dismissible banner above the composer so a silent background-agent failure is never missed.
-  const agentFailure = useAgentFailureStore((s) => (activeChatId ? s.failures[activeChatId] : undefined))
-  const clearAgentFailure = useAgentFailureStore((s) => s.clear)
-  // Plot-recall (A3): consecutive pre-turn recall fail-opens for THIS chat (App tallies them off the
-  // workflow-trace flow). After the threshold, warn that turns are silently running without memory.
-  const recallStreak = useRecallFailOpenStore((s) => (activeChatId ? s.counts[activeChatId] ?? 0 : 0))
-  const recallDismissed = useRecallFailOpenStore((s) =>
-    activeChatId ? !!s.dismissed[activeChatId] : false
-  )
-  const dismissRecall = useRecallFailOpenStore((s) => s.dismiss)
-  const showRecallBanner = !!activeChatId && shouldShowRecallBanner(recallStreak, recallDismissed)
   // Post-phase side-agent (memory.maintain / notes.maintain / agent.llm): background LLM work that runs
   // AFTER the reply is already shown, so a quieter status chip (above the toolbar) — not a blocking ghost.
   const postActivityKey = useAgentActivityStore((s) =>
@@ -344,9 +326,6 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
           ) : (
             <div className="floor-empty">{t('chat.noMessages')}</div>
           )}
-          {activeChatId && (showStreaming || page === floors.length - 1) && (
-            <NodePanels chatId={activeChatId} />
-          )}
           {error && (
             <div
               className="floor-block"
@@ -437,84 +416,6 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
         <div style={{ display: 'flex', justifyContent: 'center', margin: '6px 0' }}>
           <button className="btn-accent" style={{ fontSize: 12 }} onClick={() => openDuelPopup()}>
             ⚔ {t('duel.reopen')}
-          </button>
-        </div>
-      ) : null}
-
-      {agentFailure && activeChatId ? (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            padding: '6px 10px',
-            margin: '6px 0',
-            borderRadius: 6,
-            border: '1px solid var(--rpt-danger, #d9534f)',
-            background: 'var(--rpt-danger-soft, rgba(217,83,79,0.12))',
-            fontSize: 13
-          }}
-        >
-          <span>
-            {t('agent.headlessFailed', {
-              reason:
-                agentFailure.reason.length > 200
-                  ? agentFailure.reason.slice(0, 200) + '…'
-                  : agentFailure.reason
-            })}
-          </span>
-          <button
-            title={t('common.dismiss')}
-            style={{
-              flex: '0 0 auto',
-              background: 'none',
-              border: 'none',
-              color: 'inherit',
-              cursor: 'pointer',
-              fontSize: 16,
-              lineHeight: 1,
-              padding: '0 2px'
-            }}
-            onClick={() => clearAgentFailure(activeChatId)}
-          >
-            ×
-          </button>
-        </div>
-      ) : null}
-
-      {showRecallBanner && activeChatId ? (
-        <div
-          role="alert"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            padding: '6px 10px',
-            margin: '6px 0',
-            borderRadius: 6,
-            border: '1px solid var(--rpt-warning, #e0a23c)',
-            background: 'var(--rpt-warning-soft, rgba(224,162,60,0.14))',
-            fontSize: 13
-          }}
-        >
-          <span>{t('recall.failOpenBanner', { n: recallStreak })}</span>
-          <button
-            title={t('common.dismiss')}
-            style={{
-              flex: '0 0 auto',
-              background: 'none',
-              border: 'none',
-              color: 'inherit',
-              cursor: 'pointer',
-              fontSize: 16,
-              lineHeight: 1,
-              padding: '0 2px'
-            }}
-            onClick={() => dismissRecall(activeChatId)}
-          >
-            ×
           </button>
         </div>
       ) : null}

@@ -10,6 +10,7 @@ import * as chatService from './chatService'
 import * as generationService from './generationService'
 import { chatIndexMap } from '../../shared/thRuntime/shapes'
 import type { FloorFile } from '../types/chat'
+import { floorStateForChat, type FloorTranscriptUpdate } from './agentRuntime/floorState'
 
 /**
  * Edit message content by chat-array index (TH setChatMessages). Returns the count of floors actually
@@ -39,7 +40,21 @@ export function setChatMessages(profileId: string, chatId: string, messages: unk
     else floors[slot.floorIdx].response.content = text
     touched.add(slot.floorIdx)
   }
-  for (const fi of touched) floorService.saveFloor(profileId, chatId, floors[fi])
+  const floorState = floorStateForChat(chatId)
+  if (floorState && touched.size) {
+    floorState.updateTranscript(
+      chatId,
+      [...touched].map(
+        (fi): FloorTranscriptUpdate => ({
+          floor: floors[fi].floor,
+          userContent: floors[fi].user_message.content,
+          responseContent: floors[fi].response.content
+        })
+      )
+    )
+  } else {
+    for (const fi of touched) floorService.saveFloor(profileId, chatId, floors[fi])
+  }
   return touched.size
 }
 
@@ -91,6 +106,7 @@ export function saveChat(profileId: string, chatId: string, chat: unknown): Save
   const opening = floors[0]?.response.content
   const assistant = chat.filter((m) => m && !(m as any).is_user)
   let changedFrom: number | null = null
+  const updates: FloorTranscriptUpdate[] = []
   assistant.forEach((m: any, i) => {
     const f = floors[i]
     if (!f) return
@@ -104,9 +120,21 @@ export function saveChat(profileId: string, chatId: string, chat: unknown): Save
     if (contentChanged) f.response.content = m.mes
     if (swipesChanged) f.swipes = m.swipes
     if (swipeIdChanged) f.swipe_id = m.swipe_id
-    floorService.saveFloor(profileId, chatId, f)
+    updates.push({
+      floor: f.floor,
+      ...(contentChanged ? { responseContent: f.response.content } : {}),
+      ...(swipesChanged ? { swipes: f.swipes } : {}),
+      ...(swipeIdChanged ? { swipeId: f.swipe_id } : {})
+    })
     if (changedFrom === null || f.floor < changedFrom) changedFrom = f.floor
   })
+  const floorState = floorStateForChat(chatId)
+  if (floorState && updates.length) floorState.updateTranscript(chatId, updates)
+  else
+    for (const update of updates) {
+      const changed = floors.find((floor) => floor.floor === update.floor)
+      if (changed) floorService.saveFloor(profileId, chatId, changed)
+    }
   return { ok: true, changedFrom }
 }
 
@@ -121,6 +149,10 @@ export function afterChatMutation(
   chatId: string,
   fromFloor = 0
 ): FloorFile | null {
+  if (floorStateForChat(chatId)) {
+    const floors = floorService.getAllFloors(profileId, chatId)
+    return floors[floors.length - 1] ?? null
+  }
   const rebuilt = generationService.reevaluateVariables(profileId, chatId, fromFloor)
   return rebuilt[rebuilt.length - 1] ?? null
 }

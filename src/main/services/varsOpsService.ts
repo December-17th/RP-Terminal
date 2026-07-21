@@ -1,8 +1,9 @@
 import { getSessionDbByChat } from './sessionDbService'
 import { log } from './logService'
+import { floorStateForChat } from './agentRuntime/floorState'
 
 /**
- * Floor-keyed op log for CARD/PANEL variable writes (manual-pass issue 02).
+ * Compatibility access to the legacy floor-keyed CARD/PANEL variable journal.
  *
  * `stat_data` is rebuilt from the model's `<UpdateVariable>` blocks on `reevaluateVariables`, but
  * card writes (JSON-Patch via `applyVariableOps`, whole-replace via `wcv-host-set-vars`) are NOT
@@ -11,7 +12,9 @@ import { log } from './logService'
  * re-evaluation, so a chat mutation that triggers the re-fold no longer silently wipes them. This
  * mirrors the SQL-table-memory `table_ops` journal + replay pattern (tableOpsService.ts).
  *
- * Kind 'patch' carries the applied JsonPatchOp[]; 'replace' carries a whole stat_data object.
+ * New writes are translated into the general FloorState journal. Existing `vars_ops` rows remain
+ * readable and are imported non-destructively by FloorState. Kind 'patch' carries the applied
+ * JsonPatchOp[]; 'replace' carries a whole stat_data object.
  * Reads are FAIL-OPEN: a row whose payload no longer parses is logged and skipped, never bricking
  * the chat (the rebuildSandbox precedent). Truncation drops ops at/after the cut
  * (`deleteVarsOpsFrom`, hooked in chatService.truncateFloors); chat deletion goes via FK cascade.
@@ -33,6 +36,15 @@ export const appendVarsOp = (
   kind: VarsOpKind,
   payload: unknown
 ): void => {
+  const floorState = floorStateForChat(chatId)
+  if (floorState) {
+    if (kind === 'patch') floorState.appendPatch(chatId, floor, 'card', payload as unknown[])
+    else
+      floorState.append(chatId, floor, 'card', [
+        { kind: 'set', path: 'variables.stat_data', value: payload }
+      ])
+    return
+  }
   const db = getSessionDbByChat(chatId)
   if (!db) return
   const row = db

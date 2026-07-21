@@ -12,7 +12,7 @@ import {
   filterEntriesByCodes
 } from '../src/main/services/tableExportService'
 import { codeColumnOf } from '../src/shared/memory/codeColumn'
-import { buildPlotBlock } from '../src/main/services/nodes/builtin/recallNodes'
+import { buildPlotBlock } from '../src/main/services/memory/plotRecallCompose'
 
 // WP3 pure recall helpers, tested against the REAL 命定之诗 template's exportConfigs. Rows are
 // hand-built positional TableRead arrays (no SQL runs). We pin: the catalogue rendering + gating +

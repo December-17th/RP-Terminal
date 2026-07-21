@@ -8,17 +8,19 @@ import * as storageService from './services/storageService'
 import { copyLegacyLocationPointerIfNeeded, readLocationPointer } from './services/locationPointer'
 import * as migrationService from './services/migrationService'
 import * as sessionMigrationService from './services/sessionMigrationService'
-import * as sessionDbService from './services/sessionDbService'
 import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
 import * as worldAssetProtocol from './services/worldAssetProtocol'
 import * as avatarProtocol from './services/avatarProtocol'
-// Side-effect: wires workflowService's card-import ops into characterService's seam (breaks the
-// characterService → workflowService cycle). Must load before any card import runs.
-import './services/cardWorkflowBridge'
+import './services/cardAgentCatalogBridge'
+import './services/agentPresetAssemblyBridge'
+import './services/memoryMaintenanceAgentBridge'
 import { registerIpc } from './ipc'
 import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
+import { appExitGuard, runShutdownCleanup, setExitDialogWindow } from './appExit'
+import { initializeInvocationRuntime } from './services/agentRuntime/InvocationRuntimeService'
+import { initializeFloorCommitTriggers } from './services/agentRuntime/triggerRuntime'
 
 // A packaged Windows ZIP is self-contained: RP Terminal records, Electron preferences, browser
 // storage, and caches all live below rp-terminal-data beside the executable. macOS retains Electron's
@@ -103,6 +105,16 @@ function createWindow(): void {
   // issue 02): gated channels run only when the caller IS this window's main frame.
   setGuardMainWindow(mainWindow)
 
+  // Interception point #1: the close button / Windows title-bar close. Only OUTSIDE macOS, where it
+  // cascades into window-all-closed -> app.quit() and really does discard the work. On macOS closing
+  // the window leaves the app (and its background work) running, so prompting there would both be a
+  // false alarm and change what the close button means. Milestone 4.
+  setExitDialogWindow(mainWindow)
+  if (process.platform !== 'darwin') {
+    mainWindow.on('close', (e) => appExitGuard.handleExitRequest(e))
+  }
+  mainWindow.on('closed', () => setExitDialogWindow(null))
+
   mainWindow.on('ready-to-show', () => {
     mainWindow.maximize()
     mainWindow.show()
@@ -176,6 +188,9 @@ app.whenReady().then(() => {
     app.quit()
     return
   }
+  initializeInvocationRuntime()
+  // Evaluate declarative cadence triggers at the new-floor commit boundary (execution-plan M3).
+  initializeFloorCommitTriggers()
 
   // Initialize the sandboxed template engine (non-blocking for the rest of startup).
   templateService.initTemplates().then(() => logService.log('info', 'Template engine ready'))
@@ -214,19 +229,15 @@ app.on('window-all-closed', () => {
   }
 })
 
+// Interception point #2: macOS Cmd-Q and the dock's Quit, plus every programmatic app.quit(). This is
+// the LAST point that can still stop the exit — `will-quit` (below) cannot. Milestone 4.
+app.on('before-quit', (e) => appExitGuard.handleExitRequest(e))
+
 // Close every open per-chat session DB handle before quitting so Windows file locks don't linger and a
-// clean shutdown checkpoints each WAL (plan §B4 / review C3).
-app.on('will-quit', () => {
-  try {
-    sessionDbService.closeAll()
-  } catch (err: any) {
-    logService.log(
-      'error',
-      'Failed to close session DB handles on quit',
-      err?.message || String(err)
-    )
-  }
-})
+// clean shutdown checkpoints each WAL (plan §B4 / review C3). The body moved to appExit.ts so the
+// `restart-app` path — which calls app.exit(0) and therefore never fires will-quit — can run the
+// identical cleanup instead of skipping it.
+app.on('will-quit', () => runShutdownCleanup())
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.

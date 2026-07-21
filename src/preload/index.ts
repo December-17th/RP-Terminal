@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { VarsOrigin } from '../shared/thRuntime/types'
+import { AGENT_CATALOG_CHANNELS, CARD_AGENT_CHANNELS } from '../shared/agentRuntime'
+import type {
+  AgentRunCancelResult,
+  AgentRunEvent,
+  AgentRunRecord,
+  CardAgentToolExecution,
+  CardFloorCommit
+} from '../shared/agentRuntime'
+import type { CharacterImportDialogResult } from '../shared/characterImport'
 
 // Custom APIs for renderer
 const api = {
@@ -22,8 +31,15 @@ const api = {
     ipcRenderer.invoke('set-titlebar-overlay', overlay),
   saveCharacter: (profileId: string, charId: string, card: any) =>
     ipcRenderer.invoke('save-character', profileId, charId, card),
-  importCharacterDialog: (profileId: string) =>
+  importCharacterDialog: (profileId: string): Promise<CharacterImportDialogResult | null> =>
     ipcRenderer.invoke('import-character-dialog', profileId),
+  confirmCharacterImport: (
+    token: string,
+    agentRenames: Record<string, string>
+  ): Promise<CharacterImportDialogResult> =>
+    ipcRenderer.invoke('confirm-character-import', token, agentRenames),
+  cancelCharacterImport: (token: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('cancel-character-import', token),
   exportCharacterDialog: (profileId: string, characterId: string) =>
     ipcRenderer.invoke('export-character-dialog', profileId, characterId),
   getChats: (profileId: string) => ipcRenderer.invoke('get-chats', profileId),
@@ -171,212 +187,86 @@ const api = {
     ipcRenderer.invoke('preset-set-high-trust', profileId, presetId, on),
   presetGetInventory: (profileId: string, presetId: string) =>
     ipcRenderer.invoke('get-preset-inventory', profileId, presetId),
-  // Node-workflow graphs (Phase 3 persistence)
-  listNodeTypes: () => ipcRenderer.invoke('list-node-types'),
-  listWorkflows: (profileId: string) => ipcRenderer.invoke('list-workflows', profileId),
-  getWorkflow: (profileId: string, id: string) => ipcRenderer.invoke('get-workflow', profileId, id),
-  saveWorkflow: (profileId: string, id: string, doc: unknown) =>
-    ipcRenderer.invoke('save-workflow', profileId, id, doc),
-  cloneWorkflow: (profileId: string, sourceId: string) =>
-    ipcRenderer.invoke('clone-workflow', profileId, sourceId),
-  createWorkflow: (profileId: string, kind?: 'turn' | 'subgraph') =>
-    ipcRenderer.invoke('create-workflow', profileId, kind),
-  deleteWorkflow: (profileId: string, id: string) =>
-    ipcRenderer.invoke('delete-workflow', profileId, id),
-  getWorkflowSelection: (profileId: string) =>
-    ipcRenderer.invoke('get-workflow-selection', profileId),
-  setGlobalWorkflow: (profileId: string, id: string | null) =>
-    ipcRenderer.invoke('set-global-workflow', profileId, id),
-  setWorldWorkflow: (profileId: string, characterId: string, id: string | null) =>
-    ipcRenderer.invoke('set-world-workflow', profileId, characterId, id),
-  getChatWorkflow: (profileId: string, chatId: string) =>
-    ipcRenderer.invoke('get-chat-workflow', profileId, chatId),
-  setChatWorkflow: (profileId: string, chatId: string, id: string | null) =>
-    ipcRenderer.invoke('set-chat-workflow', profileId, chatId, id),
-  resolveWorkflowId: (profileId: string, chatId: string) =>
-    ipcRenderer.invoke('resolve-workflow-id', profileId, chatId),
-  importWorkflowDialog: (profileId: string) =>
-    ipcRenderer.invoke('import-workflow-dialog', profileId),
-  exportWorkflowDialog: (profileId: string, id: string, name: string) =>
-    ipcRenderer.invoke('export-workflow-dialog', profileId, id, name),
-  // Per-turn workflow run trace (spec §13 run/trace panel). Returns an unsubscribe function.
-  onWorkflowTrace: (cb: (trace: unknown) => void) => {
-    const listener = (_e: IpcRendererEvent, trace: unknown): void => cb(trace)
-    ipcRenderer.on('workflow-trace', listener)
-    return () => ipcRenderer.removeListener('workflow-trace', listener)
+  listAgentRuns: (profileId: string, chatId: string): Promise<AgentRunRecord[]> =>
+    ipcRenderer.invoke('agent-runs-list', { profileId, chatId }),
+  getAgentRun: (
+    profileId: string,
+    chatId: string,
+    invocationId: string
+  ): Promise<AgentRunRecord | null> =>
+    ipcRenderer.invoke('agent-run-get', { profileId, chatId, invocationId }),
+  cancelAgentRun: (
+    profileId: string,
+    chatId: string,
+    invocationId: string
+  ): Promise<AgentRunCancelResult> =>
+    ipcRenderer.invoke('agent-run-cancel', { profileId, chatId, invocationId }),
+  onAgentRunEvent: (cb: (event: AgentRunEvent) => void) => {
+    const listener = (_event: IpcRendererEvent, runEvent: AgentRunEvent): void => cb(runEvent)
+    ipcRenderer.on('agent-run-event', listener)
+    return () => ipcRenderer.removeListener('agent-run-event', listener)
   },
-  // Live side-agent activity (agent-activity-indicator): a calls-llm node OTHER than the narrator
-  // started/finished its API request. Returns an unsubscribe function.
-  onWorkflowActivity: (
-    cb: (p: {
-      chatId: string
-      nodeId: string
-      nodeType: string
-      phase: 'pre' | 'post'
-      state: 'start' | 'end'
-    }) => void
+  listAgentCatalog: (profileId: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.list, profileId),
+  getAgentDefinition: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.get, profileId, id),
+  syncAgentFolder: (profileId: string, conflicts?: 'keep-customization' | 'use-source') =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.syncFolder, profileId, conflicts),
+  setAgentEnabled: (profileId: string, id: string, enabled: boolean) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.setEnabled, profileId, id, enabled),
+  deleteAgent: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.remove, profileId, id),
+  bindAgentRole: (profileId: string, role: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.bindRole, profileId, role, id),
+  getAgentRoleBindings: (profileId: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.roleBindings, profileId),
+  createAgent: (profileId: string, definition: unknown) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.create, profileId, definition),
+  editAgent: (profileId: string, id: string, definition: unknown) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.edit, profileId, id, definition),
+  restoreAgent: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.restore, profileId, id),
+  exportAgent: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.exportOne, profileId, id),
+  inspectAgentUpgrade: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.inspectUpgrade, profileId, id),
+  upgradeAgent: (profileId: string, id: string, conflicts?: 'keep-customization' | 'use-source') =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.upgrade, profileId, id, conflicts),
+  runAgentManually: (profileId: string, chatId: string, agent: string, input?: unknown) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.run, profileId, chatId, agent, input),
+  getAgentInvocationConfig: (profileId: string, id: string) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.getInvocationConfig, profileId, id),
+  setAgentInvocationConfig: (profileId: string, id: string, config: { apiPresetId?: string }) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.setInvocationConfig, profileId, id, config),
+  cardAgentRun: (request: unknown) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.run, request),
+  cardAgentRunPlan: (request: unknown) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.runPlan, request),
+  cardAgentCancel: (requestId: string) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.cancel, requestId),
+  cardAgentRegisterTool: (request: unknown) =>
+    ipcRenderer.invoke(CARD_AGENT_CHANNELS.registerTool, request),
+  cardAgentUnregisterTool: (request: unknown) =>
+    ipcRenderer.invoke(CARD_AGENT_CHANNELS.unregisterTool, request),
+  cardAgentToolResult: (result: CardAgentToolExecution & { requestId: string; error?: string }) =>
+    ipcRenderer.send(CARD_AGENT_CHANNELS.toolResult, result),
+  onCardAgentToolRequest: (cb: (request: any) => void) => {
+    const listener = (_event: IpcRendererEvent, request: any): void => cb(request)
+    ipcRenderer.on(CARD_AGENT_CHANNELS.toolRequest, listener)
+    return () => ipcRenderer.removeListener(CARD_AGENT_CHANNELS.toolRequest, listener)
+  },
+  onCardAgentToolAbort: (cb: (request: { requestId: string }) => void) => {
+    const listener = (_event: IpcRendererEvent, request: { requestId: string }): void => cb(request)
+    ipcRenderer.on(CARD_AGENT_CHANNELS.toolAbort, listener)
+    return () => ipcRenderer.removeListener(CARD_AGENT_CHANNELS.toolAbort, listener)
+  },
+  onCardFloorCommitted: (
+    cb: (payload: { profileId: string; chatId: string; event: CardFloorCommit }) => void
   ) => {
-    const listener = (_e: IpcRendererEvent, p: any): void => cb(p)
-    ipcRenderer.on('workflow-activity', listener)
-    return () => ipcRenderer.removeListener('workflow-activity', listener)
+    const listener = (
+      _event: IpcRendererEvent,
+      payload: { profileId: string; chatId: string; event: CardFloorCommit }
+    ): void => cb(payload)
+    ipcRenderer.on(CARD_AGENT_CHANNELS.floorCommitted, listener)
+    return () => ipcRenderer.removeListener(CARD_AGENT_CHANNELS.floorCommitted, listener)
   },
-  // Opt-in node output panel deltas (spec D4 collapsible chat panels). Returns an unsubscribe.
-  onWorkflowPanel: (
-    cb: (p: { chatId: string; nodeId: string; label?: string; delta: string }) => void
-  ) => {
-    const listener = (_e: IpcRendererEvent, p: any): void => cb(p)
-    ipcRenderer.on('workflow-panel', listener)
-    return () => ipcRenderer.removeListener('workflow-panel', listener)
-  },
-  // Agent-pack library (agent-packs plan WP1.4): list + per-world gate + exposed-setting overrides.
-  // `scope` is 'global' | { world } | { chat } (agentPackStore OverrideScope).
-  listAgentPacks: (profileId: string, worldId?: string | null, chatId?: string | null) =>
-    ipcRenderer.invoke('agent-packs-list', profileId, worldId, chatId),
-  // WP4.6: `version` pins which coexisting version this activation runs (written on open; omitted =
-  // leave any existing pin / fall back to the highest installed version at resolve time).
-  setAgentPackGate: (
-    packId: string,
-    worldId: string,
-    chatId: string | null,
-    open: boolean,
-    version?: number | null
-  ) => ipcRenderer.invoke('agent-pack-set-gate', packId, worldId, chatId, open, version),
-  // WP4.6: re-pin which installed version of a pack runs in a world ("activate what the recipe
-  // pinned", ADR 0008). Overrides + trigger state carry over. Returns { ok } | { ok:false, code }.
-  setAgentPackActiveVersion: (
-    profileId: string,
-    packId: string,
-    version: number,
-    worldId: string
-  ) => ipcRenderer.invoke('agent-pack-set-active-version', profileId, packId, version, worldId),
-  setAgentPackOverride: (packId: string, scope: unknown, settingId: string, value: unknown) =>
-    ipcRenderer.invoke('agent-pack-set-override', packId, scope, settingId, value),
-  clearAgentPackOverride: (packId: string, scope: unknown, settingId: string) =>
-    ipcRenderer.invoke('agent-pack-clear-override', packId, scope, settingId),
-  resolveAgentPackOverrides: (packId: string, worldId: string | null, chatId: string | null) =>
-    ipcRenderer.invoke('agent-pack-resolve-overrides', packId, worldId, chatId),
-  // The detail panel's settings model (agent-packs plan WP3.2): creator-exposed + auto-derived System
-  // trigger params, each with its resolved value + provenance. Null when the pack isn't installed.
-  getAgentPackSettings: (
-    profileId: string,
-    packId: string,
-    worldId: string | null,
-    chatId: string | null
-  ) => ipcRenderer.invoke('agent-pack-settings', profileId, packId, worldId, chatId),
-  // Persisted workflow run history for the Runs timeline (agent-packs plan WP2.3). Returns records
-  // newest-first; page backward by passing the smallest seq of the previous page as `beforeSeq`.
-  listAgentPackRuns: (profileId: string, chatId: string, beforeSeq?: number, limit?: number) =>
-    ipcRenderer.invoke('agent-pack-list-runs', profileId, chatId, beforeSeq, limit),
-  // Read-only "why isn't this pack running?" trigger explanation for the Agents "Why?" popover
-  // (agent-packs plan WP3.5). Evaluates the pack's materialized triggers against committed state
-  // WITHOUT advancing baselines or firing — safe to call on popover open. [] when not gate-open.
-  explainAgentPackTriggers: (profileId: string, chatId: string, packId: string) =>
-    ipcRenderer.invoke('agent-pack-explain-triggers', profileId, chatId, packId),
-  // Live trigger badges for the one-canvas editor (one-canvas rebuild WP6.4a): explains the ENABLED
-  // trigger.* NODES of the chat's RESOLVED active doc read-only ({ nodeId, description, met, current,
-  // required } per node). READ-ONLY — never advances a baseline or fires; safe to fetch on editor open
-  // + after save. The doc-path sibling of explainAgentPackTriggers.
-  explainDocTriggers: (profileId: string, chatId: string) =>
-    ipcRenderer.invoke('workflow-explain-doc-triggers', profileId, chatId),
-  // Fire ONE trigger.manual node's chain on explicit user action (RF-01). Guards (active doc, node
-  // kind, disabled) live main-side in runManualDoc — they log + no-op, never throw.
-  runManualTrigger: (profileId: string, chatId: string, docId: string, triggerNodeId: string) =>
-    ipcRenderer.invoke('workflow-run-manual-trigger', profileId, chatId, docId, triggerNodeId),
-  // Effective-graph projection for the Workflow view's Effective mode (agent-packs plan WP3.6a;
-  // ADR 0010): the composed doc + composition warnings + per-pack grouping. A live projection,
-  // never persisted (ADR 0001) — re-fetch after a gate flip or narrator write-through.
-  getEffectiveGraph: (profileId: string, chatId: string) =>
-    ipcRenderer.invoke('agent-pack-effective-graph', profileId, chatId),
-  // Copy-on-edit fork (ADR 0006). Repoints only `worldId`'s activation to the fork. WP3.6a exposes
-  // it; WP3.6b consumes it for pack-node edit routing.
-  forkAgentPack: (profileId: string, packId: string, worldId: string, editedFragment?: unknown) =>
-    ipcRenderer.invoke('agent-pack-fork', profileId, packId, worldId, editedFragment),
-  // Fork write-through (ADR 0006; WP3.6b): replace a non-builtin pack's fragment doc (builtin →
-  // refused). Returns { ok, code, error } — the renderer toasts on failure.
-  updateAgentPackFragment: (profileId: string, packId: string, fragment: unknown) =>
-    ipcRenderer.invoke('agent-pack-update-fragment', profileId, packId, fragment),
-  // Read a pack's source fragment doc (WP3.6b): the renderer applies an edit to a copy before
-  // forking / writing through.
-  getAgentPackFragment: (profileId: string, packId: string) =>
-    ipcRenderer.invoke('agent-pack-fragment', profileId, packId),
-  // Is a pack's activation exclusively this world's? (WP4.4; ADR 0006.) The Effective-mode edit router
-  // consults it so a config edit on your OWN non-builtin fork writes through across restarts instead of
-  // minting a fork-of-fork. No activation rows → false (fork-again, the safe default).
-  isAgentPackActivationExclusive: (profileId: string, packId: string, worldId: string) =>
-    ipcRenderer.invoke('agent-pack-activation-exclusive', profileId, packId, worldId),
-  // Next-prompt injection preview (agent-packs plan WP3.4): the assembled prompt broken into per-source
-  // sections + an omitted list. A DRY RUN — zero state writes, zero LLM calls. Fetched on the Preview
-  // pane opening + on the Refresh button; never auto-polled.
-  previewNextPrompt: (profileId: string, chatId: string, userAction?: string) =>
-    ipcRenderer.invoke('agent-pack-preview-prompt', profileId, chatId, userAction),
-  // Agent-pack SHARING: `.rptagent` export / import (agent-packs plan WP4.2). Export refuses builtins
-  // (a fork of a builtin IS exportable). Import is TWO-PHASE for WP4.3's inspection screen: the dialog
-  // opens + inspects (returns a report incl. a `token`); the renderer then confirms or cancels.
-  previewAgentPackExport: (profileId: string, packId: string) =>
-    ipcRenderer.invoke('agent-pack-preview-export', profileId, packId),
-  exportAgentPackDialog: (profileId: string, packId: string) =>
-    ipcRenderer.invoke('agent-pack-export-dialog', profileId, packId),
-  importAgentPackDialog: (profileId: string) =>
-    ipcRenderer.invoke('agent-pack-import-dialog', profileId),
-  confirmAgentPackImport: (token: string) => ipcRenderer.invoke('agent-pack-confirm-import', token),
-  cancelAgentPackImport: (token: string) => ipcRenderer.invoke('agent-pack-cancel-import', token),
-  // Module SHARING: `.rptmodule` export / import (one-canvas rebuild WP6.5). Export a GROUP of the
-  // (unsaved) doc being edited as a reusable slab; import one into the open doc. Export is previewless
-  // (the module panel IS the review): pass the doc + groupId + optional whole active template. Import is
-  // TWO-PHASE (inspect → confirm): the sheet renders the report incl. a `token`; the renderer confirms
-  // (templates install main-side, the module payload comes back for graph insertion) or cancels.
-  exportModuleDialog: (
-    profileId: string,
-    doc: unknown,
-    groupId: string,
-    includeTemplate?: unknown
-  ) => ipcRenderer.invoke('module-export-dialog', profileId, doc, groupId, includeTemplate ?? null),
-  importModuleDialog: (profileId: string) => ipcRenderer.invoke('module-import-dialog', profileId),
-  confirmModuleImport: (token: string) => ipcRenderer.invoke('module-confirm-import', token),
-  cancelModuleImport: (token: string) => ipcRenderer.invoke('module-cancel-import', token),
-  // Agent library (agent-memory-ux WP-G): the palette's built-in + user module templates.
-  listModuleTemplates: (profileId: string) =>
-    ipcRenderer.invoke('list-module-templates', profileId),
-  getModuleTemplate: (profileId: string, id: string) =>
-    ipcRenderer.invoke('get-module-template', profileId, id),
-  saveModuleToLibrary: (profileId: string, module: unknown) =>
-    ipcRenderer.invoke('save-module-to-library', profileId, module),
-  // Agent & memory UX (WP-H): per-world lorebook entry picks for agent.llm's custom lore mode.
-  getLorePicks: (profileId: string, worldId: string, docId: string, nodeId: string) =>
-    ipcRenderer.invoke('get-lore-picks', profileId, worldId, docId, nodeId),
-  setLorePicks: (
-    profileId: string,
-    worldId: string,
-    docId: string,
-    nodeId: string,
-    picks: unknown[]
-  ) => ipcRenderer.invoke('set-lore-picks', profileId, worldId, docId, nodeId, picks),
-  // Recipe SHARING: `.rptrecipe` export / import (agent-packs plan WP5.2; ADR 0008) — "share this
-  // world's setup" (a set of embedded packs + activation preset + narrator choice). Export assembles
-  // from the CURRENT world; `opts` = the wizard's name/description/creator. Import is TWO-PHASE: the
-  // dialog inspects (report incl. a `token` + per-pack sub-reports); the renderer confirms with the
-  // TARGET WORLD (chosen at confirm — the recipe file doesn't know it) or cancels.
-  previewRecipeExport: (
-    profileId: string,
-    worldId: string,
-    opts: { name: string; description?: string; creator?: string; id?: string }
-  ) => ipcRenderer.invoke('recipe-preview-export', profileId, worldId, opts),
-  exportRecipeDialog: (
-    profileId: string,
-    worldId: string,
-    opts: { name: string; description?: string; creator?: string; id?: string }
-  ) => ipcRenderer.invoke('recipe-export-dialog', profileId, worldId, opts),
-  importRecipeDialog: (profileId: string) => ipcRenderer.invoke('recipe-import-dialog', profileId),
-  confirmRecipeImport: (token: string, targetWorldId: string) =>
-    ipcRenderer.invoke('recipe-confirm-import', token, targetWorldId),
-  cancelRecipeImport: (token: string) => ipcRenderer.invoke('recipe-cancel-import', token),
-  // Uninstall an installed pack (agent-packs plan WP4.3b). Powers the version-conflict import recovery
-  // (uninstall the installed pack, then re-confirm the SAME token) + the detail panel's remove action.
-  // Structured result: { ok:true } | { ok:false, code:'builtin' | 'not-found' } (builtins are refused).
-  // WP4.6: `version` uninstalls ONE version (omitted = the highest installed). The last version's
-  // removal cascades to the version-agnostic activation/override/trigger rows.
-  uninstallAgentPack: (profileId: string, packId: string, version?: number) =>
-    ipcRenderer.invoke('agent-pack-uninstall', profileId, packId, version),
   // SQL-table memory (issue 02): file-based table templates + per-chat assignment + read-only view
   listTableTemplates: (profileId: string) => ipcRenderer.invoke('table-templates-list', profileId),
   getTableTemplate: (profileId: string, id: string) =>

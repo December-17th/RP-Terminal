@@ -18,6 +18,7 @@ import {
 } from '../types/preset'
 import type { HostPresetView, HostPresetPrompt } from '../../shared/thRuntime/hostPrimitives'
 import { parseStPreset, selectPromptOrder } from '../parsers/stPresetParser'
+import { agentPresetRoot } from '../../shared/agentPresetEnvelope'
 import * as regexService from './regexService'
 import * as scriptService from './scriptService'
 import {
@@ -174,6 +175,43 @@ export const computePresetInventory = (parsed: any): PresetInventory => {
  */
 const presetRoot = (raw: any): any =>
   Array.isArray(raw) ? (raw.find((x) => x && typeof x === 'object') ?? {}) : (raw ?? {})
+
+/**
+ * Turn an Agent's BUNDLED preset envelope (ADR 0021 §5) into the same `Preset` a profile preset
+ * resolves to, so a bundled preset assembles identically to a stored one. The envelope is opaque at
+ * the contract layer, so this accepts every shape ADR 0018 envelopes appear in, most specific first:
+ *   1. `importedView` — the normalized snapshot written at import;
+ *   2. `parsed` — the nothing-dropped raw JSON (the usual case);
+ *   3. the object itself — a bare ST or native preset with no envelope wrapper.
+ * The raw is then normalized exactly as `installBundledPreset` normalizes a World Card's bundle:
+ * a structured `parameters` object means it is already native, otherwise it is an ST preset.
+ * Returns null when nothing usable can be produced; callers fall back rather than fail.
+ */
+export const presetFromEnvelope = (envelope: unknown): Preset | null => {
+  try {
+    const wrapper = (envelope ?? {}) as Record<string, any>
+    if (wrapper.importedView) {
+      const view = PresetSchema.safeParse(wrapper.importedView)
+      if (view.success) return view.data
+    }
+    // Unwrapped through the SHARED helper the Agent editor's save-time gate uses, so the editor can
+    // never accept an envelope this function would then reject at runtime.
+    const root = agentPresetRoot(envelope)
+    if (root && root.parameters && typeof root.parameters === 'object') {
+      const direct = PresetSchema.safeParse(root)
+      if (direct.success) return direct.data
+    }
+    const normalized = parseStPreset(root, root?.name || 'Bundled Agent Preset')
+    const preset = normalized ? PresetSchema.parse(normalized) : null
+    // A preset that parsed but defines NO prompt blocks assembles an empty prompt — inert, exactly
+    // what the editor's `inspectAgentPresetEnvelope` gate refuses to save. Treat it as unreadable so
+    // the two agree and the run is marked degraded rather than quietly sending nothing.
+    return preset?.prompts.length ? preset : null
+  } catch (error) {
+    log('error', 'Failed to read a bundled Agent preset envelope:', error)
+    return null
+  }
+}
 
 export const collectPresetRegex = (raw: any): any[] => {
   const ext = presetRoot(raw)?.extensions

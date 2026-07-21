@@ -7,6 +7,7 @@ import { RPEvent } from '../../parsers/contentParser'
 import { FloorMetrics } from '../../../shared/usageTypes'
 import { FloorFile, YuzuGateTrace } from '../../types/chat'
 import { GenContext } from './types'
+import { floorStateForChat } from '../agentRuntime/floorState'
 
 /**
  * Persist this turn's globals + the finished floor. Moved verbatim out of `generate()`
@@ -55,6 +56,9 @@ export const persistFloor = (
     ...(args.yuzu_trace ? { yuzu_trace: args.yuzu_trace } : {})
   }
 
+  if (floor.floor === 0 && ctx.floorStateBaseline) {
+    floorStateForChat(ctx.chatId)?.setBaseline(ctx.chatId, ctx.floorStateBaseline)
+  }
   appendFloor(ctx.profileId, ctx.chatId, floor)
 
   // Persist the forensic Execution Record for this generation (issue 09). The assemble stage stamped it

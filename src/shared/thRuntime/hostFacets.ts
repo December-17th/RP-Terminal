@@ -14,6 +14,15 @@ import type {
   StMessage,
   VarsOrigin
 } from './hostPrimitives'
+import type {
+  CardAgentPlanOutcome,
+  CardAgentRunOptions,
+  CardAgentRunOutcome,
+  CardAgentToolBinding,
+  CardAgentToolHandler,
+  CardFloorCommit,
+  InvocationPlan
+} from '../agentRuntime'
 
 /** Variables: stat_data + MVU ops, the three KV scopes (script / chat / global), and the
  *  stat_data change subscription. */
@@ -175,4 +184,12 @@ export interface EngineHost {
   evalTemplateError(tmpl: string, data?: any): string | null
   prepareContext(data?: any): any
   onHostEvent(cb: (name: string, payload?: any) => void): () => void
+}
+
+/** Agent invocation, live card Tool implementations, and causative floor commits. */
+export interface AgentHost {
+  runAgent(name: string, options?: CardAgentRunOptions): Promise<CardAgentRunOutcome>
+  runAgentPlan(plan: InvocationPlan, signal?: AbortSignal): Promise<CardAgentPlanOutcome>
+  registerAgentTool(binding: CardAgentToolBinding, handler: CardAgentToolHandler): () => void
+  onFloorCommitted(handler: (event: CardFloorCommit) => void): () => void
 }

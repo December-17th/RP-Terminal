@@ -152,6 +152,13 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     emit(TAVERN_EVENTS.MESSAGE_UPDATED, currentMessageId(chatFloors()))
   })
   const offHost = host.onHostEvent((name, payload) => emit(name, payload))
+  const agentResources = new Set<() => void>()
+  const trackAgentResource = (dispose: () => void): (() => void) => {
+    agentResources.add(dispose)
+    return () => {
+      if (agentResources.delete(dispose)) dispose()
+    }
+  }
 
   // Stable per-runtime script id (TH getScriptId) — our card scripts share one frame, so a per-frame
   // constant is enough (cross-script isolation by id isn't modeled; matches the inline shim's behavior).
@@ -893,6 +900,22 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
   }
 
   return {
+    rpt: {
+      agents: {
+        run: (name: string, options?: import('../agentRuntime').CardAgentRunOptions) =>
+          host.runAgent(String(name ?? ''), options),
+        runPlan: (
+          plan: import('../agentRuntime').InvocationPlan,
+          options?: { signal?: AbortSignal }
+        ) => host.runAgentPlan(plan, options?.signal),
+        registerTool: (
+          binding: import('../agentRuntime').CardAgentToolBinding,
+          handler: import('../agentRuntime').CardAgentToolHandler
+        ) => trackAgentResource(host.registerAgentTool(binding, handler)),
+        onFloorCommitted: (handler: (event: import('../agentRuntime').CardFloorCommit) => void) =>
+          trackAgentResource(host.onFloorCommitted(handler))
+      }
+    },
     TavernHelper: helpers,
     ...helpers,
     Mvu,
@@ -907,6 +930,8 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
         clearTimeout(settingsHydrationTimer)
         settingsHydrationTimer = null
       }
+      for (const dispose of [...agentResources]) dispose()
+      agentResources.clear()
       // Flush any pending extensionSettings write synchronously so a card's last saveSettingsDebounced()
       // before teardown is not lost, then clear the timer.
       if (saveSettingsTimer) {
