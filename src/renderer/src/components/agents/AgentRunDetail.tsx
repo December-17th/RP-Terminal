@@ -30,13 +30,16 @@ export function AgentRunDetail({
   onClose,
   onCopied,
   onEditInput,
-  onOpenPreset
+  onOpenPreset,
+  onSaveCase
 }: {
   record: AgentRunRecord
   onClose: () => void
   onCopied: () => void
   onEditInput: (input: AgentRunRecord['input']) => void
   onOpenPreset: () => void
+  /** When present, renders a "Save as Lab case" button that captures this run as a Lab fixture. */
+  onSaveCase?: () => void
 }): React.ReactElement {
   const t = useT()
   const duration = agentRunDurationMs(record)
@@ -54,9 +57,16 @@ export function AgentRunDetail({
             {t(`agentRuns.status.${record.status}`)}
           </span>
         </div>
-        <button type="button" onClick={onClose}>
-          {t('common.close')}
-        </button>
+        <div className="agent-runs__detail-actions">
+          {onSaveCase ? (
+            <button type="button" onClick={onSaveCase}>
+              {t('agents.lab.saveFromRun')}
+            </button>
+          ) : null}
+          <button type="button" onClick={onClose}>
+            {t('common.close')}
+          </button>
+        </div>
       </div>
 
       <dl className="agent-runs__summary">

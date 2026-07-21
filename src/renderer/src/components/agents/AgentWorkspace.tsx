@@ -24,6 +24,7 @@ import { ConfirmDialog } from '../ConfirmDialog'
 import { Modal } from '../Modal'
 import { useWcvSuppression } from '../useWcvSuppression'
 import { AgentEditor, validateDraft } from './AgentEditor'
+import { AgentLabTab } from './AgentLabTab'
 import { AgentManualRunForm } from './AgentManualRunForm'
 import { AgentPlanEditor } from './AgentPlanEditor'
 import { AgentRunDetail } from './AgentRunDetail'
@@ -32,7 +33,11 @@ import { AgentRunDiff } from './AgentRunDiff'
 
 type PreviewOk = Extract<AgentPromptPreview, { ok: true }>
 
-type Tab = 'definition' | 'plan' | 'runs'
+type Tab = 'definition' | 'plan' | 'runs' | 'lab'
+/** A pending "Save as Lab case" name prompt — either capturing an existing run or authoring from input. */
+type PendingCapture =
+  | { kind: 'run'; chatId: string; invocationId: string }
+  | { kind: 'input'; input: JsonObject }
 type CreationIntent = 'narrative' | 'background' | 'custom'
 type CreationStep = 'choose' | 'edit'
 type PendingTransition =
@@ -279,6 +284,11 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
   const handledDeepLinkRef = React.useRef<string | null>(null)
   const [preview, setPreview] = useState<PreviewOk | null>(null)
   const [previewBusy, setPreviewBusy] = useState(false)
+  // "Save as Lab case" inline name flow (no dedicated modal — plan Slice B) + a bump token that makes
+  // a freshly-captured case appear if the Lab tab reloads.
+  const [pendingCapture, setPendingCapture] = useState<PendingCapture | null>(null)
+  const [captureName, setCaptureName] = useState('')
+  const [labRefresh, setLabRefresh] = useState(0)
   // Up to two run ids selected for the prompt diff; both must belong to the same Agent (enforced below).
   const [compareIds, setCompareIds] = useState<string[]>([])
 
@@ -630,6 +640,51 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
     .map((id) => runs.find((run) => run.invocationId === id))
     .filter((run): run is AgentRunRecord => Boolean(run))
 
+  const beginCaptureFromRun = (record: AgentRunRecord): void => {
+    setPendingCapture({ kind: 'run', chatId: record.chatId, invocationId: record.invocationId })
+    setCaptureName(
+      t('agents.lab.defaultRunName', { agent: record.agentName, date: record.startedAt })
+    )
+  }
+
+  const beginCaptureFromInput = (input: JsonObject): void => {
+    if (!selected) return
+    setPendingCapture({ kind: 'input', input })
+    setCaptureName(t('agents.lab.defaultInputName', { agent: selected.name }))
+  }
+
+  const confirmCapture = async (): Promise<void> => {
+    const pending = pendingCapture
+    const name = captureName.trim()
+    if (!pending || !name) return
+    setSaving(true)
+    setNotice(null)
+    const result =
+      pending.kind === 'run'
+        ? await window.api.captureAgentLabCase(
+            profileId,
+            pending.chatId,
+            pending.invocationId,
+            name
+          )
+        : selected
+          ? await window.api.createAgentLabCaseFromInput(
+              profileId,
+              selected.id,
+              name,
+              pending.input
+            )
+          : ({ ok: false, code: 'AGENT_NOT_FOUND' } as const)
+    setSaving(false)
+    setPendingCapture(null)
+    if (result.ok) {
+      setNotice(t('agents.lab.captured'))
+      setLabRefresh((revision) => revision + 1)
+    } else {
+      setNotice(agentErrorMessage(t, result.code))
+    }
+  }
+
   return (
     <div className="modal-overlay" onClick={() => requestTransition({ type: 'close' })}>
       <div
@@ -691,6 +746,47 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
               <p className="agents-panel__error" role="alert">
                 {storeError}
               </p>
+            ) : null}
+
+            {pendingCapture ? (
+              <div
+                className="agent-lab__capture"
+                role="group"
+                aria-label={t('agents.lab.namePrompt')}
+              >
+                <label className="agent-field">
+                  <span>{t('agents.lab.namePrompt')}</span>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={captureName}
+                    placeholder={t('agents.lab.namePlaceholder')}
+                    onChange={(event) => setCaptureName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && captureName.trim()) void confirmCapture()
+                      if (event.key === 'Escape') setPendingCapture(null)
+                    }}
+                  />
+                </label>
+                <div className="agent-lab__capture-actions">
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={saving}
+                    onClick={() => setPendingCapture(null)}
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-accent"
+                    disabled={saving || !captureName.trim()}
+                    onClick={() => void confirmCapture()}
+                  >
+                    {t('agents.lab.saveCase')}
+                  </button>
+                </div>
+              </div>
             ) : null}
 
             {creating && creationStep === 'choose' ? (
@@ -885,7 +981,7 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
                 </section>
 
                 <nav className="agent-workspace__tabs">
-                  {(['definition', 'plan', 'runs'] as Tab[]).map((key) => (
+                  {(['definition', 'plan', 'runs', 'lab'] as Tab[]).map((key) => (
                     <button
                       key={key}
                       type="button"
@@ -953,6 +1049,7 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
                         hasChat={Boolean(chatId)}
                         onRun={(input) => void runNow(input)}
                         onPreview={(input) => void previewNow(input)}
+                        onSaveCase={(input) => beginCaptureFromInput(input)}
                       />
                     ) : null}
                     {preview ? (
@@ -1046,9 +1143,20 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
                           setRunDetail(null)
                         }}
                         onOpenPreset={() => requestTransition({ type: 'open-preset' })}
+                        onSaveCase={() => beginCaptureFromRun(runDetail)}
                       />
                     ) : null}
                   </div>
+                ) : null}
+
+                {tab === 'lab' ? (
+                  <AgentLabTab
+                    profileId={profileId}
+                    agent={selected}
+                    chatId={chatId}
+                    refreshToken={labRefresh}
+                    onNotice={setNotice}
+                  />
                 ) : null}
 
                 <footer className="agent-workspace__footer">

@@ -127,6 +127,51 @@ declare global {
         id: string,
         config: import('../shared/agentRuntime').AgentInvocationConfig
       ) => Promise<import('../shared/agentRuntime').AgentMutationResult>
+      // Agent Lab (case fixtures). Gated main-side: cards never reach these.
+      listAgentLabCases: (
+        profileId: string,
+        agentId: string
+      ) => Promise<import('../shared/agentRuntime').AgentLabCaseSummary[]>
+      getAgentLabCase: (
+        profileId: string,
+        caseId: string
+      ) => Promise<import('../shared/agentRuntime').AgentLabCase | null>
+      captureAgentLabCase: (
+        profileId: string,
+        chatId: string,
+        invocationId: string,
+        name: string
+      ) => Promise<import('../shared/agentRuntime').AgentLabMutationResult>
+      createAgentLabCaseFromInput: (
+        profileId: string,
+        agentId: string,
+        name: string,
+        input: import('../shared/agentRuntime').JsonObject
+      ) => Promise<import('../shared/agentRuntime').AgentLabMutationResult>
+      renameAgentLabCase: (
+        profileId: string,
+        caseId: string,
+        name: string
+      ) => Promise<import('../shared/agentRuntime').AgentLabMutationResult>
+      deleteAgentLabCase: (
+        profileId: string,
+        caseId: string
+      ) => Promise<{ ok: boolean; code?: string }>
+      replayAgentLabCase: (
+        profileId: string,
+        chatId: string,
+        caseId: string
+      ) => Promise<import('../shared/agentRuntime').AgentLabRunResult>
+      runAgentLabCaseLive: (
+        profileId: string,
+        chatId: string,
+        caseId: string
+      ) => Promise<import('../shared/agentRuntime').AgentLabRunResult>
+      getAgentLabRun: (
+        profileId: string,
+        chatId: string,
+        invocationId: string
+      ) => Promise<import('../shared/agentRuntime').AgentRunRecord | null>
       // SQL-table memory (issue 02)
       listTableTemplates: (
         profileId: string
