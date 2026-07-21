@@ -60,7 +60,8 @@ describe('buildAttemptLog volatility boundary (D1)', () => {
       definition: def,
       input: {},
       profileId: 'p',
-      render: (value) => value
+      render: (value) => value,
+      volatilePromptIndices: [0]
     })
     // (b): render present + `{{` in authored text → the message leaves the immutable prefix.
     expect(contentsOf(rendered.immutablePrefix)).toEqual(['POLICY'])
@@ -78,7 +79,8 @@ describe('buildAttemptLog volatility boundary (D1)', () => {
       definition: def,
       input: {},
       profileId: 'p',
-      render: (value) => value.replace('<%= 1 + 1 %>', '2')
+      render: (value) => value.replace('<%= 1 + 1 %>', '2'),
+      volatilePromptIndices: [0]
     })
     expect(contentsOf(built.immutablePrefix)).toEqual(['POLICY'])
     expect(built.attemptLog[0].content).toBe('core=2')
@@ -124,7 +126,8 @@ describe('buildAttemptLog volatility boundary (D1)', () => {
       definition: def,
       input: {},
       profileId: 'p',
-      render: (value) => value
+      render: (value) => value,
+      volatilePromptIndices: [0]
     })
     // The first message flips volatile; the second is plain but the clean-cut split keeps it in the log.
     expect(contentsOf(built.immutablePrefix)).toEqual(['POLICY'])
@@ -140,7 +143,8 @@ describe('buildAttemptLog volatility boundary (D1)', () => {
       definition: def,
       input: { q: 'x' },
       profileId: 'p',
-      render: (value) => value
+      render: (value) => value,
+      volatilePromptIndices: [1]
     })
     // Only the split point moved; concatenation is unchanged.
     expect(contentsOf([...built.immutablePrefix, ...built.attemptLog])).toEqual([
@@ -162,11 +166,16 @@ describe('buildAttemptLog origins (D3)', () => {
       definition: def,
       input: {},
       profileId: 'p',
-      render: (value) => value
+      render: (value) => value,
+      volatilePromptIndices: [1]
     })
-    expect(built.origins).toHaveLength(built.immutablePrefix.length + built.attemptLog.length)
     // policy, the stable authored prompt (still in prefix), the templated prompt, the input.
-    expect(built.origins).toEqual(['harness-policy', 'agent-prompt', 'agent-prompt', 'input'])
+    expect([...built.immutablePrefix, ...built.attemptLog].map((message) => message.origin)).toEqual([
+      'harness-policy',
+      'agent-prompt',
+      'agent-prompt',
+      'input'
+    ])
   })
 
   it('tags every substituted message assembled-preset on the assembled path', () => {
@@ -177,7 +186,7 @@ describe('buildAttemptLog origins (D3)', () => {
       profileId: 'p',
       prompt: [text('CONTEXT'), text('Instruction.')]
     })
-    expect(built.origins).toEqual([
+    expect([...built.immutablePrefix, ...built.attemptLog].map((message) => message.origin)).toEqual([
       'harness-policy',
       'assembled-preset',
       'assembled-preset',
@@ -196,7 +205,12 @@ describe('buildAttemptLog origins (D3)', () => {
       'POLICY'
     )
     if (!built.ok) throw new Error(built.failure.code)
-    expect(built.origins).toEqual(['harness-policy', 'agent-prompt', 'input', 'addendum'])
+    expect([...built.immutablePrefix, ...built.attemptLog].map((message) => message.origin)).toEqual([
+      'harness-policy',
+      'agent-prompt',
+      'input',
+      'addendum'
+    ])
     expect(built.attemptLog.at(-1)?.content).toBe('note')
   })
 })

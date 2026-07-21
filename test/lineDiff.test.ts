@@ -1,7 +1,26 @@
 import { describe, it, expect } from 'vitest'
-import { diffLines, diffLineArrays, splitLines } from '../src/renderer/src/lib/lineDiff'
+import { alignArrays, diffLines, diffLineArrays, splitLines } from '../src/renderer/src/lib/lineDiff'
 
 describe('lineDiff util (Microscope-lite D5)', () => {
+  describe('alignArrays', () => {
+    it('keeps later messages aligned after a middle insertion', () => {
+      expect(alignArrays(['policy', 'task', 'input'], ['policy', 'context', 'task', 'input'])).toEqual([
+        { before: 'policy', after: 'policy' },
+        { after: 'context' },
+        { before: 'task', after: 'task' },
+        { before: 'input', after: 'input' }
+      ])
+    })
+
+    it('pairs changed entries between stable anchors for an inner diff', () => {
+      expect(alignArrays(['policy', 'old task', 'input'], ['policy', 'new task', 'input'])).toEqual([
+        { before: 'policy', after: 'policy' },
+        { before: 'old task', after: 'new task' },
+        { before: 'input', after: 'input' }
+      ])
+    })
+  })
+
   describe('splitLines', () => {
     it('treats an empty string as zero lines', () => {
       expect(splitLines('')).toEqual([])

@@ -6,16 +6,13 @@ import type {
   PromptMessage
 } from '../../../../shared/agentRuntime'
 import type { ProviderMessage } from '../provider'
-import type { HarnessExecuteRequest, HarnessFailure } from './types'
+import type { AttributedProviderMessage, HarnessExecuteRequest, HarnessFailure } from './types'
 
 export type BuildAttemptLogResult =
   | {
       ok: true
-      immutablePrefix: ProviderMessage[]
-      attemptLog: ProviderMessage[]
-      /** Coarse origin per message, aligned to the concatenated `[...immutablePrefix, ...attemptLog]`
-       *  order — NOT push order (D3). Length equals prefix.length + log.length. */
-      origins: AgentPromptOrigin[]
+      immutablePrefix: AttributedProviderMessage[]
+      attemptLog: AttributedProviderMessage[]
     }
   | { ok: false; failure: HarnessFailure }
 
@@ -70,12 +67,10 @@ export const buildAttemptLog = (
   options: EffectiveInvocationOptions,
   policy: string
 ): BuildAttemptLogResult => {
-  const immutablePrefix: ProviderMessage[] = [{ role: 'system', content: policy }]
-  const attemptLog: ProviderMessage[] = []
-  // Origins tracked separately per array so the concatenated result aligns to `[...prefix, ...log]`,
-  // not push order (D3). The policy line is the first — and, on the assembled path, only — prefix entry.
-  const prefixOrigins: AgentPromptOrigin[] = ['harness-policy']
-  const logOrigins: AgentPromptOrigin[] = []
+  const immutablePrefix: AttributedProviderMessage[] = [
+    { role: 'system', content: policy, origin: 'harness-policy' }
+  ]
+  const attemptLog: AttributedProviderMessage[] = []
   let volatile = false
   // ADR 0021: an upstream-assembled prompt SUBSTITUTES for the definition's own messages. It already
   // ends with those messages (the preset assembles context, `prompt` is the task instruction), so
@@ -86,7 +81,7 @@ export const buildAttemptLog = (
   // rather than left to the caller to remember.
   const fromAssembledPrompt = request.prompt !== undefined
   const render = fromAssembledPrompt ? undefined : request.render
-  for (const prompt of request.prompt ?? definition.prompt) {
+  for (const [index, prompt] of (request.prompt ?? definition.prompt).entries()) {
     const rendered = resolvePromptMessage(prompt, request, render)
     if (!rendered.ok) {
       return {
@@ -101,9 +96,8 @@ export const buildAttemptLog = (
     // VOLATILITY BOUNDARY (ADR 0021 + Microscope-lite D1). A message is volatile — excluded from the
     // reuse-safe immutable prefix — when ANY of:
     //   (a) it has a `binding` segment (bound values read mutable state);
-    //   (b) `render` is active AND an authored text segment contains template syntax (`<%`/`{{`), since
-    //       templated text evaluates `getvar`/macros against mutable state at render time. `render`
-    //       absent ⇒ text is used verbatim, so it is stable and stays in the prefix;
+    //   (b) the upstream prompt planner marked the authored message volatile because its rendered
+    //       text depends on mutable prompt state;
     //   (c) it was SUBSTITUTED from `request.prompt` — the assembled stack embeds per-floor state
     //       (history, lorebook activation), so every substituted message is volatile and only the
     //       harness policy line remains reusable.
@@ -112,31 +106,23 @@ export const buildAttemptLog = (
     // point moves. Cross-call prefix reuse (agent-runtime-design.md §229-236) is still UNIMPLEMENTED;
     // this boundary is now truthful so that reuse, and today's visualization, no longer misclassify
     // templated or assembled messages as immutable.
-    const templated =
-      render !== undefined &&
-      prompt.content.some(
-        (segment) =>
-          segment.type === 'text' &&
-          (segment.text.includes('<%') || segment.text.includes('{{'))
-      )
     volatile ||=
       fromAssembledPrompt ||
-      templated ||
+      request.volatilePromptIndices?.includes(index) === true ||
       prompt.content.some((segment) => segment.type === 'binding')
     const origin: AgentPromptOrigin = fromAssembledPrompt ? 'assembled-preset' : 'agent-prompt'
     if (volatile) {
-      attemptLog.push({ role: prompt.role, content: rendered.content })
-      logOrigins.push(origin)
+      attemptLog.push({ role: prompt.role, content: rendered.content, origin })
     } else {
-      immutablePrefix.push({ role: prompt.role, content: rendered.content })
-      prefixOrigins.push(origin)
+      immutablePrefix.push({ role: prompt.role, content: rendered.content, origin })
     }
   }
-  attemptLog.push({ role: 'user', content: JSON.stringify(request.input) })
-  logOrigins.push('input')
+  attemptLog.push({ role: 'user', content: JSON.stringify(request.input), origin: 'input' })
   if (options.addendum) {
-    attemptLog.push({ role: 'user', content: options.addendum })
-    logOrigins.push('addendum')
+    attemptLog.push({ role: 'user', content: options.addendum, origin: 'addendum' })
   }
-  return { ok: true, immutablePrefix, attemptLog, origins: [...prefixOrigins, ...logOrigins] }
+  return { ok: true, immutablePrefix, attemptLog }
 }
+
+export const providerMessagesOf = (messages: AttributedProviderMessage[]): ProviderMessage[] =>
+  messages.map(({ origin: _origin, ...message }) => message)

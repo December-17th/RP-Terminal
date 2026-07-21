@@ -1,5 +1,4 @@
 import {
-  resolveInvocationOptions,
   type AgentPromptPreview,
   type AgentPromptPreviewMessage,
   type InvocationOptions,
@@ -7,10 +6,11 @@ import {
 } from '../../../../shared/agentRuntime'
 import type { CatalogAgent } from '../catalog'
 import {
-  buildAttemptLog,
   contextAttribution,
   defaultEstimateTokens,
   DEFAULT_HARNESS_POLICY,
+  harnessInvocationOptions,
+  prepareHarnessExecution,
   type HarnessExecuteRequest
 } from '../harness'
 import type { InvocationFloorPort } from '../invocation'
@@ -24,7 +24,7 @@ import { createSessionInvocationFloorPort } from '../InvocationRuntimeService'
  * Builds the EXACT prompt an Agent run would dispatch against the latest committed floor — the same
  * messages, in the same order, byte for byte — with ZERO provider calls and ZERO side effects. It
  * reuses the very functions the Invocation Runtime uses per attempt (floor source resolution, the
- * prompt planner, `buildAttemptLog`, `contextAttribution`, provider resolution), so a preview cannot
+ * prompt planner and shared Harness preparation module), so a preview cannot
  * drift from a real run. Nothing here writes: `resolveSource` is a pure SELECT, the assembler clones
  * its vars, and `providerDispatch.resolve` only reads settings/preset.
  *
@@ -47,15 +47,6 @@ export interface AgentPromptPreviewDeps {
   providerDispatch: ProviderDispatch
   harnessPolicy?: string
   estimateTokens?: (content: string) => number
-}
-
-/** Strip the source-selection fields the Harness never re-reads, mirroring the Invocation Runtime's
- *  `invocationOptions` so `resolveInvocationOptions` sees the same shape a real run resolves. */
-const harnessOptionsOf = (
-  options: InvocationOptions
-): Omit<InvocationOptions, 'floor' | 'input' | 'inputBindings'> => {
-  const { floor: _floor, input: _input, inputBindings: _bindings, ...rest } = options
-  return rest
 }
 
 export const createAgentPromptPreview = (
@@ -83,71 +74,53 @@ export const createAgentPromptPreview = (
         options
       })
 
-      const resolved = resolveInvocationOptions(definition, harnessOptionsOf(options))
-      if (!resolved.ok) {
-        return {
-          ok: false,
-          code: 'INVALID_REQUEST',
-          message: resolved.errors.map((error) => error.message).join('; ')
-        }
-      }
-
-      let provider
-      try {
-        provider = deps.providerDispatch.resolve({
-          profileId,
-          ...(resolved.value.apiPresetId ? { apiPresetId: resolved.value.apiPresetId } : {}),
-          ...(resolved.value.model ? { model: resolved.value.model } : {}),
-          ...(definition.preset?.generationParameters
-            ? { presetBundleParameters: definition.preset.generationParameters }
-            : {}),
-          ...(resolved.value.generationParameters
-            ? { generationParameters: resolved.value.generationParameters }
-            : {})
-        })
-      } catch (cause) {
-        return {
-          ok: false,
-          code: 'PROVIDER_SELECTION',
-          message: cause instanceof Error ? cause.message : 'Provider preset resolution failed'
-        }
-      }
-
       const harnessRequest = {
         definition,
         input: source.input,
         profileId,
+        options: harnessInvocationOptions(options),
         ...(source.promptValues ? { promptValues: source.promptValues } : {}),
         ...(source.history !== undefined ? { history: source.history } : {}),
         ...(prompt?.render ? { render: prompt.render } : {}),
+        ...(prompt?.volatilePromptIndices
+          ? { volatilePromptIndices: prompt.volatilePromptIndices }
+          : {}),
         ...(prompt?.prompt ? { prompt: prompt.prompt } : {})
       } satisfies HarnessExecuteRequest
 
-      const built = buildAttemptLog(definition, harnessRequest, resolved.value, harnessPolicy)
-      if (!built.ok) {
+      const prepared = prepareHarnessExecution({
+        request: harnessRequest,
+        providerDispatch: deps.providerDispatch,
+        harnessPolicy
+      })
+      if (!prepared.ok) {
         return {
           ok: false,
           code:
-            built.failure.code === 'PROMPT_BINDING_MISSING'
+            prepared.failure.code === 'PROMPT_BINDING_MISSING'
               ? 'PROMPT_BINDING_MISSING'
-              : 'PREVIEW_FAILED',
-          message: built.failure.message
+              : prepared.failure.code === 'PROVIDER_SELECTION'
+                ? 'PROVIDER_SELECTION'
+                : prepared.failure.code === 'INVALID_INVOCATION'
+                  ? 'INVALID_REQUEST'
+                  : 'PREVIEW_FAILED',
+          message: prepared.failure.message
         }
       }
 
-      const combined = [...built.immutablePrefix, ...built.attemptLog]
-      const messages: AgentPromptPreviewMessage[] = combined.map((message, index) => ({
+      const { provider, immutablePrefix, attemptLog, renderedPrompt, prefixCount } = prepared.value
+      const messages: AgentPromptPreviewMessage[] = renderedPrompt.map((message) => ({
         role: message.role,
         content: message.content,
-        ...(built.origins[index] ? { origin: built.origins[index] } : {})
+        origin: message.origin
       }))
 
       // A Workspace preview binds no tools, so tool-schema regions are empty by construction (the same
       // shape a Workspace "Run now" produces); the message list is byte-identical either way.
       const attribution = contextAttribution(
         harnessRequest,
-        built.immutablePrefix,
-        built.attemptLog,
+        immutablePrefix,
+        attemptLog,
         [],
         estimateTokens,
         provider.preset.parameters.max_tokens ?? 0,
@@ -157,7 +130,7 @@ export const createAgentPromptPreview = (
       return {
         ok: true,
         messages,
-        prefixCount: built.immutablePrefix.length,
+        prefixCount,
         attribution,
         provider: {
           presetId: provider.preset.id,

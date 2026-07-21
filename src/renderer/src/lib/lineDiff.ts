@@ -8,6 +8,68 @@ export interface LineDiffRow {
   text: string
 }
 
+export interface AlignedPair<T> {
+  before?: T
+  after?: T
+}
+
+/** LCS-align two ordered sequences, pairing changed entries only inside the gaps between stable
+ *  anchors. Insertions therefore do not shift every later entry into a false modification. */
+export function alignArrays<T>(
+  before: T[],
+  after: T[],
+  equals: (left: T, right: T) => boolean = Object.is
+): Array<AlignedPair<T>> {
+  const n = before.length
+  const m = after.length
+  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0))
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      lcs[i][j] = equals(before[i], after[j])
+        ? lcs[i + 1][j + 1] + 1
+        : Math.max(lcs[i + 1][j], lcs[i][j + 1])
+    }
+  }
+
+  const anchors: Array<[number, number]> = []
+  let i = 0
+  let j = 0
+  while (i < n && j < m) {
+    if (equals(before[i], after[j])) {
+      anchors.push([i++, j++])
+    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+      i++
+    } else {
+      j++
+    }
+  }
+
+  const aligned: Array<AlignedPair<T>> = []
+  let beforeStart = 0
+  let afterStart = 0
+  const appendGap = (beforeEnd: number, afterEnd: number): void => {
+    const paired = Math.min(beforeEnd - beforeStart, afterEnd - afterStart)
+    for (let offset = 0; offset < paired; offset++) {
+      aligned.push({ before: before[beforeStart + offset], after: after[afterStart + offset] })
+    }
+    for (let index = beforeStart + paired; index < beforeEnd; index++) {
+      aligned.push({ before: before[index] })
+    }
+    for (let index = afterStart + paired; index < afterEnd; index++) {
+      aligned.push({ after: after[index] })
+    }
+  }
+
+  for (const [beforeIndex, afterIndex] of anchors) {
+    appendGap(beforeIndex, afterIndex)
+    aligned.push({ before: before[beforeIndex], after: after[afterIndex] })
+    beforeStart = beforeIndex + 1
+    afterStart = afterIndex + 1
+  }
+  appendGap(n, m)
+  return aligned
+}
+
 /**
  * Split a block into lines for diffing. An empty string is zero lines (not one empty line) so an
  * absent message contributes nothing; a trailing newline keeps its final empty segment so counts stay

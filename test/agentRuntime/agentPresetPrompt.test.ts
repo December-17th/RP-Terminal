@@ -214,6 +214,21 @@ describe('Agent prompt planner', () => {
     expect(assembler).not.toHaveBeenCalled()
   })
 
+  it('marks dynamic authored messages explicitly for the Harness cache split', () => {
+    const plan = createAgentPromptPlanner(plannerDeps(undefined))({
+      ...scope,
+      agent: definition({
+        prompt: [
+          { role: 'system', content: 'Stable.' },
+          { role: 'system', content: 'Hello {{user}}.' },
+          { role: 'system', content: '<%= getvar("state") %>' }
+        ]
+      })
+    })
+
+    expect(plan?.volatilePromptIndices).toEqual([1, 2])
+  })
+
   it('assembles for a preset Agent and returns NO renderer', () => {
     const assembler = vi.fn<AgentPresetAssembler>(() => [text('assembled')])
     const agent = definition({ preset: { preset: ENVELOPE } })

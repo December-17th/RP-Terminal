@@ -1,5 +1,4 @@
 import {
-  resolveInvocationOptions,
   type AgentDefinition,
   type EffectiveInvocationOptions,
   type JsonObject,
@@ -26,12 +25,12 @@ import {
   type ToolRegistry
 } from '../tools'
 import { normalizeJsonValue } from '../internal/json'
-import { buildAttemptLog } from './attemptLog'
 import { contextAttribution, defaultEstimateTokens } from './budget'
 import { projectToolResult } from './projection'
 import { callsFromWrongChannel, canonicalJson, closeTruncatedJson } from './repair'
 import { validateHarnessResult } from './resultValidation'
 import { cancelledFailure, correctiveMessage, sleepWithSignal } from './retry'
+import { prepareHarnessExecution } from './prepare'
 import { compileJsonSchema } from './schemaValidation'
 import type {
   AgentHarness,
@@ -715,78 +714,16 @@ export const createAgentHarness = ({
   },
   async execute(request: HarnessExecuteRequest): Promise<HarnessExecutionResult> {
     const evidence: HarnessEvidence = { attempts: [] }
-    const resolved = resolveInvocationOptions(request.definition, request.options)
-    if (!resolved.ok) {
-      const failure: HarnessFailure = {
-        code: 'INVALID_INVOCATION',
-        message: resolved.errors.map((error) => error.message).join('; '),
-        retryable: false
-      }
-      return { ok: false, failure, stagedOperations: [], evidence }
+    const prepared = prepareHarnessExecution({ request, providerDispatch, harnessPolicy })
+    if (!prepared.ok) {
+      if (prepared.provider) evidence.preset = prepared.provider.preset
+      return { ok: false, failure: prepared.failure, stagedOperations: [], evidence }
     }
-    let provider: ResolvedProviderDispatch
-    try {
-      provider = providerDispatch.resolve({
-        profileId: request.profileId,
-        ...(resolved.value.apiPresetId ? { apiPresetId: resolved.value.apiPresetId } : {}),
-        ...(resolved.value.model ? { model: resolved.value.model } : {}),
-        // ADR 0021 §2: a bundled preset's parameter overrides ride BELOW the invocation's own, so the
-        // Harness forwards them as their own selection layer rather than pre-merging them here.
-        ...(request.definition.preset?.generationParameters
-          ? { presetBundleParameters: request.definition.preset.generationParameters }
-          : {}),
-        ...(resolved.value.generationParameters
-          ? { generationParameters: resolved.value.generationParameters }
-          : {})
-      })
-      evidence.preset = provider.preset
-    } catch (cause) {
-      const failure: HarnessFailure = {
-        code: 'PROVIDER_SELECTION',
-        message: cause instanceof Error ? cause.message : 'Provider preset resolution failed',
-        retryable: false
-      }
-      return { ok: false, failure, stagedOperations: [], evidence }
-    }
-    const inputSchema = compileJsonSchema(request.definition.inputSchema)
-    if (!inputSchema.ok) {
-      const failure: HarnessFailure = {
-        code: 'INVALID_INPUT_SCHEMA',
-        message: inputSchema.message,
-        retryable: false
-      }
-      return { ok: false, failure, stagedOperations: [], evidence }
-    }
-    const input = inputSchema.validate.safeParse(request.input)
-    if (!input.success) {
-      const failure: HarnessFailure = {
-        code: 'INVALID_INPUT',
-        message: input.error.message,
-        retryable: false
-      }
-      return { ok: false, failure, stagedOperations: [], evidence }
-    }
-    if (request.definition.result.mode === 'json') {
-      const resultSchema = compileJsonSchema(request.definition.result.schema)
-      if (!resultSchema.ok) {
-        const failure: HarnessFailure = {
-          code: 'INVALID_RESULT_SCHEMA',
-          message: resultSchema.message,
-          retryable: false
-        }
-        return { ok: false, failure, stagedOperations: [], evidence }
-      }
-    }
-    const context = buildAttemptLog(request.definition, request, resolved.value, harnessPolicy)
-    if (!context.ok) {
-      return { ok: false, failure: context.failure, stagedOperations: [], evidence }
-    }
+    const { provider, options, immutablePrefix, attemptLog, renderedPrompt } = prepared.value
+    evidence.preset = provider.preset
     // Publish THESE bytes — the ones every attempt below is built from — to whoever records the run.
     // Rendering happens exactly once per execution; nobody downstream re-renders (see `onPromptBuilt`).
-    request.onPromptBuilt?.(
-      [...context.immutablePrefix, ...context.attemptLog],
-      context.origins
-    )
+    request.onPromptBuilt?.(renderedPrompt)
     const tools = preflightTools(
       request.definition,
       toolRegistry,
@@ -801,15 +738,15 @@ export const createAgentHarness = ({
       ? correctiveMessage(request.corrective.rejectedOutput, request.corrective.failure)
       : undefined
     let transportRetry: TransportRetry | undefined
-    const maximumAttempts = 1 + resolved.value.maxRetryAttempts
+    const maximumAttempts = 1 + options.maxRetryAttempts
     for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
       const outcome = await runAttempt({
         attempt,
         request,
-        options: resolved.value,
+        options,
         provider,
-        immutablePrefix: context.immutablePrefix,
-        baseAttemptLog: context.attemptLog,
+        immutablePrefix,
+        baseAttemptLog: attemptLog,
         correction,
         bindings: tools.bindings,
         providerTools: tools.providerTools,
@@ -854,7 +791,7 @@ export const createAgentHarness = ({
         transportRetry = undefined
         correction = outcome.correction
       }
-      const delay = Math.max(resolved.value.retryDelayMs, outcome.retryAfterMs ?? 0)
+      const delay = Math.max(options.retryDelayMs, outcome.retryAfterMs ?? 0)
       try {
         await sleep(delay, request.signal)
       } catch {

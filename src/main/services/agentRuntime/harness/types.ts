@@ -38,6 +38,9 @@ export interface HarnessExecuteRequest {
    * fails is expected to return its input, and `buildAttemptLog` guards that contract anyway.
    */
   render?: (text: string) => string
+  /** Zero-based authored prompt indexes whose rendered text depends on mutable prompt state. The
+   *  upstream planner owns template syntax; the Harness only consumes this explicit cache hint. */
+  volatilePromptIndices?: number[]
   /**
    * Prompt messages that SUBSTITUTE for `definition.prompt` (ADR 0021, slices 3/4). A preset Agent's
    * prompt is assembled upstream — card, persona, world info, opt-in history, then the Agent's own
@@ -58,16 +61,20 @@ export interface HarnessExecuteRequest {
    * produce a prompt that merely RESEMBLES the dispatched one. Run Records are exact evidence, so
    * they subscribe here instead of re-rendering.
    *
-   * `origins` carries the coarse provenance of each message (D3), aligned index-for-index with
-   * `messages`. Optional so observers that only need the bytes ignore it.
+   * Each message carries its coarse provenance with the provider bytes it describes. The origin is
+   * stripped before dispatch, so observers cannot accidentally misalign parallel arrays.
    */
-  onPromptBuilt?: (messages: ProviderMessage[], origins?: AgentPromptOrigin[]) => void
+  onPromptBuilt?: (messages: AttributedProviderMessage[]) => void
   signal?: AbortSignal
   yssVocabulary?: SceneVocabulary
   corrective?: {
     rejectedOutput: string
     failure: HarnessFailure
   }
+}
+
+export interface AttributedProviderMessage extends ProviderMessage {
+  origin: AgentPromptOrigin
 }
 
 export interface ContextBudgetAttribution {

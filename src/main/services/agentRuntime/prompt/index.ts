@@ -1,6 +1,7 @@
 export {
   createAgentPromptRenderer,
   defaultAgentPromptRendererDeps,
+  isDynamicAgentPromptText,
   type AgentPromptRenderer,
   type AgentPromptRendererDeps,
   type AgentPromptRendererPort,

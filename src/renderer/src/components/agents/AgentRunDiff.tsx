@@ -1,10 +1,10 @@
-// Two-run prompt diff (Microscope-lite D5). Aligns two runs' `renderedPrompt` message lists by index
-// (with add/remove detection at the tail) and shows a per-message unified line diff via the in-repo LCS
-// util (no diff dependency). Comparing runs of different agents is prevented by the caller.
+// Two-run prompt diff (Microscope-lite D5). LCS-aligns complete `renderedPrompt` message sequences,
+// then shows a per-message unified line diff for changed pairs. Comparing different Agents is blocked
+// by the caller.
 import React from 'react'
 import type { AgentRunRecord, AgentRunMessage } from '../../../../shared/agentRuntime'
 import { useT } from '../../i18n'
-import { diffLines } from '../../lib/lineDiff'
+import { alignArrays, diffLines } from '../../lib/lineDiff'
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string
 
@@ -50,10 +50,14 @@ function MessageDiff({
 
   const identical = before.content === after.content && before.role === after.role
   const rows = diffLines(before.content, after.content)
+  const role =
+    before.role === after.role
+      ? t(`agents.inspector.role.${after.role}`)
+      : `${t(`agents.inspector.role.${before.role}`)} → ${t(`agents.inspector.role.${after.role}`)}`
   return (
     <div className="agent-diff__message">
       <div className="agent-diff__msg-head">
-        {t('agents.diff.message', { n: index + 1, role: t(`agents.inspector.role.${after.role}`) })}
+        {t('agents.diff.message', { n: index + 1, role })}
         {identical ? (
           <span className="agent-diff__unchanged">{t('agents.diff.unchanged')}</span>
         ) : null}
@@ -84,8 +88,11 @@ export function AgentRunDiff({
   const t = useT()
   const beforeMessages = before.renderedPrompt ?? []
   const afterMessages = after.renderedPrompt ?? []
-  const count = Math.max(beforeMessages.length, afterMessages.length)
-  const indices = Array.from({ length: count }, (_, i) => i)
+  const aligned = alignArrays(
+    beforeMessages,
+    afterMessages,
+    (left, right) => left.role === right.role && left.content === right.content
+  )
   return (
     <div className="agent-diff">
       <p className="agent-inspector__note">
@@ -94,15 +101,15 @@ export function AgentRunDiff({
           after: `${after.agentName} · ${after.startedAt}`
         })}
       </p>
-      {count === 0 ? (
+      {aligned.length === 0 ? (
         <p className="agents-panel__empty">{t('agents.diff.empty')}</p>
       ) : (
-        indices.map((index) => (
+        aligned.map((pair, index) => (
           <MessageDiff
             key={index}
             index={index}
-            before={beforeMessages[index]}
-            after={afterMessages[index]}
+            before={pair.before}
+            after={pair.after}
             t={t}
           />
         ))

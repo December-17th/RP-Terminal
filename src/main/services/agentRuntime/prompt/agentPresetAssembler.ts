@@ -10,7 +10,11 @@ import {
   MEMORY_MAINTENANCE_AGENT_NAME,
   memoryMaintenanceBridge
 } from '../memoryMaintenanceSlot'
-import { createAgentPromptRenderer, type AgentPromptRendererPort } from './agentPromptRenderer'
+import {
+  createAgentPromptRenderer,
+  isDynamicAgentPromptText,
+  type AgentPromptRendererPort
+} from './agentPromptRenderer'
 
 /**
  * Preset-driven Agent prompt assembly (ADR 0021, slices 3 + 4).
@@ -70,6 +74,7 @@ export const agentPresetAssembler = (): AgentPresetAssembler | undefined => regi
  */
 export interface InvocationPrompt {
   render?: (text: string) => string
+  volatilePromptIndices?: number[]
   prompt?: PromptMessage[]
   /**
    * Degradation notices for the Run Record. Fail-open keeps the invocation alive, but a preset Agent
@@ -132,6 +137,21 @@ export const createAgentPromptPlanner = (
       chatId: scope.chatId,
       floor: scope.floor
     })
+    const volatilePromptIndices = render
+      ? scope.agent.prompt.flatMap((message, index) =>
+          message.content.some(
+            (segment) => segment.type === 'text' && isDynamicAgentPromptText(segment.text)
+          )
+            ? [index]
+            : []
+        )
+      : []
+    const renderedPrompt = render
+      ? {
+          render,
+          ...(volatilePromptIndices.length ? { volatilePromptIndices } : {})
+        }
+      : {}
     const bundle = scope.agent.preset
     const assemble = bundle ? deps.assembler() : undefined
     // Every path below that reaches the fallback records WHY, so the run is marked degraded rather
@@ -163,8 +183,8 @@ export const createAgentPromptPlanner = (
     }
     if (degraded) {
       deps.warn(`Agent "${scope.agent.name}": ${degraded}`)
-      return { ...(render ? { render } : {}), warnings: [degraded] }
+      return { ...renderedPrompt, warnings: [degraded] }
     }
-    return render ? { render } : undefined
+    return render ? renderedPrompt : undefined
   }
 }
