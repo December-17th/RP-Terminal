@@ -526,6 +526,7 @@ const zh: Record<string, string> = {
   'agents.keepCustomization': '保留我的修改',
   'agents.useSource': '使用文件内容',
   'agents.roles': '角色绑定',
+  'agents.role.default': '默认',
   'agents.role.classic.narrator': '经典叙述者',
   'agents.role.yuzu.sceneDirector': 'Yuzu 场景导演',
   'agents.installed': '已安装的智能体（{{count}}）',

@@ -6,10 +6,10 @@ import { matchWorldInfo, assemblePrompt } from './assemble'
 import { parseResponse, computeMetrics } from './parseResponse'
 import { foldState } from './foldState'
 import { persistFloor } from './persistFloor'
-import { runVnGate, mergeYuzuMvu } from '../yuzu/vnGate'
 import { GenContext } from './types'
 import { FloorFile } from '../../types/chat'
 import { runMemoryRecallAgent } from '../memoryRecallService'
+import { runYuzuSceneDirector } from '../yuzu/sceneDirector'
 
 /**
  * THE DIRECT CLASSIC ORCHESTRATION (Classic Narrator first execution plan, Milestone 3; single-path as
@@ -108,22 +108,7 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
   // Abort-with-TEXT lands here and runs on, so the partial floor is persisted (pre-workflow behavior).
 
   // ── 7. parse.response ─────────────────────────────────────────────────────────────────────────
-  const parsedOut = await stage(async () => {
-    // Project Yuzu WP-S2 (ADR 0009 §1): the mode-gated acceptance-gate seam. In VN mode the raw reply
-    // runs the WP-B ladder BEFORE anything downstream sees it; the validated/fallback scene text
-    // (finalRaw) is what parse/apply/write consume, its `<| effect |>` beat effects fold into canon, and
-    // the gate result is stashed on the SHARED `gen` for the terminal write stage. Classic turns
-    // (vnMode off) skip this and stay byte-identical.
-    if (gen.vnMode) {
-      const gate = await runVnGate(ctx, gen, sampled.raw)
-      gen.yuzuGate = { finalRaw: gate.finalRaw, scene: gate.scene, trace: gate.trace }
-      const { parsed, mvu: classicMvu } = parseResponse(gate.finalRaw)
-      return {
-        parsed,
-        mvu: mergeYuzuMvu(gate.mvu, classicMvu),
-        metrics: computeMetrics(gen, sendMessages, gate.finalRaw, sampled.rawUsage)
-      }
-    }
+  const parsedOut = await stage(() => {
     const { parsed, mvu } = parseResponse(sampled.raw)
     return {
       parsed,
@@ -141,19 +126,17 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
   const floor = await stage(() =>
     persistFloor(gen, {
       userAction: gen.userAction,
-      // Project Yuzu WP-S2 (ADR 0009 §3): a VN floor stores the gate's validated/fallback scene text as
-      // its response (not the pre-gate raw) and carries the gate trace; classic floors pass the raw
-      // through and write no `yuzu_trace` (byte-identical).
-      raw: gen.yuzuGate ? gen.yuzuGate.finalRaw : sampled.raw,
+      raw: sampled.raw,
       sendMessages,
       events: parsedOut.parsed.events,
       variables,
       metrics: parsedOut.metrics,
-      ...(recall?.plotBlock ? { plot_block: recall.plotBlock } : {}),
-      ...(gen.yuzuGate?.trace ? { yuzu_trace: gen.yuzuGate.trace } : {})
+      ...(recall?.plotBlock ? { plot_block: recall.plotBlock } : {})
     })
   )
   if (floor === ABORTED) return null
 
-  return floor
+  if (!gen.vnMode) return floor
+  const directed = await stage(() => runYuzuSceneDirector(ctx, gen, floor))
+  return directed === ABORTED ? floor : directed
 }

@@ -1,5 +1,4 @@
 import { getActivePresetId } from '../presetService'
-import { resolveYuzuMaxTokens } from '../settingsService'
 import { matchAcross } from '../lorebookService'
 import { getCachedWorldInfo, setCachedWorldInfo } from '../chatService'
 import { buildPromptDetailed } from '../promptBuilder'
@@ -20,7 +19,6 @@ import { renderChatTablesInjectionBlock } from '../tablesInjectionService'
 import { LorebookEntry, getRpExt } from '../../types/character'
 import { PresetParameters, Preset } from '../../types/preset'
 import { GenContext } from './types'
-import { buildVnOverlay } from '../yuzu/vnPrompt'
 import { ExecutionRecord } from '../../../shared/executionRecord'
 import { createRecordBuilder } from './executionRecord'
 
@@ -143,9 +141,7 @@ export const assemblePrompt = (
     settings,
     fsmEnabled,
     mode,
-    vnMode,
     generationType,
-    lorebookIds,
     modeConfig,
     lorebooks,
     floors,
@@ -179,11 +175,7 @@ export const assemblePrompt = (
   // anchor lane (which is reserved for pack rejoin). Empty when no template is bound / nothing to inject
   // → the block is unchanged (parity). Ordered [recall/pack block][tables block] in the tail.
   const tablesBlock = renderChatTablesInjectionBlock(profileId, chatId)
-  // Project Yuzu (ADR 0008 §7): in VN mode, append the YSS scene overlay to the SAME memory tail — it rides
-  // the existing `memoryBlock` splice (buildPrompt: a system block immediately before the user action), so it
-  // lands closest to the action and reorders nothing else. Off = empty string → filtered out → byte-identical.
-  const vnOverlay = vnMode ? buildVnOverlay(profileId, lorebookIds) : ''
-  const memoryTail = [memoryBlock, tablesBlock, vnOverlay].filter((s) => s && s.trim()).join('\n\n')
+  const memoryTail = [memoryBlock, tablesBlock].filter((s) => s && s.trim()).join('\n\n')
 
   const { messages: built, budgetClasses } = buildPromptDetailed({
     card,
@@ -318,16 +310,12 @@ export const assemblePrompt = (
       ? Math.min(presetMax, modeConfig.max_output_tokens)
       : modeConfig.max_output_tokens
     : presetMax
-  // Project Yuzu (ADR 0008 §7): in VN mode the player's setting (settings.yuzu.max_tokens, default 30000)
-  // REPLACES the preset's ceiling verbatim — the preset max_tokens is a classic-chat concern. Off = the
-  // classic value verbatim (parity). Mirrored in contextNodes.contextParams.
-  const maxTokens = vnMode ? resolveYuzuMaxTokens(settings) : baseMax
   // SPreset ChatSquash stop strings (issue 16, spec:1150-1166): parsed from `stop_string` and forwarded
   // on the OpenAI-compatible path (params.stop). Empty on native presets → the key is absent (parity).
   const stopStrings = resolveStopStrings(chatSquashConfig)
   const params = {
     ...preset.parameters,
-    max_tokens: maxTokens,
+    max_tokens: baseMax,
     ...(stopStrings.length ? { stop: stopStrings } : {})
   }
 

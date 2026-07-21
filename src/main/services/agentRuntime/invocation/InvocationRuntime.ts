@@ -125,6 +125,14 @@ export interface InvocationRequest {
   floor: number
   agent: string
   options?: InvocationOptions
+  /** Main-internal prompt substitution; never exposed through the card Agent API. */
+  promptOverride?: AgentDefinition['prompt']
+  /** Main-internal result-contract substitution for a caller-owned deterministic parser. */
+  acceptRawTextResult?: boolean
+  /** Main-internal opt-out when a stale presentation result must fail instead of sampling again. */
+  restartOnSourceChange?: boolean
+  /** Main-internal read-only result path: record the run but discard every stateful consequence. */
+  skipResultIncorporation?: boolean
   /** Authoritative mounted-card implementation scope, injected by the card transport only. */
   toolScope?: ToolExecutionScope
   signal?: AbortSignal
@@ -416,6 +424,15 @@ export const createInvocationRuntime = ({
             parallelIndependent: item.parallelIndependent
           })
           if (item.stale || !sourceCurrent) {
+            if (item.request.restartOnSourceChange === false) {
+              return {
+                invocationId: item.invocationId,
+                status: 'failed',
+                failure: failure('SOURCE_CHANGED', 'Invocation source changed during execution'),
+                sourceRestarts,
+                required
+              }
+            }
             if (corrective?.reservedRetry) retryAttemptsConsumed -= 1
             corrective = undefined
             item.stale = false
@@ -443,13 +460,15 @@ export const createInvocationRuntime = ({
         // Built per attempt, not per invocation: a restarted attempt re-reads the floor it renders
         // (or assembles) against, so the prompt reflects the source snapshot it is actually executing
         // on. For a preset Agent that is load-bearing — assembly reads the live chat state.
-        const prompt = promptRenderer?.({
-          profileId: item.request.profileId,
-          chatId: item.request.chatId,
-          floor: item.request.floor,
-          agent: resolvedAgent.effective,
-          ...(item.request.options ? { options: item.request.options } : {})
-        })
+        const prompt = item.request.promptOverride
+          ? { prompt: item.request.promptOverride }
+          : promptRenderer?.({
+              profileId: item.request.profileId,
+              chatId: item.request.chatId,
+              floor: item.request.floor,
+              agent: resolvedAgent.effective,
+              ...(item.request.options ? { options: item.request.options } : {})
+            })
         try {
           execution = await harness.execute({
             invocationId: item.invocationId,
@@ -474,6 +493,7 @@ export const createInvocationRuntime = ({
               : {}),
             ...(prompt?.prompt ? { prompt: prompt.prompt } : {}),
             ...(prompt?.warnings?.length ? { warnings: prompt.warnings } : {}),
+            ...(item.request.acceptRawTextResult ? { acceptRawTextResult: true } : {}),
             signal: attemptController.signal,
             ...(corrective
               ? {
@@ -486,6 +506,20 @@ export const createInvocationRuntime = ({
           })
         } catch (cause) {
           if (item.stale) {
+            if (item.request.restartOnSourceChange === false) {
+              const sourceFailure = failure(
+                'SOURCE_CHANGED',
+                'Invocation source changed during execution'
+              )
+              harness.commitFailure?.(item.invocationId, sourceFailure)
+              return {
+                invocationId: item.invocationId,
+                status: 'failed',
+                failure: sourceFailure,
+                sourceRestarts,
+                required
+              }
+            }
             corrective = undefined
             item.stale = false
             sourceRestarts += 1
@@ -549,6 +583,20 @@ export const createInvocationRuntime = ({
               required
             }
           }
+          if (item.request.restartOnSourceChange === false) {
+            const sourceFailure = failure(
+              'SOURCE_CHANGED',
+              'Invocation source changed during execution'
+            )
+            harness.commitFailure?.(item.invocationId, sourceFailure)
+            return {
+              invocationId: item.invocationId,
+              status: 'failed',
+              failure: sourceFailure,
+              sourceRestarts,
+              required
+            }
+          }
           corrective = undefined
           item.stale = false
           sourceRestarts += 1
@@ -562,6 +610,20 @@ export const createInvocationRuntime = ({
             sourceRestarts,
             required
           } as InvocationOutcome
+        }
+
+        if (item.request.skipResultIncorporation) {
+          harness.commitSuccess?.(item.invocationId, execution, {
+            status: 'discarded',
+            operations: execution.stagedOperations.length
+          })
+          return {
+            invocationId: item.invocationId,
+            status: 'succeeded',
+            result: execution.result,
+            sourceRestarts,
+            required
+          }
         }
 
         let incorporation: Awaited<ReturnType<InvocationFloorPort['incorporate']>>
@@ -611,6 +673,20 @@ export const createInvocationRuntime = ({
               invocationId: item.invocationId,
               status: 'failed',
               failure: staleFailure,
+              sourceRestarts,
+              required
+            }
+          }
+          if (item.request.restartOnSourceChange === false) {
+            const sourceFailure = failure(
+              'SOURCE_CHANGED',
+              'Invocation source changed during execution'
+            )
+            harness.commitFailure?.(item.invocationId, sourceFailure)
+            return {
+              invocationId: item.invocationId,
+              status: 'failed',
+              failure: sourceFailure,
               sourceRestarts,
               required
             }

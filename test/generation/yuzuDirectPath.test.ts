@@ -1,23 +1,15 @@
-// Execution-plan M5a — Yuzu characterization (retires the old Session 9).
-//
-// After ADR 0008/0019 there is no separate Yuzu generation path: `vnMode` rides the SAME direct Classic
-// orchestration (`runClassicTurnDirect`). This suite pins that parity at the two seams `generation/
-// assemble.ts` applies it: the VN scene overlay (`:185` buildVnOverlay) and the Yuzu token budget
-// (`:324` resolveYuzuMaxTokens). vnMode ON ⇒ the assembled prompt carries the overlay framing and the
-// Yuzu max_tokens; vnMode OFF ⇒ neither (byte-classic). Leaves are mocked exactly as the classicTurn
-// parity suite mocks them, with `isYuzuMode` the single toggle.
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const yuzuState = vi.hoisted(() => ({ on: false }))
-
+const yuzuState = vi.hoisted(() => ({ on: false, bound: true }))
+const directorRun = vi.hoisted(() => vi.fn())
 const floors = Array.from({ length: 3 }, (_, i) => ({
   floor: i,
   user_message: { content: `player action ${i}` },
   response: { content: `ai reply ${i}` },
   variables: {}
 }))
+const appendedFloors = vi.hoisted(() => [] as any[])
 
-const appendedFloors = vi.hoisted(() => [] as unknown[])
 const mockChat = vi.hoisted(() => ({
   getChat: vi.fn(() => ({ character_id: 'w1', floor_count: 3 })),
   getChatTableTemplateId: vi.fn<() => string | null>(() => null),
@@ -27,27 +19,54 @@ const mockChat = vi.hoisted(() => ({
   getChatWorkflowId: vi.fn(() => null),
   getCachedWorldInfo: vi.fn(() => null),
   setCachedWorldInfo: vi.fn(),
-  appendFloor: vi.fn((_p: string, _c: string, f: unknown) => {
-    appendedFloors.push(f)
-  })
+  appendFloor: vi.fn((_p: string, _c: string, floor: any) => appendedFloors.push(floor))
 }))
 vi.mock('../../src/main/services/chatService', () => mockChat)
 
 const mockFloor = vi.hoisted(() => ({
-  getFloor: vi.fn(() => floors[floors.length - 1]),
+  getFloor: vi.fn(() => floors.at(-1)),
   getAllFloors: vi.fn(() => floors),
   getFloorCount: vi.fn(() => 3),
   getFloorRequest: vi.fn(() => undefined),
-  saveFloor: vi.fn()
+  saveFloor: vi.fn(),
+  onTranscriptCut: vi.fn(),
+  onTranscriptEdited: vi.fn(),
+  updateActiveFloorResponse: vi.fn(
+    (_profileId: string, _chatId: string, floorIndex: number, content: string) => {
+      const floor = appendedFloors.find((candidate) => candidate.floor === floorIndex)
+      if (!floor) return null
+      floor.response.content = content
+      floor.swipes = [content]
+      floor.swipe_id = 0
+      return floor
+    }
+  )
 }))
 vi.mock('../../src/main/services/floorService', () => mockFloor)
 
-const mockTemplateService = vi.hoisted(() => ({ loadGlobals: vi.fn(() => ({})), saveGlobals: vi.fn() }))
-vi.mock('../../src/main/services/templateService', async (orig) => ({
-  ...(await orig<Record<string, unknown>>()),
-  ...mockTemplateService
+vi.mock('../../src/main/services/agentRuntime/catalog', () => ({
+  AgentCatalog: class {
+    getRoleBindings() {
+      return yuzuState.bound ? { 'yuzu.sceneDirector': 'Director' } : {}
+    }
+    get() {
+      return {
+        name: 'Director',
+        enabled: true,
+        invocationConfig: { apiPresetId: 'director-preset' }
+      }
+    }
+  }
+}))
+vi.mock('../../src/main/services/agentRuntime/InvocationRuntimeService', () => ({
+  invocationRuntime: () => ({ run: directorRun })
 }))
 
+vi.mock('../../src/main/services/templateService', async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  loadGlobals: vi.fn(() => ({})),
+  saveGlobals: vi.fn()
+}))
 vi.mock('../../src/main/services/executionRecordStore', () => ({ saveExecutionRecord: vi.fn() }))
 vi.mock('../../src/main/services/agentRuntime/floorState', () => ({
   floorStateForChat: vi.fn(() => ({ setBaseline: vi.fn(), append: vi.fn(), replay: vi.fn() }))
@@ -61,18 +80,18 @@ vi.mock('../../src/main/services/tableProgressService', () => ({
   computeTableProgress: vi.fn(),
   resolveUpdateFrequency: () => null
 }))
-vi.mock('../../src/main/services/tableStatusService', () => ({ getTablesStatus: vi.fn(() => ({})) }))
+vi.mock('../../src/main/services/tableStatusService', () => ({
+  getTablesStatus: vi.fn(() => ({}))
+}))
 vi.mock('../../src/main/services/tableDbService', () => ({ readAllTables: vi.fn(() => []) }))
-// buildVnOverlay reads world-asset indexes; fail-soft to empty vocabulary keeps the overlay framing.
 vi.mock('../../src/main/services/worldAssetService', () => ({
-  getIndex: vi.fn(() => {
-    throw new Error('no index')
-  })
+  getIndex: vi.fn(() => ({
+    character: { 柚子: { 立绘: { moods: { 微笑: 'smile.png' } } } },
+    location: { 教室: { 背景: { moods: {} } } }
+  }))
 }))
 
-const mockCallModel = vi.hoisted(() => ({
-  callModel: vi.fn(async () => ({ raw: 'The door opens.', rawUsage: {}, stopped: false }))
-}))
+const mockCallModel = vi.hoisted(() => ({ callModel: vi.fn() }))
 vi.mock('../../src/main/services/generation/callModel', () => mockCallModel)
 vi.mock('../../src/main/services/logService', () => ({ log: vi.fn() }))
 
@@ -80,10 +99,10 @@ import { getDefaultSettings } from '../../src/main/services/settingsService'
 import { getDefaultPreset } from '../../src/main/types/preset'
 vi.mock('../../src/main/services/settingsService', async (orig) => {
   const real = await orig<Record<string, unknown>>()
-  const s = (real.getDefaultSettings as typeof getDefaultSettings)()
-  s.api = { provider: 'openai', endpoint: 'https://x/v1', api_key: 'k', model: 'm' }
-  s.agent = { mode: 'off' }
-  return { ...real, getSettings: () => s }
+  const settings = (real.getDefaultSettings as typeof getDefaultSettings)()
+  settings.api = { provider: 'openai', endpoint: 'https://x/v1', api_key: 'k', model: 'm' }
+  settings.agent = { mode: 'off' }
+  return { ...real, getSettings: () => settings }
 })
 vi.mock('../../src/main/services/characterService', () => ({
   getCharacter: () => ({ id: 'w1', data: { name: 'C', description: 'calm', extensions: {} } })
@@ -102,9 +121,10 @@ vi.mock('../../src/main/services/presetService', () => ({
 }))
 
 import { runClassicTurnDirect } from '../../src/main/services/generation/classicTurn'
-import { RunContext } from '../../src/main/services/generation/runContext'
-import { VN_MODE_FRAMING } from '../../src/main/services/yuzu/vnPrompt'
-import { YUZU_DEFAULT_MAX_TOKENS } from '../../src/main/services/settingsService'
+import type { RunContext } from '../../src/main/services/generation/runContext'
+
+const RAW = "The door opens.\n<UpdateVariable>_.set('hp', 0, 5);</UpdateVariable>"
+const ANNOTATED = `<| block |>\n<| bg 教室 |>\n${RAW}\n<| end |>`
 
 const turnCtx = (): RunContext => {
   const graph = new AbortController()
@@ -122,36 +142,75 @@ const turnCtx = (): RunContext => {
   }
 }
 
-/** Every message's text concatenated — the overlay lands in a system block near the user action. */
-const promptText = (): string => {
+const narratorPromptText = (): string => {
   const messages = mockCallModel.callModel.mock.calls[0]?.[1] as Array<{ content: string }>
-  return messages.map((m) => m.content).join('\n')
+  return messages.map((message) => message.content).join('\n')
 }
-const params = (): { max_tokens?: number } =>
-  mockCallModel.callModel.mock.calls[0]?.[2] as { max_tokens?: number }
 
 beforeEach(() => {
   appendedFloors.length = 0
   vi.clearAllMocks()
-  mockCallModel.callModel.mockResolvedValue({ raw: 'The door opens.', rawUsage: {}, stopped: false })
+  yuzuState.on = false
+  yuzuState.bound = true
+  mockCallModel.callModel.mockResolvedValue({ raw: RAW, rawUsage: {}, stopped: false })
+  directorRun.mockResolvedValue({ status: 'succeeded', result: ANNOTATED })
 })
 
-describe('Yuzu vnMode rides the direct Classic path', () => {
-  it('vnMode ON carries the VN overlay and the Yuzu token budget', async () => {
+describe('Yuzu Classic-narrator then scene-director path', () => {
+  it('uses the unchanged Classic prompt/budget, folds narrator MVU once, then stores valid annotation', async () => {
     yuzuState.on = true
-    await runClassicTurnDirect(turnCtx())
+    const floor = await runClassicTurnDirect(turnCtx())
 
-    expect(promptText()).toContain(VN_MODE_FRAMING)
-    expect(params().max_tokens).toBe(YUZU_DEFAULT_MAX_TOKENS)
+    expect(narratorPromptText()).not.toContain('Yuzu Scene Script')
+    expect(mockCallModel.callModel.mock.calls[0]?.[2]).toMatchObject({
+      max_tokens: getDefaultPreset().parameters.max_tokens
+    })
+    expect(appendedFloors).toHaveLength(1)
+    expect(appendedFloors[0].variables.stat_data.hp).toBe(5)
+    expect(directorRun).toHaveBeenCalledTimes(1)
+    expect(mockChat.appendFloor.mock.invocationCallOrder[0]).toBeLessThan(
+      directorRun.mock.invocationCallOrder[0]
+    )
+    expect(directorRun.mock.calls[0]?.[0]).toMatchObject({
+      agent: 'Director',
+      floor: 3,
+      options: {
+        apiPresetId: 'director-preset',
+        maxRetryAttempts: 0,
+        maxSteps: 1,
+        required: false
+      },
+      acceptRawTextResult: true,
+      restartOnSourceChange: false,
+      skipResultIncorporation: true
+    })
+    const directorPrompt = directorRun.mock.calls[0]?.[0].promptOverride[0].content[0].text
+    expect(directorPrompt).toContain(RAW)
+    expect(directorPrompt).toContain('- 教室')
+    expect(directorPrompt).toContain('- 柚子\n  - 微笑')
+    expect(mockFloor.updateActiveFloorResponse).toHaveBeenCalledWith('prof', 'c1', 3, ANNOTATED)
+    expect(floor?.response.content).toBe(ANNOTATED)
+    expect(floor?.swipes?.[floor.swipe_id ?? 0]).toBe(ANNOTATED)
   })
 
-  it('vnMode OFF carries NEITHER — byte-classic assembly', async () => {
-    yuzuState.on = false
-    await runClassicTurnDirect(turnCtx())
+  it.each([
+    ['no role binding', () => (yuzuState.bound = false)],
+    ['Agent failure', () => directorRun.mockResolvedValue({ status: 'failed' })],
+    [
+      'structurally invalid annotation',
+      () => directorRun.mockResolvedValue({ status: 'succeeded', result: '<| music x |>\nChanged' })
+    ]
+  ])('%s preserves the raw narrator floor', async (_label, arrange) => {
+    yuzuState.on = true
+    arrange()
+    const floor = await runClassicTurnDirect(turnCtx())
+    expect(floor?.response.content).toBe(RAW)
+    expect(mockFloor.updateActiveFloorResponse).not.toHaveBeenCalled()
+  })
 
-    expect(promptText()).not.toContain(VN_MODE_FRAMING)
-    expect(params().max_tokens).toBe(getDefaultPreset().parameters.max_tokens)
-    // Not vacuously equal to the Yuzu budget.
-    expect(params().max_tokens).not.toBe(YUZU_DEFAULT_MAX_TOKENS)
+  it('Classic mode never invokes the scene director', async () => {
+    const floor = await runClassicTurnDirect(turnCtx())
+    expect(directorRun).not.toHaveBeenCalled()
+    expect(floor?.response.content).toBe(RAW)
   })
 })

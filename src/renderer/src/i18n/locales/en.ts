@@ -541,6 +541,7 @@ const en: Record<string, string> = {
   'agents.keepCustomization': 'Keep my edits',
   'agents.useSource': 'Use the file',
   'agents.roles': 'Role bindings',
+  'agents.role.default': 'Default',
   'agents.role.classic.narrator': 'Classic narrator',
   'agents.role.yuzu.sceneDirector': 'Yuzu scene director',
   'agents.installed': 'Installed agents ({{count}})',

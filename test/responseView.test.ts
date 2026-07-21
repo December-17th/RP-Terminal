@@ -35,6 +35,15 @@ describe('responseView (lossless storage, view-time transforms)', () => {
     expect(out).toContain('<gametxt>The rain falls.</gametxt>')
   })
 
+  it('hides recognized Yuzu control lines from Classic display and narrator history', () => {
+    const annotated =
+      '<| block |>\n<| bg 教室 |>\n<gametxt>The rain falls.</gametxt>\n<| 柚子 smile left |>\n<| end |>'
+    for (const out of [cleanForDisplay(annotated), cleanForHistory(annotated)]) {
+      expect(out).toBe('<gametxt>The rain falls.</gametxt>')
+      expect(out).not.toContain('<|')
+    }
+  })
+
   it('a <rpt-combat-start> MENTION inside <think> does not swallow the narrative (tempered strip)', () => {
     // Real duel bug: the model mentions the tag in its reasoning ("输出<rpt-combat-start>标签"), then
     // emits the real paired tag + roster later. An un-tempered strip bridged from the mention to the

@@ -61,33 +61,17 @@ const generationCalls = vi.hoisted(
   () => [] as Array<{ userAction: string | undefined; generationType: string | undefined }>
 )
 
-// Project Yuzu WP-S1: a hoisted toggle so the SAME mocked module serves both the classic baseline
-// (off → byte-identical) and the VN-mode case (on → overlay + raised ceiling). Off by default.
+// Yuzu is a presentation/post-processing toggle; primary narration stays byte-identical to Classic.
 const yuzuFlag = vi.hoisted(() => ({ on: false }))
 
-// Project Yuzu WP-S2: a hoisted provider controller so a VN test can script the exact reply(s) the
-// acceptance gate sees (sample, then repair). `queue` is drained one reply per streamProvider call; when
-// empty the mock defaults to a byte-clean valid scene in VN mode (so the S1 overlay tests still make ONE
-// sample call, not a sample+repair), and to the classic RAW when VN mode is off. `calls` counts calls.
+// Hoisted provider controller so tests can script exact replies. `queue` is drained one reply per
+// streamProvider call; when empty the mock returns the normal Classic response.
 const provider = vi.hoisted(() => ({
   queue: [] as string[],
   calls: 0,
-  // A minimal scene valid against FIXTURE_INDEX (classroom location, kaede actor).
-  validScene: '<| bg classroom |>\nkaede: Hello there.\n<| end |>'
+  defaultResponse:
+    '<thinking>plan</thinking>You open the door.\n<UpdateVariable>_.set("hp", 9)</UpdateVariable>'
 }))
-
-// A fixture asset index for the VN-mode case (kaede/yuzu sprites + moods, two backgrounds, one CG). Only
-// read when yuzu mode is on (buildVnOverlay → getIndex); the classic baseline never touches it, so mocking
-// worldAssetService here cannot perturb the baseline snapshots.
-const FIXTURE_INDEX = {
-  character: {
-    kaede: { 立绘: { moods: { neutral: 'a.png', smile: 'b.png' } } },
-    yuzu: { 立绘: { moods: { neutral: 'c.png' } } }
-  },
-  location: { classroom: { 背景: { moods: {} } }, rooftop: { 背景: { moods: {} } } },
-  cg: { cg_confession: { CG: { moods: {} } } }
-}
-vi.mock('../../src/main/services/worldAssetService', () => ({ getIndex: () => FIXTURE_INDEX }))
 
 vi.mock('../../src/main/services/chatService', () => ({
   getChat: () => ({ id: 'chat1', character_id: 'card1', floor_count: 2, lorebook_ids: null }),
@@ -147,7 +131,10 @@ vi.mock('../../src/main/services/generation/genContext', async (orig) => {
     }
   }
 })
-vi.mock('../../src/main/services/regexService', () => ({ getPromptRules: () => [], getWorldInfoRules: () => [] }))
+vi.mock('../../src/main/services/regexService', () => ({
+  getPromptRules: () => [],
+  getWorldInfoRules: () => []
+}))
 vi.mock('../../src/main/services/templateService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   loadGlobals: () => ({}),
@@ -163,7 +150,7 @@ vi.mock('../../src/main/services/apiService', async (orig) => ({
     capturedSend = messages
     capturedParams = params
     if (provider.queue.length) return provider.queue.shift()!
-    return yuzuFlag.on ? provider.validScene : RAW
+    return provider.defaultResponse
   }
 }))
 
@@ -200,9 +187,7 @@ describe('generate() — parity baseline', () => {
     const floor = await regenerate('profile1', 'chat1')
 
     expect(capturedTruncations).toEqual([1])
-    expect(generationCalls).toEqual([
-      { userAction: 'look around', generationType: 'regenerate' }
-    ])
+    expect(generationCalls).toEqual([{ userAction: 'look around', generationType: 'regenerate' }])
     expect(floor?.user_message.content).toBe('look around')
   })
 
@@ -219,93 +204,23 @@ describe('generate() — parity baseline', () => {
     expect(capturedSavedFloor).toBe(floor)
   })
 
-  // Project Yuzu WP-S1: VN mode on. The classic pipeline gains ONE extra system block (the YSS overlay)
-  // immediately before the user action, and the output ceiling is raised — nothing else changes.
-  it('VN mode appends the YSS overlay before the action + raises max_tokens', async () => {
-    yuzuFlag.on = true
-    const floor = await generate('profile1', 'chat1', 'open the door')
-    expect(floor).not.toBeNull()
+  it('VN mode keeps the Classic narrator prompt, preset budget, and one primary provider call', async () => {
+    await generate('profile1', 'chat1', 'open the door')
+    const classicSend = structuredClone(capturedSend)
+    const classicParams = structuredClone(capturedParams)
 
-    const msgs = capturedSend as Array<{ role: string; content: string }>
-    // The final message is the user action; the overlay is the system block immediately before it.
-    const userIdx = msgs.length - 1
-    expect(msgs[userIdx].role).toBe('user')
-    const overlay = msgs[userIdx - 1]
-    expect(overlay.role).toBe('system')
-    // Framing + grammar + concrete vocab (deterministic, sorted) all present in the one block.
-    expect(overlay.content).toContain('visual novel')
-    expect(overlay.content).toContain('Yuzu Scene Script')
-    expect(overlay.content).toContain('kaede, yuzu') // actors, sorted
-    expect(overlay.content).toContain('neutral, smile') // union of moods, sorted
-    expect(overlay.content).toContain('classroom, rooftop') // locations, sorted
-    expect(overlay.content).toContain('cg_confession') // cgs
-    // The VN-mode setting REPLACES the preset ceiling (preset default is 4000); default = 30000.
-    expect((capturedParams as { max_tokens: number }).max_tokens).toBe(30000)
-    // Pin the whole overlay block + position so any drift in content/order is caught.
-    expect(overlay.content).toMatchSnapshot('vnOverlayBlock')
-    expect(msgs.length).toBe((capturedSend as unknown[]).length)
-  })
-
-  // Project Yuzu WP-S1 follow-up: the player-adjusted setting reaches the provider verbatim — it
-  // replaces the preset's max_tokens (even when LOWER than the preset's 4000).
-  it('VN mode sends the custom settings.yuzu.max_tokens verbatim', async () => {
     yuzuFlag.on = true
     settings.yuzu = { max_tokens: 8000 }
-    await generate('profile1', 'chat1', 'open the door')
-    expect((capturedParams as { max_tokens: number }).max_tokens).toBe(8000)
+    provider.calls = 0
+    const floor = await generate('profile1', 'chat1', 'open the door')
 
-    settings.yuzu = { max_tokens: 2000 } // below the preset's 4000 — still verbatim
-    await generate('profile1', 'chat1', 'open the door')
-    expect((capturedParams as { max_tokens: number }).max_tokens).toBe(2000)
-  })
-
-  // Project Yuzu WP-S2 (ADR 0009): the acceptance gate. These pin that a VN turn runs the WP-B ladder on
-  // the reply BEFORE the floor commits, folds the scene's `<| effect |>` effects into canonical stat_data,
-  // and persists a trace — while classic floors stay byte-identical (no gate, no trace).
-
-  it('VN mode: a valid scene folds its <| effect |> into the floor stat_data', async () => {
-    yuzuFlag.on = true
-    // A valid scene whose beat carries an MVU effect: hp starts at 10 (lastFloor), the effect sets it to 42.
-    provider.queue = ['<| bg classroom |>\nkaede: I feel closer to you.\n<| effect _.set(\'hp\', 42) //bonded |>\n<| end |>']
-    const floor = await generate('profile1', 'chat1', 'talk to kaede')
     expect(floor).not.toBeNull()
-    expect(provider.calls).toBe(1) // valid on the first attempt — no repair
-    // The effect folded into canonical stat_data at generation (ADR 0008 §3 / ADR 0009 §4).
-    const vars = capturedFloor!.variables as { stat_data: { hp: number } }
-    expect(vars.stat_data.hp).toBe(42)
-    // The floor stores the validated scene text as its response, and carries a valid-outcome trace.
-    expect(capturedFloor!.response.content).toContain('<| effect')
-    expect(capturedFloor!.yuzu_trace?.outcome).toBe('valid')
-    expect(capturedFloor!.yuzu_trace?.attempts).toHaveLength(1)
-  })
-
-  it('VN mode: a structurally-invalid reply triggers ONE repair, then commits the repaired scene', async () => {
-    yuzuFlag.on = true
-    const invalid = 'Just some prose with no scene structure at all.' // no <| bg |> ⇒ missing location
-    const repaired = '<| bg rooftop |>\nyuzu: There you are.\n<| effect _.add(\'hp\', 5) //relief |>\n<| end |>'
-    provider.queue = [invalid, repaired]
-    const floor = await generate('profile1', 'chat1', 'find yuzu')
-    expect(floor).not.toBeNull()
-    expect(provider.calls).toBe(2) // sample + exactly one repair re-ask
-    // The REPAIRED scene is what commits (its effect folded: hp 10 → 15).
-    expect(capturedFloor!.response.content).toBe(repaired)
-    expect((capturedFloor!.variables as { stat_data: { hp: number } }).stat_data.hp).toBe(15)
-    expect(capturedFloor!.yuzu_trace?.outcome).toBe('repaired')
-    expect(capturedFloor!.yuzu_trace?.attempts).toHaveLength(2)
-    expect(capturedFloor!.yuzu_trace?.originalRaw).toBe(invalid)
-  })
-
-  it('VN mode: repair still failing degrades to a prose-fallback floor (never throws)', async () => {
-    yuzuFlag.on = true
-    const invalid1 = 'First non-scene reply.'
-    const invalid2 = 'Second non-scene reply, also broken.'
-    provider.queue = [invalid1, invalid2]
-    const floor = await generate('profile1', 'chat1', 'do something')
-    expect(floor).not.toBeNull()
-    expect(provider.calls).toBe(2) // sample + one repair, then the ladder floors out
-    // Fallback wraps the ORIGINAL raw verbatim as the floor response; the trace records the fallback.
-    expect(capturedFloor!.response.content).toBe(invalid1)
-    expect(capturedFloor!.yuzu_trace?.outcome).toBe('fallback')
+    expect(capturedSend).toEqual(classicSend)
+    expect(capturedParams).toEqual(classicParams)
+    expect((capturedParams as { max_tokens: number }).max_tokens).toBe(preset.parameters.max_tokens)
+    expect(provider.calls).toBe(1)
+    expect(capturedFloor!.response.content).toBe(RAW)
+    expect(capturedFloor!.yuzu_trace).toBeUndefined()
   })
 
   it('classic floors carry NO yuzu_trace (VN-only field)', async () => {

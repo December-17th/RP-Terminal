@@ -176,9 +176,11 @@ export const registerAgentCatalogIpc = (ipcMain: IpcMain): void => {
         const profileId = stringArg(rawProfileId)
         const id = stringArg(rawId)
         const role = rawRole === 'classic.narrator' || rawRole === 'yuzu.sceneDirector' ? rawRole : null
-        if (!profileId || !id || !role) return { ok: false, error: 'INVALID_REQUEST' }
+        if (!profileId || !role) return { ok: false, error: 'INVALID_REQUEST' }
         try {
-          new AgentCatalog(profileId).bindRole(role, id)
+          const catalog = new AgentCatalog(profileId)
+          if (id) catalog.bindRole(role, id)
+          else catalog.unbindRole(role)
           return { ok: true }
         } catch (error) {
           return { ok: false, error: error instanceof Error ? error.message : String(error) }

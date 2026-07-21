@@ -7,6 +7,8 @@
  * (main + renderer) so storage stays full and "disabling the card's regex shows the original".
  */
 
+import { stripYuzuDirectives } from './yuzu/annotatedFloor'
+
 // Reasoning blocks (closed, plus a dangling unclosed trailing one from truncated output).
 const THINK_RE = /<think(?:ing)?\b[^>]*>[\s\S]*?<\/think(?:ing)?>/gi
 const THINK_DANGLING_RE = /<think(?:ing)?\b[^>]*>[\s\S]*$/i
@@ -63,14 +65,15 @@ export const stripMvuBlocks = (text: string): string => String(text ?? '').repla
  * are left in place for the card's own display regex to fold — so disabling that regex reveals
  * the original block.
  */
-export const cleanForDisplay = (text: string): string => stripRptEvents(stripThinking(text)).trim()
+export const cleanForDisplay = (text: string): string =>
+  stripYuzuDirectives(stripRptEvents(stripThinking(text))).trim()
 
 /**
  * For history sent back to the model: also drop the MVU blocks (matches the pre-lossless
  * behavior — the model never re-reads its own reasoning or raw state ops).
  */
 export const cleanForHistory = (text: string): string =>
-  stripMvuBlocks(stripRptEvents(stripThinking(text))).trim()
+  stripYuzuDirectives(stripMvuBlocks(stripRptEvents(stripThinking(text)))).trim()
 
 /** Where a (possibly in-flight) response is in the reasoning lifecycle. */
 export type ReasoningState = 'none' | 'thinking' | 'done'

@@ -23,8 +23,7 @@ export interface GenContext {
    *  lowercased, driving preset `injection_trigger` filtering (promptBuilder.resolveEffectivePrompts).
    *  Seeded per turn from the entry point; 'normal' for a plain player send / a background read. */
   generationType: string
-  /** Project Yuzu (ADR 0008 §7): VN play mode on for this session. When true the classic pipeline gains
-   *  the YSS scene overlay + a raised output ceiling; when false the assembly is byte-identical to classic. */
+  /** VN presentation mode for this session. Narration still uses the unchanged Classic prompt/preset. */
   vnMode: boolean
   modeConfig: ModeConfig
   lorebookIds: string[]

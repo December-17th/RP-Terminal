@@ -267,6 +267,45 @@ describe('InvocationRuntime', () => {
     expect(execute.mock.calls[1][0].input).toEqual({ revision: 2 })
   })
 
+  it('discards every staged operation when result incorporation is disabled', async () => {
+    const { runtime, execute, floor, incorporated } = setup(['A'])
+    const commitSuccess = vi.fn()
+    execute.mockResolvedValue({
+      ...success('presentation'),
+      stagedOperations: [
+        {
+          type: 'set',
+          payload: { path: 'variables.stat_data.hp', value: 1 }
+        }
+      ]
+    })
+    const incorporate = vi.spyOn(floor, 'incorporate')
+    const isolated = createInvocationRuntime({
+      catalog: { get: () => agent('A') },
+      harness: { execute, commitSuccess, stop: () => false },
+      floor,
+      createId: () => 'read-only'
+    })
+
+    await expect(
+      isolated.run({
+        profileId: 'p',
+        chatId: 'c',
+        floor: 12,
+        agent: 'A',
+        skipResultIncorporation: true
+      })
+    ).resolves.toMatchObject({ status: 'succeeded', result: 'presentation' })
+
+    expect(incorporate).not.toHaveBeenCalled()
+    expect(incorporated).toEqual([])
+    expect(commitSuccess).toHaveBeenCalledWith(
+      'read-only',
+      expect.objectContaining({ result: 'presentation' }),
+      { status: 'discarded', operations: 1 }
+    )
+  })
+
   it('rejects stale restart after a non-transactional boundary', async () => {
     const { runtime, execute, setRevision } = setup(['A'])
     execute.mockImplementationOnce(async () => {

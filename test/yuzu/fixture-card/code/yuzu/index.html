@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Yuzu block player fixture</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="stage" data-state="loading">
+      <img class="stage__backdrop" alt="" />
+      <div class="stage__wash" aria-hidden="true"></div>
+      <div class="stage__actors" aria-label="舞台角色">
+        <div class="actor" data-position="left"></div>
+        <div class="actor" data-position="center"></div>
+        <div class="actor" data-position="right"></div>
+      </div>
+      <section class="script" aria-live="polite">
+        <p class="script__eyebrow">YUZU SCENE</p>
+        <div class="script__content">正在读取最新场景……</div>
+        <button class="script__advance" type="button" disabled>下一幕</button>
+      </section>
+    </main>
+    <script src="./player.js"></script>
+  </body>
+</html>

@@ -167,6 +167,7 @@ through the host bridge as RFC-6902 JSON Patch.
 - `await rpt.agents.runPlan(plan, { signal }?)` runs the validated top-level sequence / flat-parallel plan form. The same Agent cannot appear twice on one floor.
 - `rpt.agents.registerTool(binding, handler)` registers a card-owned implementation for one declared Agent tool and returns an unregister function. Calls are correlated and abortable; arguments and results are size-bounded; staged variable operations commit only with a valid Agent result. Missing, incompatible, duplicate, or unmounted implementations fail before provider dispatch.
 - `rpt.agents.onFloorCommitted(handler)` supplies `{ floor, variables, previousVariables }` once for a newly committed floor. Result incorporation and Forward Replay emit state refreshes, never this scheduling event.
+- A successful text result may carry native `<UpdateVariable>` / `<JSONPatch>` MVU updates. Before the Run Record is finalized, RP Terminal folds those updates onto the current latest floor's `stat_data`, journals them as Agent floor operations, and stores the raw result unchanged. A failed fold fails result incorporation; it never exposes a succeeded run with unapplied variables.
 - Scope is authoritative. Inline main IPC validates profile/chat/card against the chat; WCV main IPC derives it from the mounted sender. Caller-supplied scope cannot redirect a run or tool callback.
 - Scheduling belongs to card JavaScript; RP Terminal has no variable/time scheduler. Repeated same-Agent calls for one floor coalesce to the existing invocation/result.
 

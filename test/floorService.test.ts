@@ -13,6 +13,7 @@ const seam = vi.hoisted(() => ({
   requestRow: undefined as unknown,
   countRow: { n: 0 } as unknown,
   lastFloorRow: undefined as unknown,
+  floorRow: undefined as unknown,
   floorExists: false
 }))
 
@@ -26,6 +27,7 @@ const fakeDb = vi.hoisted(() => ({
           return seam.floorExists ? { present: 1 } : undefined
         if (sql.includes('COUNT(*)')) return seam.countRow
         if (sql.includes('SELECT request')) return seam.requestRow
+        if (sql.includes('SELECT * FROM floors WHERE chat_id')) return seam.floorRow
         if (sql.includes('ORDER BY floor DESC LIMIT 1')) return seam.lastFloorRow
         return undefined
       },
@@ -47,7 +49,8 @@ import {
   getAllFloors,
   getAllFloorsWithRequests,
   getFloorRequest,
-  getFloorCount
+  getFloorCount,
+  updateActiveFloorResponse
 } from '../src/main/services/floorService'
 import { FloorFile } from '../src/main/types/chat'
 
@@ -70,6 +73,7 @@ beforeEach(() => {
   seam.requestRow = undefined
   seam.countRow = { n: 0 }
   seam.lastFloorRow = undefined
+  seam.floorRow = undefined
   seam.floorExists = false
 })
 
@@ -133,5 +137,35 @@ describe('floorService — lean floor projections (perf audit P0-2)', () => {
     seam.countRow = { n: 1 }
     saveFloor('p1', 'c1', mkLean())
     expect(seam.runs.some((r) => r.sql.includes('UPDATE chats SET floor_count'))).toBe(true)
+  })
+
+  it('Yuzu annotation replaces response text and the active swipe without replaying variables', () => {
+    seam.floorRow = {
+      floor: 2,
+      chat_id: 'c1',
+      timestamp: 't',
+      user_content: 'u',
+      user_timestamp: 't',
+      response_content: 'active',
+      response_model: 'm',
+      response_provider: 'p',
+      swipes: JSON.stringify(['old', 'active']),
+      swipe_id: 1,
+      events: '[]',
+      variables: JSON.stringify({ stat_data: { hp: 5 } }),
+      request: null,
+      metrics: null,
+      plot_block: null
+    }
+    const updated = updateActiveFloorResponse('p1', 'c1', 2, '<| block |>\nactive\n<| end |>')
+    expect(updated?.response.content).toContain('<| block |>')
+    expect(updated?.swipes).toEqual(['old', '<| block |>\nactive\n<| end |>'])
+    const write = seam.runs.find((run) => run.sql.startsWith('UPDATE floors SET response_content'))
+    expect(write?.args.slice(0, 3)).toEqual([
+      '<| block |>\nactive\n<| end |>',
+      JSON.stringify(['old', '<| block |>\nactive\n<| end |>']),
+      1
+    ])
+    expect(write?.sql).not.toContain('variables')
   })
 })

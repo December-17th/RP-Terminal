@@ -159,6 +159,62 @@ describe('AgentCatalog', () => {
     catalog.bindRole('classic.narrator', created.id)
     expect(() => catalog.setEnabled(created.id, false)).toThrow(/role/i)
     expect(() => catalog.bindRole('yuzu.sceneDirector', created.id)).toThrow(/compatible/i)
+    catalog.unbindRole('classic.narrator')
+    expect(catalog.getRoleBindings()).toEqual({})
+    expect(() => catalog.setEnabled(created.id, false)).not.toThrow()
+  })
+
+  it('rejects triggered or tool-using Yuzu scene directors', () => {
+    const catalog = new AgentCatalog('p')
+    const yssAgent = (name: string, extra: Record<string, unknown> = {}) => ({
+      ...textAgent(name),
+      result: { mode: 'text' as const, validator: 'yss' as const },
+      ...extra
+    })
+    const triggered = catalog.create(
+      yssAgent('Triggered Director', {
+        trigger: { onFloorCommitted: { everyNFloors: 1 } }
+      })
+    )
+    const toolUsing = catalog.create(
+      yssAgent('Tool Director', {
+        tools: [
+          {
+            name: 'mutate',
+            description: 'Mutate state.',
+            inputSchema: { type: 'object', properties: {} }
+          }
+        ]
+      })
+    )
+
+    expect(() => catalog.bindRole('yuzu.sceneDirector', triggered.id)).toThrow(/compatible/i)
+    expect(() => catalog.bindRole('yuzu.sceneDirector', toolUsing.id)).toThrow(/compatible/i)
+  })
+
+  it('filters an incompatible persisted Yuzu role binding written by an older build', () => {
+    const catalog = new AgentCatalog('p')
+    const director = catalog.create({
+      ...textAgent('Legacy Director'),
+      result: { mode: 'text', validator: 'yss' }
+    })
+    catalog.bindRole('yuzu.sceneDirector', director.id)
+    expect(catalog.getRoleBindings()).toEqual({ 'yuzu.sceneDirector': director.name })
+
+    getDb()
+      .prepare(
+        'UPDATE agent_catalog SET effective_definition = ? WHERE profile_id = ? AND id = ?'
+      )
+      .run(
+        JSON.stringify({
+          ...director.effective,
+          trigger: { onFloorCommitted: { everyNFloors: 1 } }
+        }),
+        'p',
+        director.id
+      )
+
+    expect(new AgentCatalog('p').getRoleBindings()).toEqual({})
   })
 
   it('distinguishes Agent Definition files from legacy workflow packs', () => {

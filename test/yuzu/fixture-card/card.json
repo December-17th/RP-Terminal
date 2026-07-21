@@ -37,6 +37,10 @@
       "rp_terminal": {
         "yuzu": {
           "version": 1,
+          "surface": {
+            "entry": "card-code:yuzu/index.html",
+            "enable_vn_mode": true
+          },
           "opening": "<| bg classroom |>\n<| music bgm_school |>\nThe classroom is empty, chalk dust drifting in the late afternoon light.\n<| yuzu neutral center enter |>\nyuzu: Kaede, wait — can we talk?\n<| kaede worried left enter |>\nkaede: ...I was about to head home.\n<| effect _.set('好感度.kaede', 0, 1) //她停下了脚步 |>\nyuzu: Just for a minute. Please.\n<| yuzu smile center |>\nnarration: For a moment, neither of them moves.\n<| effect _.set('flags.confessed', false, false) //还没说出口 |>\n<| choice Reach out to her :: reach_out |>\n<| choice Give her the space she wants :: give_space |>\n<| end |>"
         }
       }

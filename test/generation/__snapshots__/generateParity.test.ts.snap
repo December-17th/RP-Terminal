@@ -1,49 +1,5 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`generate() — parity baseline > VN mode appends the YSS overlay before the action + raises max_tokens > vnOverlayBlock 1`] = `
-"You are writing the next scene of a visual novel. Respond with EXACTLY one YSS scene document and nothing else — no preamble, no commentary, no code fences. The scene continues directly from the current story state.
-
-Emit the scene as a Yuzu Scene Script (YSS): a sequence of LINES, one instruction per line.
-Every non-blank line is EXACTLY one of these three kinds:
-
-1. COMMAND — a line wrapped in <| … |>. The first word inside is the verb:
-   <| bg <location> |>            set the background; the FIRST bg fixes the scene location
-   <| mood <word...> |>           set the scene mood (last one wins; free text)
-   <| <actor> [tokens...] |>      show/animate an actor sprite. Extra tokens, in ANY order, are an
-                                  expression, a position (left|center|right), and/or an action
-                                  (enter|exit|move). e.g. <| kaede worried center enter |>
-   <| music <id> |>               play music (or <| music stop |>)
-   <| ambience <id> |>            play an ambience loop
-   <| sfx <id> |>                 play a one-shot sound
-   <| cg <id> |>                  show a CG (or <| cg clear |> to hide it)
-   <| effect <mvu-command> |>     change a story variable on the current beat. The payload is ONE MVU
-                                  command in the classic call dialect — _.set / _.add / _.delta / … —
-                                  e.g. <| effect _.set('好感度.kaede', 4, 5) //她笑了 |>  or
-                                  <| effect _.add('好感度.kaede', 1) //她笑了 |>. A trailing //reason is
-                                  part of the command. Put the effect on the beat where the change
-                                  narratively happens.
-   <| choice <text> :: <intent> |>  offer a player choice; " :: " separates the shown text from its
-                                  intent tag (omit " :: <intent>" to reuse the text as intent)
-   <| end |>                      REQUIRED: the final line of every scene, marking it complete
-
-2. DIALOGUE — "speaker: text", where speaker is an actor id or "narration".
-   e.g.  yuzu: Kaede, wait — can we talk?
-
-3. NARRATION — ANY other non-empty line is narration (spoken by nobody). Plain prose is fine.
-
-End the scene with one or more <| choice … |> lines to offer choices, OR with no choice lines at all
-— in which case the player types their own next action. Always finish with a <| end |> line.
-
-Use ONLY these asset ids, each in its correct category:
-- actors (dialogue speaker / sprite / who is present): kaede, yuzu
-- expressions (sprite token): neutral, smile
-- locations (bg): classroom, rooftop
-- cgs (cg): cg_confession
-- audio (music / ambience / sfx): 
-- "narration" is also a legal dialogue speaker.
-Choices carry TEXT + INTENT only — never mechanics (affinity, flags, items). Mechanics go in an <| effect … |> MVU command."
-`;
-
 exports[`generate() — parity baseline > produces a stable sendMessages array + written floor > sendMessages 1`] = `
 [
   {

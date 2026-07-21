@@ -958,15 +958,19 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
                         disabled={saving}
                         onChange={(event) => {
                           const role = event.target.value as AgentRole
-                          if (role) {
-                            void act(
-                              () =>
-                                useAgentCatalogStore
-                                  .getState()
-                                  .bindRole(profileId, role, selected.id),
-                              t('agents.workspace.immediateApplied')
-                            )
-                          }
+                          const currentRole = ROLES.find(
+                            (candidate) =>
+                              bindings[candidate] === selected.id ||
+                              bindings[candidate] === selected.name
+                          )
+                          if (!role && !currentRole) return
+                          void act(
+                            () =>
+                              useAgentCatalogStore
+                                .getState()
+                                .bindRole(profileId, role || currentRole!, role ? selected.id : ''),
+                            t('agents.workspace.immediateApplied')
+                          )
                         }}
                       >
                         <option value="">{t('agents.workspace.noRole')}</option>

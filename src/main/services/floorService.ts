@@ -389,6 +389,34 @@ export const updateFloorFields = (
   }
 }
 
+/** Replace only a floor's active assistant text (and its active swipe) without replaying MVU. This is
+ * used by Yuzu's post-narrator annotation pass: the narrator response was already folded before the
+ * floor commit, and the director is permitted to add presentation directives only. */
+export const updateActiveFloorResponse = (
+  profileId: string,
+  chatId: string,
+  floorIndex: number,
+  responseContent: string
+): FloorFile | null => {
+  const floor = getFloor(profileId, chatId, floorIndex)
+  const db = getSessionDbByChat(chatId)
+  if (!floor || !db) return null
+  const state = normalizeSwipes(floor.swipes, floor.response.content, floor.swipe_id)
+  state.swipes[state.swipe_id] = responseContent
+  db.prepare(
+    'UPDATE floors SET response_content = ?, swipes = ?, swipe_id = ? WHERE chat_id = ? AND floor = ?'
+  ).run(responseContent, JSON.stringify(state.swipes), state.swipe_id, chatId, floorIndex)
+  refreshChatSummary(chatId)
+  bumpTranscriptEpoch(chatId)
+  fireTranscriptEdited(profileId, chatId, floorIndex)
+  return {
+    ...floor,
+    response: { ...floor.response, content: responseContent },
+    swipes: state.swipes,
+    swipe_id: state.swipe_id
+  }
+}
+
 export const deleteFloorAndSubsequent = (
   profileId: string,
   chatId: string,

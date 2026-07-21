@@ -189,6 +189,7 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
                 void run(() => window.api.bindAgentRole(profileId, role, event.target.value))
               }
             >
+              <option value="">{t('agents.role.default')}</option>
               {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
                   {agent.name}

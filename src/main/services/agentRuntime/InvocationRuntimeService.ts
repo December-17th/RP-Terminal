@@ -18,17 +18,15 @@ import {
   type NextTurnBarrierState
 } from './invocation'
 import { log } from '../logService'
+import { stripThinking } from '../../parsers/contentParser'
+import { applyJsonPatch, applyMvuCommands, parseMvuCommands } from '../../parsers/mvuParser'
 import { withMemoryMaintenanceApply } from './memoryMaintenanceApply'
 import { memoryMaintenanceBridge } from './memoryMaintenanceSlot'
 import { createAgentPromptPlanner } from './prompt'
 import { createProviderDispatch } from './provider'
 import { agentRunStore } from './runs/AgentRunStore'
 import { createHarnessRunAdapter } from './runs/HarnessRunAdapter'
-import {
-  createCardToolRegistry,
-  createCompositeToolRegistry,
-  createToolRegistry
-} from './tools'
+import { createCardToolRegistry, createCompositeToolRegistry, createToolRegistry } from './tools'
 
 interface PersistedSource extends InvocationSourceSnapshot {
   chatId: string
@@ -90,6 +88,32 @@ const stagedFloorOperation = (operation: {
     return { kind, path, value: operation.payload.value }
   }
   return { kind, path, value: operation.payload.value }
+}
+
+const agentResultMvu = (result: JsonValue | undefined) => {
+  if (typeof result !== 'string') return null
+  const parsed = parseMvuCommands(stripThinking(result))
+  return parsed.commands.length || parsed.patches.length ? parsed : null
+}
+
+const foldAgentResultMvu = (
+  variables: Record<string, unknown>,
+  parsed: NonNullable<ReturnType<typeof agentResultMvu>>
+): FloorStateOperation[] => {
+  const statData =
+    variables.stat_data &&
+    typeof variables.stat_data === 'object' &&
+    !Array.isArray(variables.stat_data)
+      ? structuredClone(variables.stat_data as Record<string, unknown>)
+      : {}
+  const deltas = [
+    ...(parsed.commands.length ? applyMvuCommands(statData, parsed.commands) : []),
+    ...(parsed.patches.length ? applyJsonPatch(statData, parsed.patches) : [])
+  ]
+  return [
+    { kind: 'set', path: 'variables.stat_data', value: statData },
+    { kind: 'set', path: 'variables.delta_data', value: deltas }
+  ]
 }
 
 interface FloorPortDependencies {
@@ -181,6 +205,7 @@ export const createSessionInvocationFloorPort = (
         ? undefined
         : request.agent.effective.result.saveAs)
     const operations = request.execution.stagedOperations.map(stagedFloorOperation)
+    const resultMvu = agentResultMvu(request.execution.result)
     if (saveAs) {
       operations.push({
         kind: 'set',
@@ -190,8 +215,24 @@ export const createSessionInvocationFloorPort = (
     }
     try {
       db.transaction(() => {
+        const floorState = createFloorState({ db })
         if (operations.length) {
-          createFloorState({ db }).incorporateAgent(request.chatId, request.floor, operations)
+          floorState.incorporateAgent(request.chatId, request.floor, operations)
+        }
+        if (resultMvu) {
+          const latest = db
+            .prepare(
+              'SELECT floor, variables FROM floors WHERE chat_id = ? ORDER BY floor DESC LIMIT 1'
+            )
+            .get(request.chatId) as { floor: number; variables: string } | undefined
+          if (!latest)
+            throw new FloorStateError('FLOOR_NOT_FOUND', 'Latest session floor is unavailable')
+          const variables = JSON.parse(latest.variables) as Record<string, unknown>
+          floorState.incorporateAgent(
+            request.chatId,
+            latest.floor,
+            foldAgentResultMvu(variables, resultMvu)
+          )
         }
         request.commitRun()
       })()

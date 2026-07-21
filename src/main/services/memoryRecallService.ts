@@ -12,6 +12,7 @@ import {
 import { AgentCatalog } from './agentRuntime/catalog'
 import { invocationRuntime } from './agentRuntime/InvocationRuntimeService'
 import { getChatTableTemplateId } from './chatService'
+import { getAllFloors } from './floorService'
 import type { RunContext } from './generation/runContext'
 import type { GenContext } from './generation/types'
 import { log } from './logService'
@@ -126,6 +127,19 @@ interface RecallCorpus {
 }
 
 const text = (value: unknown): string => (typeof value === 'string' ? value : '')
+
+/** Recall runs after the narrator context has cloned the latest floor. Agent result incorporation may
+ * update that floor through `<UpdateVariable>`, so refresh the live turn copy before prompt assembly. */
+const refreshTurnVariables = (gen: GenContext): void => {
+  const latest = getAllFloors(gen.profileId, gen.chatId).at(-1)
+  if (!latest) return
+  gen.workingVars = structuredClone(latest.variables ?? {})
+  const existing = gen.floors.find((floor) => floor.floor === latest.floor)
+  if (existing) existing.variables = structuredClone(latest.variables ?? {})
+  if (gen.lastFloor?.floor === latest.floor) {
+    gen.lastFloor.variables = structuredClone(latest.variables ?? {})
+  }
+}
 
 /** Build the read-only invocation input and retain the exact corpus that its result will select from. */
 const prepareRecallCorpus = async (
@@ -344,6 +358,7 @@ export const runMemoryRecallAgent = async (
         }
         return null
       }
+      refreshTurnVariables(gen)
       return resolveRecallResult(
         gen,
         corpus,

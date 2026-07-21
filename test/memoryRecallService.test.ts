@@ -22,6 +22,9 @@ vi.mock('../src/main/services/agentRuntime/InvocationRuntimeService', () => ({
 const mockChat = vi.hoisted(() => ({ getChatTableTemplateId: vi.fn(() => 'tmpl') }))
 vi.mock('../src/main/services/chatService', () => mockChat)
 
+const mockFloors = vi.hoisted(() => ({ getAllFloors: vi.fn(() => []) }))
+vi.mock('../src/main/services/floorService', () => mockFloors)
+
 const mockTemplate = vi.hoisted(() => ({ getTableTemplateById: vi.fn() }))
 vi.mock('../src/main/services/tableTemplateService', () => mockTemplate)
 
@@ -127,6 +130,7 @@ beforeEach(() => {
     }
   ])
   mockNotes.readNotes.mockReturnValue('')
+  mockFloors.getAllFloors.mockReturnValue([])
   mockRuntime.run.mockResolvedValue({
     invocationId: 'recall-1',
     status: 'succeeded',
@@ -179,6 +183,21 @@ describe('runMemoryRecallAgent', () => {
         })
       })
     )
+  })
+
+  it('refreshes the live narrator variables after Agent result incorporation', async () => {
+    const gen = makeGen()
+    gen.floors[0].variables = { stat_data: { hp: 1 } }
+    gen.lastFloor = gen.floors[0]
+    gen.workingVars = { stat_data: { hp: 1 } }
+    mockFloors.getAllFloors.mockReturnValue([
+      { ...gen.floors[0], variables: { stat_data: { hp: 12 } } }
+    ])
+
+    await runMemoryRecallAgent(makeCtx(), gen)
+
+    expect(gen.workingVars).toEqual({ stat_data: { hp: 12 } })
+    expect(gen.lastFloor.variables).toEqual({ stat_data: { hp: 12 } })
   })
 
   it('lets the Agent resolve only rows present in the locally retrieved catalogue', async () => {

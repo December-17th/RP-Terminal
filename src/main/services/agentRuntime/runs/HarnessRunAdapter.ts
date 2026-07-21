@@ -45,6 +45,8 @@ export interface HarnessRunRequest {
   prompt?: AgentDefinition['prompt']
   /** Degradation notices seeded onto the Run Record so a fallen-open run is visibly degraded. */
   warnings?: string[]
+  /** Validate this main-internal invocation as plain text while recording the original definition. */
+  acceptRawTextResult?: boolean
   toolScope?: ToolExecutionScope
   signal?: AbortSignal
   yssVocabulary?: SceneVocabulary
@@ -164,7 +166,9 @@ export const createHarnessRunAdapter = ({
         throw new Error(resolved.errors.map((error) => error.message).join('; '))
       }
       const harnessRequest = {
-        definition: request.agent.definition,
+        definition: request.acceptRawTextResult
+          ? { ...request.agent.definition, result: { mode: 'text' as const } }
+          : request.agent.definition,
         input: request.input,
         profileId: request.profileId,
         ...(request.toolScope ? { toolScope: request.toolScope } : {}),

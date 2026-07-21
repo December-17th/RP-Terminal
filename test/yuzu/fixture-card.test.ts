@@ -88,12 +88,16 @@ describe('WP-Y2 fixture card imports through the real service path', () => {
 
     // The yuzu opt-in play-mode block survives schema import untouched (RPTerminalExtSchema.catchall).
     const yuzu = card!.data.extensions?.rp_terminal?.yuzu as
-      | { version?: number; opening?: string }
+      | { version?: number; opening?: string; surface?: { entry?: string; enable_vn_mode?: boolean } }
       | undefined
     expect(yuzu).toBeDefined()
     expect(yuzu!.version).toBe(1)
     expect(typeof yuzu!.opening).toBe('string')
     expect(yuzu!.opening!.length).toBeGreaterThan(0)
+    expect(yuzu!.surface).toEqual({
+      entry: 'card-code:yuzu/index.html',
+      enable_vn_mode: true
+    })
     // The ADR-0008 MVU effect form round-trips inside the opening.
     expect(yuzu!.opening).toContain("_.set('好感度.kaede'")
   })

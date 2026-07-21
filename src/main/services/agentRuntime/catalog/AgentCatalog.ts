@@ -739,16 +739,38 @@ export class AgentCatalog {
       .run(this.profileId, role, id, new Date().toISOString())
   }
 
+  unbindRole(role: AgentRole): void {
+    if (!ROLES.includes(role)) {
+      throw new AgentCatalogError('INCOMPATIBLE_ROLE', `Unknown Agent Role "${role}"`)
+    }
+    this.database
+      .prepare('DELETE FROM agent_role_bindings WHERE profile_id = ? AND role = ?')
+      .run(this.profileId, role)
+  }
+
   getRoleBindings(): Record<AgentRole, string> {
     const rows = this.database
       .prepare(
-        `SELECT b.role, a.name
+        `SELECT b.role, a.name, a.effective_definition, a.enabled
            FROM agent_role_bindings b
            JOIN agent_catalog a ON a.profile_id = b.profile_id AND a.id = b.agent_id
           WHERE b.profile_id = ?`
       )
-      .all(this.profileId) as Array<{ role: AgentRole; name: string }>
-    return Object.fromEntries(rows.map((row) => [row.role, row.name])) as Record<AgentRole, string>
+      .all(this.profileId) as Array<{
+      role: AgentRole
+      name: string
+      effective_definition: string
+      enabled: number
+    }>
+    return Object.fromEntries(
+      rows
+        .filter(
+          (row) =>
+            row.enabled === 1 &&
+            isRoleCompatible(row.role, JSON.parse(row.effective_definition) as AgentDefinition)
+        )
+        .map((row) => [row.role, row.name])
+    ) as Record<AgentRole, string>
   }
 
   inspectStandalone(text: string): StandaloneInspection {
@@ -1003,5 +1025,7 @@ const isRoleCompatible = (role: AgentRole, definition: AgentDefinition): boolean
   if (definition.result.mode !== 'text') return false
   return role === 'classic.narrator'
     ? definition.result.validator === undefined
-    : definition.result.validator === 'yss'
+    : definition.result.validator === 'yss' &&
+        definition.trigger === undefined &&
+        definition.tools.length === 0
 }

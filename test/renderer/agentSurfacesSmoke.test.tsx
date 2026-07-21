@@ -59,6 +59,7 @@ afterEach(() => {
   delete apiOverrides.restoreAgent
   delete apiOverrides.upgradeAgent
   delete apiOverrides.deleteAgent
+  delete apiOverrides.bindAgentRole
   delete apiOverrides.listAgentLabCases
   delete apiOverrides.runAgentLabCaseLive
   delete apiOverrides.captureAgentLabCase
@@ -818,11 +819,18 @@ describe('Agent-Runtime renderer surfaces mount without crashing', () => {
     expect(typeof captureArgs[3]).toBe('string')
   })
 
-  it('AgentsPanel (Settings → Agents) mounts', async () => {
+  it('AgentsPanel shows an explicit Default for both unbound roles', async () => {
     await seedActiveSession()
     const { AgentsPanel } = await import('../../src/renderer/src/components/AgentsPanel')
-    const { container } = render(<AgentsPanel profileId="p1" />)
+    const { container, getAllByRole } = render(<AgentsPanel profileId="p1" />)
     expect(container).toBeTruthy()
+    const roleBindings = getAllByRole('combobox') as HTMLSelectElement[]
+    expect(roleBindings).toHaveLength(2)
+    expect(roleBindings.map((select) => select.value)).toEqual(['', ''])
+    expect(roleBindings.map((select) => select.selectedOptions[0]?.textContent)).toEqual([
+      'Default',
+      'Default'
+    ])
   })
 
   // Session 10 "Required tests": role replacement before disable/delete. The panel must not let the
