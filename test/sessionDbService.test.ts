@@ -56,7 +56,8 @@ describe('SESSION_SCHEMA', () => {
       'table_refill_progress',
       'workflow_trigger_state',
       'execution_records',
-      'agent_runs'
+      'agent_runs',
+      'memory_retrieval_embeddings'
     ]) {
       expect(SESSION_SCHEMA).toContain(`CREATE TABLE IF NOT EXISTS ${t} (`)
     }

@@ -61,6 +61,13 @@ export interface Settings {
     injection_max_rows?: number
     /** New-session reminder to set a memory-table template. Optional — defaults ON (`!== false`). */
     remind_set_template?: boolean
+    retrieval?: {
+      enabled: boolean
+      embedding_api_preset_id: string
+      activation_threshold: number
+      recent_fixed_count: number
+      candidate_limit: number
+    }
   }
   templates: {
     enabled: boolean

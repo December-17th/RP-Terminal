@@ -104,6 +104,19 @@ describe('grepSections', () => {
     expect(hits[0].context).toContain('[unclosed bracket')
   })
 
+  it('literal mode escapes a VALID regex so model-authored queries never run as patterns', () => {
+    // `(x+x+)+y` compiles fine — without `literal` it would run as a catastrophic-backtracking
+    // regex; with it, the query only matches its own literal characters.
+    const notes = parseNotesSections(
+      '## Trap\nplain xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxz line\nliteral (x+x+)+y appears here'
+    )
+    const hits = grepSections(notes, '(x+x+)+y', { literal: true })
+    expect(hits).toHaveLength(1)
+    expect(hits[0].context).toContain('literal (x+x+)+y appears here')
+    // and a regex-alternation query stops matching as alternation
+    expect(grepSections(notes, 'plain|missing', { literal: true })).toEqual([])
+  })
+
   it('empty / whitespace query yields no hits', () => {
     expect(grepSections(sections, '')).toEqual([])
     expect(grepSections(sections, '   ')).toEqual([])

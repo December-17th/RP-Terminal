@@ -113,7 +113,18 @@ export const getDefaultSettings = (): Settings => ({
   },
   // SQL-table memory (manual-pass issue 04): the frequency a template table with updateFrequency -1
   // ("use global") maintains at. Mirrors the 数据库-plugin global default.
-  tables: { default_update_frequency: 3, injection_max_rows: 20, remind_set_template: true },
+  tables: {
+    default_update_frequency: 3,
+    injection_max_rows: 20,
+    remind_set_template: true,
+    retrieval: {
+      enabled: true,
+      embedding_api_preset_id: '',
+      activation_threshold: 200,
+      recent_fixed_count: 50,
+      candidate_limit: 200
+    }
+  },
   templates: {
     enabled: true,
     render: {
@@ -210,7 +221,12 @@ export const normalize = (stored: Partial<Settings>): Settings => {
   const persona = { ...d.persona, ...(stored.persona || {}) }
   const generation = { ...d.generation, ...(stored.generation || {}) }
   const lorebook = { ...d.lorebook, ...(stored.lorebook || {}) }
-  const tables = { ...d.tables, ...(stored.tables || {}) }
+  const storedTables = (stored.tables || {}) as Partial<Settings['tables']>
+  const tables = {
+    ...d.tables,
+    ...storedTables,
+    retrieval: { ...d.tables.retrieval, ...(storedTables.retrieval || {}) }
+  }
   const storedTemplates = (stored.templates || {}) as Partial<Settings['templates']>
   const templates = {
     ...d.templates,

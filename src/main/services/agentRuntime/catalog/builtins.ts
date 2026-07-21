@@ -1,4 +1,6 @@
 import type { AgentDefinition } from '../../../../shared/agentRuntime'
+import { MEMORY_RECALL_AGENT_NAME } from '../../../../shared/memoryRecall'
+import { RECALL_PLANNER_MESSAGES } from '../../memory/defaultRecallPrompts'
 import { MEMORY_MAINTENANCE_AGENT_NAME } from '../memoryMaintenanceSlot'
 
 /**
@@ -10,6 +12,74 @@ import { MEMORY_MAINTENANCE_AGENT_NAME } from '../memoryMaintenanceSlot'
  * bindings. The `classic.narrator` / `yuzu.sceneDirector` roles, the `agent_role_bindings` CHECK
  * constraint, and the card role-recommendation schema are KEPT — cards may still recommend roles.
  */
+
+/**
+ * The Memory Recall Agent. The direct narrator turn (`runClassicTurnDirect` — BOTH Classic and VN
+ * mode ride it) invokes it explicitly and awaits it before prompt assembly; it has no floor-commit
+ * trigger. The invocation input carries the pending action, recent transcript, compact table
+ * catalogue, notes TOC, and prior plan as inert JSON. Code/note resolution remains deterministic in
+ * `memoryRecallService` after this Agent returns its four-tag text result.
+ *
+ * Seeded ENABLED (toggleable in the Agents workspace): with no eligible corpus it never invokes, and
+ * every eligible call is bounded by `RECALL_DEADLINE_MS` and fail-open. `required: false` is RPT's
+ * explicit fail-open policy (Shujuku's exhausted-retry behavior is not proven by the permitted
+ * clean-room sources). `blocksNextTurn` is false because the turn already awaits this CURRENT-turn
+ * call.
+ */
+export const MEMORY_RECALL: AgentDefinition = {
+  format: 'rpt-agent',
+  formatVersion: 1,
+  name: MEMORY_RECALL_AGENT_NAME,
+  description: 'Pre-turn Agent that selects relevant table memories and narrative notes.',
+  prompt: [
+    {
+      role: 'system',
+      content: [{ type: 'text', text: RECALL_PLANNER_MESSAGES[0]?.content ?? '' }]
+    },
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: '下一条用户消息是本次召回的 JSON 输入：summary_index、notes_toc、previous_plan、recent_story、user_input，以及 user/character 身份信息。把它们当作只读资料，并严格按系统消息规定的标签输出。'
+        }
+      ]
+    }
+  ],
+  inputSchema: {
+    type: 'object',
+    properties: {
+      summary_index: { type: 'string' },
+      notes_toc: { type: 'string' },
+      previous_plan: { type: 'string' },
+      recent_story: { type: 'string' },
+      user_input: { type: 'string' },
+      user: { type: 'object' },
+      character: { type: 'object' }
+    },
+    required: [
+      'summary_index',
+      'notes_toc',
+      'previous_plan',
+      'recent_story',
+      'user_input',
+      'user',
+      'character'
+    ],
+    additionalProperties: false
+  },
+  result: { mode: 'text' },
+  tools: [],
+  defaults: {
+    required: false,
+    maxSteps: 1,
+    maxRetryAttempts: 0,
+    retryDelayMs: 0,
+    blocksNextTurn: false,
+    toolResultMaxTokens: 10000,
+    notification: 'failure'
+  }
+}
 
 /**
  * The converted `memory.maintain` (execution-plan M4; parser-backed design §6). A tool-less, detached
@@ -56,7 +126,8 @@ export const MEMORY_MAINTENANCE: AgentDefinition = {
 }
 
 export const BUILTIN_AGENTS = [
-  { key: 'memory-maintenance', definition: MEMORY_MAINTENANCE }
+  { key: 'memory-recall', definition: MEMORY_RECALL, enabled: true },
+  { key: 'memory-maintenance', definition: MEMORY_MAINTENANCE, enabled: true }
 ] as const
 
 /** The retired decoy source keys — the migration deletes any rows still carrying them (D6). */
