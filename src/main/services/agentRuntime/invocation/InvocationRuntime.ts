@@ -10,7 +10,11 @@ import {
   type JsonValue
 } from '../../../../shared/agentRuntime'
 import type { CatalogAgent } from '../catalog'
-import type { HarnessExecutionResult, HarnessFailure } from '../harness'
+import {
+  harnessInvocationOptions,
+  type HarnessExecutionResult,
+  type HarnessFailure
+} from '../harness'
 import type { HarnessRunRequest } from '../runs'
 import type { AgentRunReplayOutcome } from '../../../../shared/agentRuntime'
 import type { ToolExecutionScope } from '../tools'
@@ -101,6 +105,7 @@ export interface InvocationRunStorePort {
  */
 export interface InvocationPromptResult {
   render?: (text: string) => string
+  volatilePromptIndices?: number[]
   prompt?: AgentDefinition['prompt']
   /** Degradation notices recorded on the Run Record when the port fell open (ADR 0021). */
   warnings?: string[]
@@ -290,14 +295,6 @@ const waitForRetry = (delayMs: number, signal: AbortSignal): Promise<void> => {
   })
 }
 
-const invocationOptions = (
-  options: InvocationOptions | undefined
-): Omit<InvocationOptions, 'floor' | 'input' | 'inputBindings'> | undefined => {
-  if (!options) return undefined
-  const { floor: _floor, input: _input, inputBindings: _bindings, ...rest } = options
-  return rest
-}
-
 const callOptions = (call: InvocationPlanCall): InvocationOptions => {
   const { agent: _agent, input, ...options } = call
   return { ...options, ...(input ? { inputBindings: input } : {}) }
@@ -467,11 +464,14 @@ export const createInvocationRuntime = ({
             input: source.input,
             ...(item.request.toolScope ? { toolScope: item.request.toolScope } : {}),
             options: corrective
-              ? { ...invocationOptions(item.request.options), maxRetryAttempts: 0 }
-              : invocationOptions(item.request.options),
+              ? { ...harnessInvocationOptions(item.request.options), maxRetryAttempts: 0 }
+              : harnessInvocationOptions(item.request.options),
             ...(source.promptValues ? { promptValues: source.promptValues } : {}),
             ...(source.history !== undefined ? { history: source.history } : {}),
             ...(prompt?.render ? { render: prompt.render } : {}),
+            ...(prompt?.volatilePromptIndices
+              ? { volatilePromptIndices: prompt.volatilePromptIndices }
+              : {}),
             ...(prompt?.prompt ? { prompt: prompt.prompt } : {}),
             ...(prompt?.warnings?.length ? { warnings: prompt.warnings } : {}),
             signal: attemptController.signal,

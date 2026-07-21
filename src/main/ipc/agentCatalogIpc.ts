@@ -5,9 +5,11 @@ import type {
   AgentFolderSync,
   AgentManualRunResult,
   AgentMutationResult,
+  AgentPromptPreview,
   AgentRole,
   AgentUpgradePreview,
-  AgentUpgradeResolution
+  AgentUpgradeResolution,
+  JsonObject
 } from '../../shared/agentRuntime'
 import { AGENT_CATALOG_CHANNELS, normalizeAgentName } from '../../shared/agentRuntime'
 import {
@@ -18,6 +20,7 @@ import {
   type CatalogAgent
 } from '../services/agentRuntime/catalog'
 import { invocationRuntime } from '../services/agentRuntime/InvocationRuntimeService'
+import { agentPromptPreview } from '../services/agentRuntime/preview/promptPreview'
 import {
   MEMORY_MAINTENANCE_AGENT_NAME,
   memoryMaintenanceBridge
@@ -423,6 +426,46 @@ export const registerAgentCatalogIpc = (ipcMain: IpcMain): void => {
             ...(runError.code ? { code: runError.code } : {})
           }
         }
+      }
+    )
+  )
+
+  /**
+   * Dry-run Prompt Preview (Microscope-lite D4): builds the exact prompt a manual run WOULD send against
+   * the latest committed floor, mirroring the manual-run validations (profile↔chat match, latest floor
+   * required, effective definition + profile-local API preset) — but with NO queue, NO run record, and
+   * NO Memory Maintenance due-gate. Side-effect-free: it only reads floor/vars and resolves the preset.
+   */
+  ipcMain.handle(
+    AGENT_CATALOG_CHANNELS.previewPrompt,
+    gate(
+      AGENT_CATALOG_CHANNELS.previewPrompt,
+      async (
+        _event,
+        rawProfileId: unknown,
+        rawChatId: unknown,
+        rawAgent: unknown,
+        rawInput: unknown
+      ): Promise<AgentPromptPreview> => {
+        const profileId = stringArg(rawProfileId)
+        const chatId = stringArg(rawChatId)
+        const agentName = stringArg(rawAgent)
+        if (!profileId || !chatId || !agentName) return { ok: false, code: 'INVALID_REQUEST' }
+        if (resolveProfileId(chatId) !== profileId) return { ok: false, code: 'INVALID_REQUEST' }
+        const floor = getAllFloors(profileId, chatId).at(-1)?.floor
+        if (floor === undefined) return { ok: false, code: 'NO_COMMITTED_FLOOR' }
+        const catalogAgent = new AgentCatalog(profileId).get(agentName)
+        if (!catalogAgent) return { ok: false, code: 'AGENT_NOT_FOUND' }
+        const apiPresetId = catalogAgent.invocationConfig.apiPresetId
+        const input = rawInput && typeof rawInput === 'object' ? (rawInput as JsonObject) : {}
+        return agentPromptPreview()({
+          profileId,
+          chatId,
+          floor,
+          agent: catalogAgent,
+          input,
+          ...(apiPresetId ? { apiPresetId } : {})
+        })
       }
     )
   )

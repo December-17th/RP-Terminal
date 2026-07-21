@@ -48,6 +48,11 @@ export type AgentPromptRenderer = (text: string) => string
 /** The injected seam the Invocation Runtime consumes; undefined = render nothing for this scope. */
 export type AgentPromptRendererPort = (scope: AgentPromptScope) => AgentPromptRenderer | undefined
 
+/** Template knowledge stays on the prompt-policy side of the seam. The planner converts this syntax
+ *  classification into explicit volatile message indexes before the Harness sees the prompt. */
+export const isDynamicAgentPromptText = (text: string): boolean =>
+  text.includes('{{') || hasTags(text)
+
 export interface AgentPromptRendererDeps {
   /** The floor's persisted variable bag. A COPY — build-time `setvar` must not persist here. */
   readFloorVariables(chatId: string, floor: number): Record<string, any>
@@ -130,7 +135,7 @@ export const createAgentPromptRenderer = (
     return (text) => {
       // Fast path: nothing to expand and nothing to evaluate → byte-identical passthrough, and no
       // scope state is loaded at all.
-      if (!text || (!text.includes('{{') && !hasTags(text))) return text
+      if (!text || !isDynamicAgentPromptText(text)) return text
       const scopeState = loadState()
       if (!scopeState) return text
 

@@ -85,6 +85,9 @@ export const GATED_CHANNELS = [
   'agent-catalog-set-invocation-config',
   // Manual Invocation from the Agent Workspace: starts real model work on the latest committed floor.
   'agent-catalog-run',
+  // Dry-run Prompt Preview (Microscope-lite): reads floor/vars + preset to build the prompt an Agent
+  // WOULD send. No model work, but it exposes prompt/preset detail a trusted card must not reach.
+  'agent-catalog-preview-prompt',
   // Inline card Agent transport. Main validates its explicit card scope against the authoritative chat.
   'card-agent-run',
   'card-agent-run-plan',

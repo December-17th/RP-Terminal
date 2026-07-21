@@ -1,19 +1,8 @@
 import type { BudgetClass, ChatMessage } from './promptTypes'
+import { estimateTokens } from '../../shared/tokenEstimate'
 
-// CJK ranges (Chinese/Japanese/Korean + fullwidth) tokenize denser than Latin,
-// so estimate them ~1 token/char and other text ~4 chars/token.
-const CJK = /[\u3000-\u9fff\uff00-\uffef]/
-
-export const estimateTokens = (text: string): number => {
-  if (!text) return 0
-  let cjk = 0
-  let other = 0
-  for (const ch of text) {
-    if (CJK.test(ch)) cjk++
-    else other++
-  }
-  return cjk + Math.ceil(other / 4)
-}
+// Re-exported so existing main-side consumers keep importing it from here.
+export { estimateTokens }
 
 const messageTokens = (message: ChatMessage): number => estimateTokens(message.content) + 4
 

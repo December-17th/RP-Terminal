@@ -38,6 +38,7 @@ export interface HarnessRunRequest {
   /** Injected prompt-text renderer (ADR 0021). Threaded through to the Harness unchanged, and used
    *  here too so the Run Record's `renderedPrompt` stores what was actually sent. */
   render?: (text: string) => string
+  volatilePromptIndices?: number[]
   /** Upstream-assembled prompt messages that substitute for the definition's own (ADR 0021). The Run
    *  Record still stores the UNMODIFIED definition; what was actually dispatched is captured by
    *  `onPromptBuilt` below, so the two stay distinguishable. */
@@ -111,8 +112,13 @@ const linkSignals = (signals: Array<AbortSignal | undefined>): Link => {
 }
 
 const recordMessages = (
-  messages: Array<{ role: AgentRunMessage['role']; content: string }>
-): AgentRunMessage[] => messages.map(({ role, content }) => ({ role, content }))
+  messages: Array<{ role: AgentRunMessage['role']; content: string; origin: AgentRunMessage['origin'] }>
+): AgentRunMessage[] =>
+  messages.map(({ role, content, origin }) => ({
+    role,
+    content,
+    ...(origin ? { origin } : {})
+  }))
 
 const unexpectedFailure = (cause: unknown): HarnessFailure => ({
   code: 'HARNESS_EXECUTION_FAILED',
@@ -166,6 +172,9 @@ export const createHarnessRunAdapter = ({
         ...(request.promptValues ? { promptValues: request.promptValues } : {}),
         ...(request.history !== undefined ? { history: request.history } : {}),
         ...(request.render ? { render: request.render } : {}),
+        ...(request.volatilePromptIndices
+          ? { volatilePromptIndices: request.volatilePromptIndices }
+          : {}),
         ...(request.prompt ? { prompt: request.prompt } : {}),
         ...(request.yssVocabulary ? { yssVocabulary: request.yssVocabulary } : {}),
         ...(request.corrective ? { corrective: request.corrective } : {})

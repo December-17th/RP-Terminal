@@ -1,5 +1,6 @@
 import type {
   AgentDefinition,
+  AgentPromptOrigin,
   InvocationOptions,
   JsonObject,
   JsonValue,
@@ -37,6 +38,9 @@ export interface HarnessExecuteRequest {
    * fails is expected to return its input, and `buildAttemptLog` guards that contract anyway.
    */
   render?: (text: string) => string
+  /** Zero-based authored prompt indexes whose rendered text depends on mutable prompt state. The
+   *  upstream planner owns template syntax; the Harness only consumes this explicit cache hint. */
+  volatilePromptIndices?: number[]
   /**
    * Prompt messages that SUBSTITUTE for `definition.prompt` (ADR 0021, slices 3/4). A preset Agent's
    * prompt is assembled upstream — card, persona, world info, opt-in history, then the Agent's own
@@ -56,14 +60,21 @@ export interface HarnessExecuteRequest {
    * mutable state (`getvar`/`getMessageVar`), so a second `buildAttemptLog` by the caller would
    * produce a prompt that merely RESEMBLES the dispatched one. Run Records are exact evidence, so
    * they subscribe here instead of re-rendering.
+   *
+   * Each message carries its coarse provenance with the provider bytes it describes. The origin is
+   * stripped before dispatch, so observers cannot accidentally misalign parallel arrays.
    */
-  onPromptBuilt?: (messages: ProviderMessage[]) => void
+  onPromptBuilt?: (messages: AttributedProviderMessage[]) => void
   signal?: AbortSignal
   yssVocabulary?: SceneVocabulary
   corrective?: {
     rejectedOutput: string
     failure: HarnessFailure
   }
+}
+
+export interface AttributedProviderMessage extends ProviderMessage {
+  origin: AgentPromptOrigin
 }
 
 export interface ContextBudgetAttribution {
@@ -118,6 +129,9 @@ export interface HarnessAttemptEvidence {
   discardedOperations?: number
   irreversibleBoundary?: boolean
   irreversibleBoundaries?: IrreversibleBoundaryEvidence[]
+  /** Step-0 token attribution for this attempt (Microscope-lite D2). Always populated once the attempt
+   *  reaches its first provider step; absent only if it failed before step 0 (e.g. pre-loop abort). */
+  contextBudget?: ContextBudgetAttribution
 }
 
 export interface HarnessEvidence {
