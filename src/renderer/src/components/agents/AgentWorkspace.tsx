@@ -10,29 +10,100 @@ import type {
   AgentCatalogSummary,
   AgentDefinition,
   AgentRole,
-  AgentRunRecord
+  AgentRunRecord,
+  InvocationPlan,
+  JsonObject
 } from '../../../../shared/agentRuntime'
 import { useAgentCatalogStore } from '../../stores/agentCatalogStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useUiStore } from '../../stores/uiStore'
 import { useT } from '../../i18n'
 import { agentErrorMessage } from '../../i18n/errorMessages'
+import { ConfirmDialog } from '../ConfirmDialog'
+import { Modal } from '../Modal'
 import { useWcvSuppression } from '../useWcvSuppression'
-import { AgentEditor } from './AgentEditor'
+import { AgentEditor, validateDraft } from './AgentEditor'
+import { AgentManualRunForm } from './AgentManualRunForm'
 import { AgentPlanEditor } from './AgentPlanEditor'
+import { AgentRunDetail } from './AgentRunDetail'
 
 type Tab = 'definition' | 'plan' | 'runs'
+type CreationIntent = 'narrative' | 'background' | 'custom'
+type CreationStep = 'choose' | 'edit'
+type PendingTransition =
+  | { type: 'close' }
+  | { type: 'select'; agentId: string }
+  | { type: 'create' }
+  | { type: 'open-preset' }
+type PendingAgentAction = {
+  type: 'delete' | 'restore' | 'upgrade-source'
+  agent: AgentCatalogSummary
+}
 
 const ROLES: AgentRole[] = ['classic.narrator', 'yuzu.sceneDirector']
+const EMPTY_PLAN: InvocationPlan = { steps: [] }
+const planRecoveryKey = (profileId: string): string => `rpt.agentWorkspace.planDraft.${profileId}`
 
-const blankDefinition = (name: string): AgentDefinition => ({
+const cloneDefinition = (definition: AgentDefinition): AgentDefinition =>
+  structuredClone(definition)
+
+const sameJson = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(left) === JSON.stringify(right)
+
+const readPlanRecovery = (
+  profileId: string
+): { plan: InvocationPlan; importText: string } | null => {
+  try {
+    const raw = sessionStorage.getItem(planRecoveryKey(profileId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { plan?: InvocationPlan; importText?: string }
+    if (!parsed.plan || !Array.isArray(parsed.plan.steps)) return null
+    return { plan: parsed.plan, importText: parsed.importText ?? '' }
+  } catch {
+    return null
+  }
+}
+
+function UnsavedChangesDialog({
+  busy,
+  onSave,
+  onDiscard,
+  onKeepEditing,
+  t
+}: {
+  busy: boolean
+  onSave: () => void
+  onDiscard: () => void
+  onKeepEditing: () => void
+  t: (key: string, vars?: Record<string, string | number>) => string
+}): React.ReactElement {
+  return (
+    <Modal title={t('agents.workspace.unsavedTitle')} onClose={onKeepEditing}>
+      <p style={{ margin: '0 0 16px' }}>{t('agents.workspace.unsavedBody')}</p>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <button type="button" className="btn-ghost" disabled={busy} onClick={onKeepEditing}>
+          {t('agents.workspace.keepEditing')}
+        </button>
+        <button type="button" className="btn-danger" disabled={busy} onClick={onDiscard}>
+          {t('agents.workspace.discardChanges')}
+        </button>
+        <button type="button" className="btn-accent" disabled={busy} onClick={onSave}>
+          {busy ? t('agents.editor.saving') : t('agents.workspace.saveChanges')}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+const blankDefinition = (name: string, intent: CreationIntent = 'custom'): AgentDefinition => ({
   format: 'rpt-agent',
   formatVersion: 1,
   name,
   prompt: [{ role: 'system', content: [{ type: 'text', text: '' }] }],
   inputSchema: { type: 'object' },
-  result: { mode: 'text' },
+  result: intent === 'background' ? { mode: 'json', schema: { type: 'object' } } : { mode: 'text' },
   tools: [],
+  ...(intent === 'background' ? { trigger: { onFloorCommitted: { everyNFloors: 3 } } } : {}),
   defaults: {
     required: false,
     maxSteps: 1,
@@ -53,10 +124,12 @@ const blankDefinition = (name: string): AgentDefinition => ({
 function AgentPresetBinding({
   profileId,
   agent,
+  onNotice,
   t
 }: {
   profileId: string
   agent: AgentCatalogSummary
+  onNotice: (message: string) => void
   t: (key: string, vars?: Record<string, string | number>) => string
 }): React.ReactElement {
   const [presets, setPresets] = useState<{ id: string; name: string }[]>([])
@@ -85,10 +158,24 @@ function AgentPresetBinding({
   }, [profileId, agent.id])
 
   const commit = async (next: string): Promise<void> => {
+    const previous = presetId
     setPresetId(next)
     setBusy(true)
     try {
-      await window.api.setAgentInvocationConfig(profileId, agent.id, next ? { apiPresetId: next } : {})
+      const result = await window.api.setAgentInvocationConfig(
+        profileId,
+        agent.id,
+        next ? { apiPresetId: next } : {}
+      )
+      if (!result.ok) {
+        setPresetId(previous)
+        onNotice(agentErrorMessage(t, result.code))
+      } else {
+        onNotice(t('agents.workspace.immediateApplied'))
+      }
+    } catch {
+      setPresetId(previous)
+      onNotice(agentErrorMessage(t))
     } finally {
       setBusy(false)
     }
@@ -127,61 +214,190 @@ function AgentPresetBinding({
   )
 }
 
-export function AgentWorkspace({ profileId }: { profileId: string }): React.ReactElement | null {
+export function AgentWorkspace({ profileId }: { profileId: string }): React.ReactElement {
+  return <ProfileAgentWorkspace key={profileId} profileId={profileId} />
+}
+
+function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.ReactElement | null {
   const open = useUiStore((s) => s.agentWorkspaceOpen)
   const close = useUiStore((s) => s.closeAgentWorkspace)
   const deepLinkId = useUiStore((s) => s.agentWorkspaceAgentId)
+  const deepLinkRunId = useUiStore((s) => s.agentWorkspaceRunId)
+  const deepLinkAgentName = useUiStore((s) => s.agentWorkspaceAgentName)
+  const initialTab = useUiStore((s) => s.agentWorkspaceInitialTab)
   const chatId = useChatStore((s) => s.activeChatId)
   const t = useT()
 
   const agents = useAgentCatalogStore((s) => s.agents)
   const bindings = useAgentCatalogStore((s) => s.bindings)
-  const definitions = useAgentCatalogStore((s) => s.definitions)
   const storeError = useAgentCatalogStore((s) => s.error)
   const load = useAgentCatalogStore((s) => s.load)
   const loadDefinition = useAgentCatalogStore((s) => s.loadDefinition)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [tab, setTab] = useState<Tab>('definition')
+  const [tab, setTab] = useState<Tab>(
+    () => useUiStore.getState().agentWorkspaceInitialTab ?? 'definition'
+  )
   const [creating, setCreating] = useState(false)
+  const [creationStep, setCreationStep] = useState<CreationStep>('choose')
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
-  const [runInput, setRunInput] = useState('{}')
   const [runs, setRuns] = useState<AgentRunRecord[]>([])
   const [runDetail, setRunDetail] = useState<AgentRunRecord | null>(null)
+  const [manualInput, setManualInput] = useState<JsonObject | undefined>(undefined)
+  const [manualInputRevision, setManualInputRevision] = useState(0)
+  const [definitionDrafts, setDefinitionDrafts] = useState<Record<string, AgentDefinition>>({})
+  const [definitionBaselines, setDefinitionBaselines] = useState<Record<string, AgentDefinition>>(
+    {}
+  )
+  const [creationBaseline, setCreationBaseline] = useState<AgentDefinition>(() =>
+    blankDefinition(t('agents.workspace.newName'))
+  )
+  const [creationDraft, setCreationDraft] = useState<AgentDefinition>(() =>
+    blankDefinition(t('agents.workspace.newName'))
+  )
+  const [editorRevision, setEditorRevision] = useState(0)
+  const [plan, setPlan] = useState<InvocationPlan>(
+    () => readPlanRecovery(profileId)?.plan ?? structuredClone(EMPTY_PLAN)
+  )
+  const [planImportText, setPlanImportText] = useState(
+    () => readPlanRecovery(profileId)?.importText ?? ''
+  )
+  const [planBaseline, setPlanBaseline] = useState<InvocationPlan>(
+    () => readPlanRecovery(profileId)?.plan ?? structuredClone(EMPTY_PLAN)
+  )
+  const [planImportBaseline, setPlanImportBaseline] = useState(
+    () => readPlanRecovery(profileId)?.importText ?? ''
+  )
+  const [pendingTransition, setPendingTransition] = useState<PendingTransition | null>(null)
+  const [pendingAgentAction, setPendingAgentAction] = useState<PendingAgentAction | null>(null)
+  const handledDeepLinkRef = React.useRef<string | null>(null)
 
   useWcvSuppression(open)
-
-  useEffect(() => {
-    if (open) void load(profileId)
-  }, [open, profileId, load])
-
-  useEffect(() => {
-    if (open && deepLinkId) setSelectedId(deepLinkId)
-  }, [open, deepLinkId])
-
-  useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') close()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, close])
 
   const selected = useMemo(
     () => agents.find((agent) => agent.id === selectedId) ?? null,
     [agents, selectedId]
   )
 
+  const activeDefinitionDraft = creating
+    ? creationDraft
+    : selectedId
+      ? definitionDrafts[selectedId]
+      : undefined
+  const activeDefinitionBaseline = creating
+    ? creationBaseline
+    : selectedId
+      ? definitionBaselines[selectedId]
+      : undefined
+  const definitionDirty = Boolean(
+    activeDefinitionDraft &&
+    activeDefinitionBaseline &&
+    !sameJson(activeDefinitionDraft, activeDefinitionBaseline)
+  )
+  const planDirty =
+    !sameJson(plan, planBaseline) || planImportText.trim() !== planImportBaseline.trim()
+
+  const applyTransition = useCallback(
+    (transition: PendingTransition): void => {
+      setPendingTransition(null)
+      if (transition.type === 'close') {
+        close()
+        return
+      }
+      if (transition.type === 'open-preset') {
+        close()
+        useUiStore.getState().openSettings('preset')
+        return
+      }
+      if (transition.type === 'create') {
+        const blank = blankDefinition(t('agents.workspace.newName'))
+        setCreationBaseline(blank)
+        setCreationDraft(cloneDefinition(blank))
+        setCreating(true)
+        setCreationStep('choose')
+        setSelectedId(null)
+        setTab('definition')
+        setNotice(null)
+        setEditorRevision((revision) => revision + 1)
+        return
+      }
+      setCreating(false)
+      setSelectedId(transition.agentId)
+      setNotice(null)
+    },
+    [close, t]
+  )
+
+  const requestTransition = useCallback(
+    (transition: PendingTransition): void => {
+      const leavingWorkspace = transition.type === 'close' || transition.type === 'open-preset'
+      const atRisk = definitionDirty || (leavingWorkspace && planDirty)
+      if (atRisk) setPendingTransition(transition)
+      else applyTransition(transition)
+    },
+    [applyTransition, definitionDirty, planDirty]
+  )
+
   useEffect(() => {
-    if (selected) void loadDefinition(profileId, selected.id)
-  }, [selected, profileId, loadDefinition])
+    if (open) void load(profileId)
+  }, [open, profileId, load])
+
+  useEffect(() => {
+    if (!open) {
+      handledDeepLinkRef.current = null
+      return
+    }
+    const targetAgent = deepLinkId
+      ? agents.find((agent) => agent.id === deepLinkId)
+      : deepLinkAgentName
+        ? agents.find((agent) => agent.name === deepLinkAgentName)
+        : initialTab === 'runs'
+          ? agents[0]
+          : undefined
+    const deepLinkKey = `${deepLinkId ?? ''}:${deepLinkRunId ?? ''}:${deepLinkAgentName ?? ''}:${initialTab ?? ''}`
+    if (handledDeepLinkRef.current === deepLinkKey) return
+    if ((deepLinkId || deepLinkAgentName || initialTab === 'runs') && !targetAgent) return
+
+    handledDeepLinkRef.current = deepLinkKey
+    if (targetAgent) requestTransition({ type: 'select', agentId: targetAgent.id })
+  }, [open, deepLinkId, deepLinkRunId, deepLinkAgentName, initialTab, agents, requestTransition])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') requestTransition({ type: 'close' })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, requestTransition])
+
+  useEffect(() => {
+    if (!selected) return
+    if (definitionBaselines[selected.id]) return
+    let cancelled = false
+    void loadDefinition(profileId, selected.id).then((loaded) => {
+      if (cancelled || !loaded) return
+      const baseline = cloneDefinition(loaded)
+      setDefinitionBaselines((current) => ({ ...current, [selected.id]: baseline }))
+      setDefinitionDrafts((current) => ({
+        ...current,
+        [selected.id]: current[selected.id] ?? cloneDefinition(loaded)
+      }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [selected, profileId, loadDefinition, definitionBaselines])
 
   const refreshRuns = useCallback(async (): Promise<void> => {
     if (!chatId) return setRuns([])
     try {
-      setRuns(await window.api.listAgentRuns(profileId, chatId))
+      const nextRuns = await window.api.listAgentRuns(profileId, chatId)
+      setRuns(nextRuns)
+      const targetId = useUiStore.getState().agentWorkspaceRunId
+      const target = targetId ? nextRuns.find((run) => run.invocationId === targetId) : undefined
+      if (target) setRunDetail(target)
     } catch {
       setRuns([])
     }
@@ -193,25 +409,156 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
 
   if (!open) return null
 
-  const definition = selected ? definitions[selected.id] : undefined
+  const definition = selected ? definitionDrafts[selected.id] : undefined
 
-  const act = async (action: () => Promise<string | null>, success: string): Promise<void> => {
+  const act = async (action: () => Promise<string | null>, success: string): Promise<boolean> => {
     setSaving(true)
     setNotice(null)
     const error = await action()
     setSaving(false)
     setNotice(error ?? success)
+    return !error
   }
 
-  const runNow = async (): Promise<void> => {
-    if (!selected || !chatId) return
-    let input: unknown = {}
-    try {
-      input = JSON.parse(runInput || '{}')
-    } catch {
-      setNotice(t('agents.editor.invalidJson'))
+  const refreshDefinition = async (agentId: string): Promise<void> => {
+    const loaded = await useAgentCatalogStore.getState().loadDefinition(profileId, agentId)
+    if (!loaded) return
+    const baseline = cloneDefinition(loaded)
+    setDefinitionBaselines((current) => ({ ...current, [agentId]: baseline }))
+    setDefinitionDrafts((current) => ({ ...current, [agentId]: cloneDefinition(loaded) }))
+    setEditorRevision((revision) => revision + 1)
+  }
+
+  const confirmAgentAction = async (): Promise<void> => {
+    const pending = pendingAgentAction
+    if (!pending) return
+    setPendingAgentAction(null)
+
+    if (pending.type === 'delete') {
+      await act(async () => {
+        const error = await useAgentCatalogStore.getState().remove(profileId, pending.agent.id)
+        if (!error) setSelectedId(null)
+        return error
+      }, t('agents.workspace.deleted'))
       return
     }
+
+    const succeeded = await act(
+      () =>
+        pending.type === 'restore'
+          ? useAgentCatalogStore.getState().restore(profileId, pending.agent.id)
+          : useAgentCatalogStore.getState().upgrade(profileId, pending.agent.id, 'use-source'),
+      pending.type === 'restore' ? t('agents.workspace.restored') : t('agents.workspace.upgraded')
+    )
+    if (succeeded) await refreshDefinition(pending.agent.id)
+  }
+
+  const saveActiveDefinition = async (success: string): Promise<boolean> => {
+    const draft = activeDefinitionDraft
+    if (!draft) return true
+    if (validateDraft(draft).length > 0) {
+      setTab('definition')
+      setNotice(t('agents.editor.fixErrors'))
+      return false
+    }
+
+    setSaving(true)
+    setNotice(null)
+    const error = creating
+      ? await useAgentCatalogStore.getState().createAgent(profileId, draft)
+      : selectedId
+        ? await useAgentCatalogStore.getState().save(profileId, selectedId, draft)
+        : null
+    setSaving(false)
+    if (error) {
+      setNotice(error)
+      return false
+    }
+
+    if (creating) {
+      const saved = cloneDefinition(draft)
+      setCreationBaseline(saved)
+      setCreationDraft(cloneDefinition(saved))
+      setCreating(false)
+    } else if (selectedId) {
+      const saved = cloneDefinition(draft)
+      setDefinitionBaselines((current) => ({ ...current, [selectedId]: saved }))
+      setDefinitionDrafts((current) => ({
+        ...current,
+        [selectedId]: cloneDefinition(saved)
+      }))
+    }
+    setNotice(success)
+    return true
+  }
+
+  const saveAndContinue = async (): Promise<void> => {
+    const transition = pendingTransition
+    if (!transition) return
+    if (definitionDirty && !(await saveActiveDefinition(t('agents.workspace.saved')))) {
+      setPendingTransition(null)
+      return
+    }
+    if ((transition.type === 'close' || transition.type === 'open-preset') && planDirty) {
+      try {
+        sessionStorage.setItem(
+          planRecoveryKey(profileId),
+          JSON.stringify({ plan, importText: planImportText })
+        )
+        setPlanBaseline(structuredClone(plan))
+        setPlanImportBaseline(planImportText)
+      } catch {
+        setPendingTransition(null)
+        setNotice(t('agents.workspace.planRecoveryFailed'))
+        return
+      }
+    }
+    applyTransition(transition)
+  }
+
+  const discardAndContinue = (): void => {
+    const transition = pendingTransition
+    if (!transition) return
+    if (definitionDirty) {
+      if (creating) setCreationDraft(cloneDefinition(creationBaseline))
+      else if (selectedId && activeDefinitionBaseline) {
+        setDefinitionDrafts((current) => ({
+          ...current,
+          [selectedId]: cloneDefinition(activeDefinitionBaseline)
+        }))
+      }
+      setEditorRevision((revision) => revision + 1)
+    }
+    if ((transition.type === 'close' || transition.type === 'open-preset') && planDirty) {
+      setPlan(structuredClone(planBaseline))
+      setPlanImportText(planImportBaseline)
+    }
+    applyTransition(transition)
+  }
+
+  const cancelDefinition = (): void => {
+    if (creating) {
+      setCreationDraft(cloneDefinition(creationBaseline))
+      setCreating(false)
+    } else if (selectedId && activeDefinitionBaseline) {
+      setDefinitionDrafts((current) => ({
+        ...current,
+        [selectedId]: cloneDefinition(activeDefinitionBaseline)
+      }))
+    }
+    setEditorRevision((revision) => revision + 1)
+  }
+
+  const startCreation = (intent: CreationIntent): void => {
+    const blank = blankDefinition(t(`agents.create.${intent}.name`), intent)
+    setCreationBaseline(blank)
+    setCreationDraft(cloneDefinition(blank))
+    setCreationStep('edit')
+    setEditorRevision((revision) => revision + 1)
+  }
+
+  const runNow = async (input: JsonObject): Promise<void> => {
+    if (!selected || !chatId) return
     setSaving(true)
     setNotice(null)
     const result = await window.api.runAgentManually(profileId, chatId, selected.name, input)
@@ -227,7 +574,7 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
   }
 
   return (
-    <div className="modal-overlay" onClick={close}>
+    <div className="modal-overlay" onClick={() => requestTransition({ type: 'close' })}>
       <div
         className="rpt-popup-modal rpt-popup-modal-agents"
         role="dialog"
@@ -237,7 +584,11 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
       >
         <div className="rpt-popup-modal-head">
           <strong>{t('agents.workspace.title')}</strong>
-          <button className="btn-ghost" title={`${t('common.close')} (Esc)`} onClick={close}>
+          <button
+            className="btn-ghost"
+            title={`${t('common.close')} (Esc)`}
+            onClick={() => requestTransition({ type: 'close' })}
+          >
             ✕
           </button>
         </div>
@@ -246,14 +597,7 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
           <aside className="agent-workspace__library">
             <div className="agent-workspace__library-head">
               <span>{t('agents.installed', { count: agents.length })}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setCreating(true)
-                  setSelectedId(null)
-                  setTab('definition')
-                }}
-              >
+              <button type="button" onClick={() => requestTransition({ type: 'create' })}>
                 {t('agents.workspace.new')}
               </button>
             </div>
@@ -265,11 +609,7 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
                     className={`agent-workspace__item ${
                       agent.id === selectedId ? 'agent-workspace__item--active' : ''
                     }`}
-                    onClick={() => {
-                      setCreating(false)
-                      setSelectedId(agent.id)
-                      setNotice(null)
-                    }}
+                    onClick={() => requestTransition({ type: 'select', agentId: agent.id })}
                   >
                     <span className="agent-workspace__item-name">{agent.name}</span>
                     <span className="agent-workspace__item-meta">
@@ -296,23 +636,52 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
               </p>
             ) : null}
 
-            {creating ? (
-              <AgentEditor
-                definition={blankDefinition(t('agents.workspace.newName'))}
-                readOnly={false}
-                saving={saving}
-                serverError={null}
-                onCancel={() => setCreating(false)}
-                onSave={(next) =>
-                  void act(async () => {
-                    const error = await useAgentCatalogStore
-                      .getState()
-                      .createAgent(profileId, next)
-                    if (!error) setCreating(false)
-                    return error
-                  }, t('agents.workspace.created'))
-                }
-              />
+            {creating && creationStep === 'choose' ? (
+              <section className="agent-create" aria-labelledby="agent-create-title">
+                <header>
+                  <h3 id="agent-create-title">{t('agents.create.title')}</h3>
+                  <p>{t('agents.create.hint')}</p>
+                </header>
+                <div className="agent-create__choices">
+                  {(['narrative', 'background', 'custom'] as CreationIntent[]).map((intent) => (
+                    <button type="button" key={intent} onClick={() => startCreation(intent)}>
+                      <strong>{t(`agents.create.${intent}.title`)}</strong>
+                      <span>{t(`agents.create.${intent}.description`)}</span>
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="btn-ghost" onClick={() => setCreating(false)}>
+                  {t('common.cancel')}
+                </button>
+              </section>
+            ) : creating ? (
+              <>
+                <div className="agent-workspace__save-boundary">
+                  <div>
+                    <strong>{t('agents.workspace.definitionDraft')}</strong>
+                    <span>{t('agents.workspace.definitionSaveHint')}</span>
+                  </div>
+                  <span className={definitionDirty ? 'is-dirty' : ''}>
+                    {t(
+                      creating
+                        ? 'agents.workspace.definitionNotSaved'
+                        : definitionDirty
+                          ? 'agents.workspace.definitionUnsaved'
+                          : 'agents.workspace.definitionSaved'
+                    )}
+                  </span>
+                </div>
+                <AgentEditor
+                  key={`new:${editorRevision}`}
+                  definition={creationDraft}
+                  readOnly={false}
+                  saving={saving}
+                  serverError={null}
+                  onChange={setCreationDraft}
+                  onCancel={cancelDefinition}
+                  onSave={() => void saveActiveDefinition(t('agents.workspace.created'))}
+                />
+              </>
             ) : !selected ? (
               <p className="agents-panel__empty">{t('agents.workspace.selectPrompt')}</p>
             ) : (
@@ -330,12 +699,7 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
                       <button
                         type="button"
                         disabled={saving}
-                        onClick={() =>
-                          void act(
-                            () => useAgentCatalogStore.getState().restore(profileId, selected.id),
-                            t('agents.workspace.restored')
-                          )
-                        }
+                        onClick={() => setPendingAgentAction({ type: 'restore', agent: selected })}
                       >
                         {t('agents.workspace.restore')}
                       </button>
@@ -344,16 +708,24 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
                       <>
                         <button
                           type="button"
-                          disabled={saving}
-                          onClick={() =>
-                            void act(
-                              () =>
-                                useAgentCatalogStore
-                                  .getState()
-                                  .upgrade(profileId, selected.id, 'keep-customization'),
-                              t('agents.workspace.upgraded')
-                            )
+                          disabled={saving || definitionDirty}
+                          title={
+                            definitionDirty
+                              ? t('agents.workspace.saveBeforeSourceAction')
+                              : undefined
                           }
+                          onClick={() => {
+                            void (async () => {
+                              const succeeded = await act(
+                                () =>
+                                  useAgentCatalogStore
+                                    .getState()
+                                    .upgrade(profileId, selected.id, 'keep-customization'),
+                                t('agents.workspace.upgraded')
+                              )
+                              if (succeeded) await refreshDefinition(selected.id)
+                            })()
+                          }}
                         >
                           {t('agents.workspace.upgradeKeep')}
                         </button>
@@ -361,13 +733,7 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
                           type="button"
                           disabled={saving}
                           onClick={() =>
-                            void act(
-                              () =>
-                                useAgentCatalogStore
-                                  .getState()
-                                  .upgrade(profileId, selected.id, 'use-source'),
-                              t('agents.workspace.upgraded')
-                            )
+                            setPendingAgentAction({ type: 'upgrade-source', agent: selected })
                           }
                         >
                           {t('agents.workspace.upgradeSource')}
@@ -392,6 +758,75 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
                   </div>
                 </header>
 
+                <section
+                  className="agent-workspace__immediate"
+                  aria-labelledby="agent-workspace-immediate-title"
+                >
+                  <div className="agent-workspace__immediate-head">
+                    <div>
+                      <h4 id="agent-workspace-immediate-title">
+                        {t('agents.workspace.immediateTitle')}
+                      </h4>
+                      <p>{t('agents.workspace.immediateHint')}</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={saving || selected.roles.length > 0}
+                      title={selected.roles.length > 0 ? t('agents.roleBoundLocked') : undefined}
+                      onClick={() =>
+                        void act(
+                          () =>
+                            useAgentCatalogStore
+                              .getState()
+                              .setEnabled(profileId, selected.id, !selected.enabled),
+                          t('agents.workspace.immediateApplied')
+                        )
+                      }
+                    >
+                      {selected.enabled ? t('agents.disable') : t('agents.enable')}
+                    </button>
+                  </div>
+                  <div className="agent-workspace__immediate-fields">
+                    <AgentPresetBinding
+                      profileId={profileId}
+                      agent={selected}
+                      onNotice={setNotice}
+                      t={t}
+                    />
+                    <label className="agent-field agent-field--inline">
+                      <span>{t('agents.roles')}</span>
+                      <select
+                        value={
+                          ROLES.find(
+                            (role) =>
+                              bindings[role] === selected.id || bindings[role] === selected.name
+                          ) ?? ''
+                        }
+                        disabled={saving}
+                        onChange={(event) => {
+                          const role = event.target.value as AgentRole
+                          if (role) {
+                            void act(
+                              () =>
+                                useAgentCatalogStore
+                                  .getState()
+                                  .bindRole(profileId, role, selected.id),
+                              t('agents.workspace.immediateApplied')
+                            )
+                          }
+                        }}
+                      >
+                        <option value="">{t('agents.workspace.noRole')}</option>
+                        {ROLES.map((role) => (
+                          <option key={role} value={role}>
+                            {t(`agents.role.${role}`)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </section>
+
                 <nav className="agent-workspace__tabs">
                   {(['definition', 'plan', 'runs'] as Tab[]).map((key) => (
                     <button
@@ -407,52 +842,60 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
 
                 {tab === 'definition' ? (
                   definition ? (
-                    <AgentEditor
-                      definition={definition}
-                      readOnly={false}
-                      saving={saving}
-                      serverError={null}
-                      onCancel={() => setSelectedId(selectedId)}
-                      onSave={(next) =>
-                        void act(
-                          () => useAgentCatalogStore.getState().save(profileId, selected.id, next),
-                          t('agents.workspace.saved')
-                        )
-                      }
-                    />
+                    <>
+                      <div className="agent-workspace__save-boundary">
+                        <div>
+                          <strong>{t('agents.workspace.definitionDraft')}</strong>
+                          <span>{t('agents.workspace.definitionSaveHint')}</span>
+                        </div>
+                        <span className={definitionDirty ? 'is-dirty' : ''}>
+                          {t(
+                            definitionDirty
+                              ? 'agents.workspace.definitionUnsaved'
+                              : 'agents.workspace.definitionSaved'
+                          )}
+                        </span>
+                      </div>
+                      <AgentEditor
+                        key={`${selected.id}:${editorRevision}`}
+                        definition={definition}
+                        readOnly={false}
+                        saving={saving}
+                        serverError={null}
+                        onChange={(next) =>
+                          setDefinitionDrafts((current) => ({ ...current, [selected.id]: next }))
+                        }
+                        onCancel={cancelDefinition}
+                        onSave={() => void saveActiveDefinition(t('agents.workspace.saved'))}
+                      />
+                    </>
                   ) : (
                     <p className="agents-panel__empty">{t('agents.workspace.loadingDefinition')}</p>
                   )
                 ) : null}
 
-                {tab === 'plan' ? <AgentPlanEditor agents={agents} /> : null}
+                {tab === 'plan' ? (
+                  <AgentPlanEditor
+                    agents={agents}
+                    plan={plan}
+                    onPlanChange={setPlan}
+                    importText={planImportText}
+                    onImportTextChange={setPlanImportText}
+                  />
+                ) : null}
 
                 {tab === 'runs' ? (
                   <div className="agent-runs">
-                    <div className="agent-runs__manual">
-                      <h4>{t('agents.run.manual')}</h4>
-                      <p className="agents-panel__hint">{t('agents.run.manualHint')}</p>
-                      <label className="agent-field">
-                        <span>{t('agents.run.input')}</span>
-                        <textarea
-                          rows={4}
-                          spellCheck={false}
-                          value={runInput}
-                          onChange={(event) => setRunInput(event.target.value)}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        disabled={saving || !chatId}
-                        title={chatId ? undefined : t('agents.run.needsChat')}
-                        onClick={() => void runNow()}
-                      >
-                        {saving ? t('agents.run.running') : t('agents.run.runNow')}
-                      </button>
-                      {chatId ? null : (
-                        <p className="agents-panel__hint">{t('agents.run.needsChat')}</p>
-                      )}
-                    </div>
+                    {definition ? (
+                      <AgentManualRunForm
+                        key={`${selected.id}:${manualInputRevision}`}
+                        inputSchema={definition.inputSchema}
+                        initialInput={manualInput}
+                        disabled={saving}
+                        hasChat={Boolean(chatId)}
+                        onRun={(input) => void runNow(input)}
+                      />
+                    ) : null}
 
                     <h4>{t('agents.run.history', { count: runs.length })}</h4>
                     {runs.length === 0 ? (
@@ -483,93 +926,28 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
                     )}
 
                     {runDetail ? (
-                      <div className="agent-runs__detail">
-                        <div className="agent-runs__detail-head">
-                          <strong>{t('agents.run.detail')}</strong>
-                          <button type="button" onClick={() => setRunDetail(null)}>
-                            {t('common.close')}
-                          </button>
-                        </div>
-                        {runDetail.warnings?.length ? (
-                          <p className="agent-runs__degraded-detail" role="alert">
-                            <strong>{t('agents.run.degradedTitle')}</strong>
-                            {runDetail.warnings.join(' · ')}
-                          </p>
-                        ) : null}
-                        {/* Full Run Record evidence, minus raw reasoning (Session 10). */}
-                        <pre>
-                          {JSON.stringify(
-                            { ...runDetail, attempts: runDetail.attempts?.length ?? 0 },
-                            null,
-                            2
-                          )}
-                        </pre>
-                      </div>
+                      <AgentRunDetail
+                        record={runDetail}
+                        onClose={() => setRunDetail(null)}
+                        onCopied={() => setNotice(t('agents.run.copied'))}
+                        onEditInput={(input) => {
+                          setManualInput(input)
+                          setManualInputRevision((revision) => revision + 1)
+                          setRunDetail(null)
+                        }}
+                        onOpenPreset={() => requestTransition({ type: 'open-preset' })}
+                      />
                     ) : null}
                   </div>
                 ) : null}
 
-                <AgentPresetBinding profileId={profileId} agent={selected} t={t} />
-
                 <footer className="agent-workspace__footer">
-                  <label className="agent-field agent-field--inline">
-                    <span>{t('agents.roles')}</span>
-                    <select
-                      value={
-                        ROLES.find(
-                          (role) =>
-                            bindings[role] === selected.id || bindings[role] === selected.name
-                        ) ?? ''
-                      }
-                      onChange={(event) => {
-                        const role = event.target.value as AgentRole
-                        if (role) {
-                          void act(
-                            () =>
-                              useAgentCatalogStore.getState().bindRole(profileId, role, selected.id),
-                            t('agents.workspace.bound')
-                          )
-                        }
-                      }}
-                    >
-                      <option value="">{t('agents.workspace.noRole')}</option>
-                      {ROLES.map((role) => (
-                        <option key={role} value={role}>
-                          {t(`agents.role.${role}`)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    disabled={saving || selected.roles.length > 0}
-                    title={selected.roles.length > 0 ? t('agents.roleBoundLocked') : undefined}
-                    onClick={() =>
-                      void act(
-                        () =>
-                          useAgentCatalogStore
-                            .getState()
-                            .setEnabled(profileId, selected.id, !selected.enabled),
-                        t('agents.workspace.saved')
-                      )
-                    }
-                  >
-                    {selected.enabled ? t('agents.disable') : t('agents.enable')}
-                  </button>
                   <button
                     type="button"
                     className="agents-row__delete"
                     disabled={saving || selected.roles.length > 0}
                     title={selected.roles.length > 0 ? t('agents.roleBoundLocked') : undefined}
-                    onClick={() =>
-                      void act(async () => {
-                        const error = await useAgentCatalogStore
-                          .getState()
-                          .remove(profileId, selected.id)
-                        if (!error) setSelectedId(null)
-                        return error
-                      }, t('agents.workspace.deleted'))
-                    }
+                    onClick={() => setPendingAgentAction({ type: 'delete', agent: selected })}
                   >
                     {t('agents.delete')}
                   </button>
@@ -579,6 +957,39 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
           </section>
         </div>
       </div>
+      {pendingTransition ? (
+        <div onClick={(event) => event.stopPropagation()}>
+          <UnsavedChangesDialog
+            busy={saving}
+            onSave={() => void saveAndContinue()}
+            onDiscard={discardAndContinue}
+            onKeepEditing={() => setPendingTransition(null)}
+            t={t}
+          />
+        </div>
+      ) : null}
+      {pendingAgentAction ? (
+        <div onClick={(event) => event.stopPropagation()}>
+          <ConfirmDialog
+            title={t(`agents.workspace.confirm.${pendingAgentAction.type}.title`, {
+              name: pendingAgentAction.agent.name
+            })}
+            body={t(`agents.workspace.confirm.${pendingAgentAction.type}.body`, {
+              name: pendingAgentAction.agent.name
+            })}
+            confirmLabel={t(
+              pendingAgentAction.type === 'delete'
+                ? 'agents.delete'
+                : pendingAgentAction.type === 'restore'
+                  ? 'agents.workspace.restore'
+                  : 'agents.workspace.upgradeSource'
+            )}
+            danger
+            onConfirm={() => void confirmAgentAction()}
+            onCancel={() => setPendingAgentAction(null)}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }

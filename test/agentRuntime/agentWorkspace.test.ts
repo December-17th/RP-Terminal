@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { validateDraft } from '../../src/renderer/src/components/agents/AgentEditor'
+import {
+  agentInputFields,
+  defaultAgentInput
+} from '../../src/renderer/src/components/agents/AgentManualRunForm'
+import { agentRunDurationMs } from '../../src/renderer/src/components/agents/AgentRunDetail'
 import { parseInvocationPlan } from '../../src/shared/agentRuntime'
 import type { AgentDefinition } from '../../src/shared/agentRuntime'
 
@@ -39,7 +44,11 @@ describe('Agent editor field validation', () => {
     draft.defaults.retryDelayMs = -5
     draft.defaults.toolResultMaxTokens = 0
 
-    expect(validateDraft(draft).map((issue) => issue.field).sort()).toEqual([
+    expect(
+      validateDraft(draft)
+        .map((issue) => issue.field)
+        .sort()
+    ).toEqual([
       'defaults.maxRetryAttempts',
       'defaults.maxSteps',
       'defaults.retryDelayMs',
@@ -214,5 +223,48 @@ describe('Invocation Plan authoring rules', () => {
 
   it('rejects a step that names no agent', () => {
     expect(parseInvocationPlan({ steps: [{}] }).ok).toBe(false)
+  })
+})
+
+describe('Agent workspace authoring projections', () => {
+  it('projects top-level input schema properties into manual-run fields and defaults', () => {
+    const schema = {
+      type: 'object',
+      required: ['topic'],
+      properties: {
+        topic: { type: 'string', title: 'Topic', description: 'What to update.' },
+        count: { type: 'integer', default: 2 },
+        options: { type: 'object' }
+      }
+    }
+
+    expect(agentInputFields(schema)).toEqual([
+      {
+        key: 'topic',
+        label: 'Topic',
+        description: 'What to update.',
+        kind: 'string',
+        required: true
+      },
+      {
+        key: 'count',
+        label: 'count',
+        kind: 'integer',
+        required: false,
+        placeholder: '2'
+      },
+      { key: 'options', label: 'options', kind: 'json', required: false }
+    ])
+    expect(defaultAgentInput(schema)).toEqual({ count: 2 })
+  })
+
+  it('reports a duration only when a run has a valid finished timestamp', () => {
+    expect(
+      agentRunDurationMs({
+        startedAt: '2026-07-21T10:00:00.000Z',
+        finishedAt: '2026-07-21T10:00:00.250Z'
+      })
+    ).toBe(250)
+    expect(agentRunDurationMs({ startedAt: '2026-07-21T10:00:00.000Z' })).toBeNull()
   })
 })

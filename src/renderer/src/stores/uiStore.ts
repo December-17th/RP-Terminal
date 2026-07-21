@@ -77,7 +77,15 @@ interface UiState {
    *  `agentWorkspaceAgentId` deep-links straight to one Agent. */
   agentWorkspaceOpen: boolean
   agentWorkspaceAgentId: string | null
-  openAgentWorkspace: (opts?: { agentId?: string | null }) => void
+  agentWorkspaceRunId: string | null
+  agentWorkspaceAgentName: string | null
+  agentWorkspaceInitialTab: 'definition' | 'plan' | 'runs' | null
+  openAgentWorkspace: (opts?: {
+    agentId?: string | null
+    runId?: string | null
+    agentName?: string | null
+    tab?: 'definition' | 'plan' | 'runs' | null
+  }) => void
   closeAgentWorkspace: () => void
   /** Import-time card-script TRUST consent (CardTrustPrompt). When a freshly imported world ships
    *  scripts, this carries the pending decision; the modal records trust/deny into the persisted
@@ -98,9 +106,25 @@ export const useUiStore = create<UiState>((set) => ({
   closeSettings: () => set({ settingsOpen: false }),
   agentWorkspaceOpen: false,
   agentWorkspaceAgentId: null,
+  agentWorkspaceRunId: null,
+  agentWorkspaceAgentName: null,
+  agentWorkspaceInitialTab: null,
   openAgentWorkspace: (opts) =>
-    set({ agentWorkspaceOpen: true, agentWorkspaceAgentId: opts?.agentId ?? null }),
-  closeAgentWorkspace: () => set({ agentWorkspaceOpen: false, agentWorkspaceAgentId: null }),
+    set({
+      agentWorkspaceOpen: true,
+      agentWorkspaceAgentId: opts?.agentId ?? null,
+      agentWorkspaceRunId: opts?.runId ?? null,
+      agentWorkspaceAgentName: opts?.agentName ?? null,
+      agentWorkspaceInitialTab: opts?.tab ?? null
+    }),
+  closeAgentWorkspace: () =>
+    set({
+      agentWorkspaceOpen: false,
+      agentWorkspaceAgentId: null,
+      agentWorkspaceRunId: null,
+      agentWorkspaceAgentName: null,
+      agentWorkspaceInitialTab: null
+    }),
   launcherWorldId: null,
   setLauncherWorldId: (launcherWorldId) => set({ launcherWorldId }),
   duelPopupOpen: false,

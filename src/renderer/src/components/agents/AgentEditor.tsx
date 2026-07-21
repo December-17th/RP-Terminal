@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type {
   AgentDefinition,
   AgentLorebookSelection,
@@ -91,7 +91,8 @@ export const validateDraft = (draft: Draft): FieldError[] => {
   }
   const d = draft.defaults
   if (d.maxSteps < 1) errors.push({ field: 'defaults.maxSteps', message: 'atLeastOne' })
-  if (d.maxRetryAttempts < 0) errors.push({ field: 'defaults.maxRetryAttempts', message: 'nonNegative' })
+  if (d.maxRetryAttempts < 0)
+    errors.push({ field: 'defaults.maxRetryAttempts', message: 'nonNegative' })
   if (d.retryDelayMs < 0) errors.push({ field: 'defaults.retryDelayMs', message: 'nonNegative' })
   if (d.toolResultMaxTokens < 1) {
     errors.push({ field: 'defaults.toolResultMaxTokens', message: 'atLeastOne' })
@@ -206,6 +207,7 @@ type NumericGenerationParameter = (typeof NUMERIC_GENERATION_PARAMETERS)[number]
 export function AgentEditor({
   definition,
   readOnly,
+  onChange,
   onSave,
   onCancel,
   saving,
@@ -213,24 +215,23 @@ export function AgentEditor({
 }: {
   definition: AgentDefinition
   readOnly: boolean
+  onChange: (next: AgentDefinition) => void
   onSave: (next: AgentDefinition) => void
   onCancel: () => void
   saving: boolean
   serverError: string | null
 }): React.ReactElement {
   const t = useT()
-  const [draft, setDraft] = useState<Draft>(() => structuredClone(definition))
+  const draft = definition
   const [jsonError, setJsonError] = useState<string | null>(null)
-
-  useEffect(() => setDraft(structuredClone(definition)), [definition])
 
   const errors = useMemo(() => validateDraft(draft), [draft])
   const errorFor = (field: string): string | undefined =>
     errors.find((error) => error.field === field)?.message
 
-  const patch = (next: Partial<Draft>): void => setDraft({ ...draft, ...next })
+  const patch = (next: Partial<Draft>): void => onChange({ ...draft, ...next })
   const patchDefaults = (next: Partial<Draft['defaults']>): void =>
-    setDraft({ ...draft, defaults: { ...draft.defaults, ...next } })
+    onChange({ ...draft, defaults: { ...draft.defaults, ...next } })
 
   /** Toggle/set the declarative cadence trigger (M3). `undefined` drops the optional key entirely
    *  rather than storing `trigger: undefined`, so a saved definition serialises without it. */
@@ -238,7 +239,7 @@ export function AgentEditor({
     const copy: Draft = { ...draft }
     if (everyNFloors === undefined) delete copy.trigger
     else copy.trigger = { onFloorCommitted: { everyNFloors } }
-    setDraft(copy)
+    onChange(copy)
   }
 
   const bundle = draft.preset
@@ -252,7 +253,7 @@ export function AgentEditor({
     const copy: Draft = { ...draft }
     if (next) copy.preset = next
     else delete copy.preset
-    setDraft(copy)
+    onChange(copy)
   }
 
   /** Same rule one level down: an empty override set drops the optional key rather than storing `{}`. */
@@ -330,7 +331,12 @@ export function AgentEditor({
     patch({ prompt })
   }
 
-  const num = (field: string, label: string, value: number, apply: (n: number) => void): React.ReactElement => (
+  const num = (
+    field: string,
+    label: string,
+    value: number,
+    apply: (n: number) => void
+  ): React.ReactElement => (
     <label className="agent-field agent-field--inline">
       <span>{label}</span>
       <input
@@ -351,7 +357,7 @@ export function AgentEditor({
   return (
     <div className="agent-editor">
       <section className="agent-editor__section">
-        <h4>{t('agents.editor.identity')}</h4>
+        <h4>{t('agents.editor.essentials')}</h4>
         <label className="agent-field">
           <span>{t('agents.editor.name')}</span>
           <input
@@ -365,7 +371,7 @@ export function AgentEditor({
           ) : null}
         </label>
         <label className="agent-field">
-          <span>{t('agents.editor.description')}</span>
+          <span>{t('agents.editor.purpose')}</span>
           <textarea
             disabled={readOnly}
             rows={2}
@@ -373,21 +379,9 @@ export function AgentEditor({
             onChange={(event) => patch({ description: event.target.value })}
           />
         </label>
-        <label className="agent-field">
-          <span>{t('agents.editor.modelHint')}</span>
-          <input
-            disabled={readOnly}
-            value={draft.modelHint ?? ''}
-            placeholder={t('agents.editor.modelHintPlaceholder')}
-            onChange={(event) => patch({ modelHint: event.target.value || undefined })}
-          />
-        </label>
-      </section>
-
-      <section className="agent-editor__section">
-        <h4>
+        <h5 className="agent-editor__subhead">
           {t('agents.editor.prompt')} <span className="agent-count">{draft.prompt.length}</span>
-        </h4>
+        </h5>
         {errorFor('prompt') ? (
           <em className="agent-field__error">{t('agents.editor.err.atLeastOneMessage')}</em>
         ) : null}
@@ -412,7 +406,11 @@ export function AgentEditor({
               <span className="agent-message__size">
                 {t('agents.editor.chars', { count: messageText(index).length })}
               </span>
-              <button type="button" disabled={readOnly || index === 0} onClick={() => moveMessage(index, -1)}>
+              <button
+                type="button"
+                disabled={readOnly || index === 0}
+                onClick={() => moveMessage(index, -1)}
+              >
                 ↑
               </button>
               <button
@@ -456,357 +454,380 @@ export function AgentEditor({
         </button>
       </section>
 
-      <section className="agent-editor__section">
-        <h4>{t('agents.editor.preset.section')}</h4>
-        {!bundle ? (
-          <>
-            <p className="agent-editor__note">{t('agents.editor.preset.none')}</p>
-            <button
-              type="button"
-              disabled={readOnly}
-              onClick={() => setBundle({ preset: EMPTY_PRESET_ENVELOPE })}
-            >
-              {t('agents.editor.preset.add')}
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="agent-editor__note">{t('agents.editor.preset.envelopeHint')}</p>
-            <JsonField
-              t={t}
-              label={t('agents.editor.preset.envelope')}
-              value={bundle.preset}
-              rows={10}
-              onError={setJsonError}
-              onChange={(envelope) => setBundle({ ...bundle, preset: envelope as never })}
-            />
-            {errorFor('preset.envelope') ? (
-              <em className="agent-field__error">
-                {t(`agents.editor.err.${errorFor('preset.envelope')}`)}
-              </em>
-            ) : null}
-
-            <h5 className="agent-editor__subhead">{t('agents.editor.preset.parameters')}</h5>
-            <p className="agent-editor__note">{t('agents.editor.preset.parametersHint')}</p>
-            <div className="agent-field-grid">
-              {NUMERIC_GENERATION_PARAMETERS.map((key) => (
-                <label className="agent-field agent-field--inline" key={key}>
-                  <span>{t(`agents.editor.preset.param.${key}`)}</span>
-                  <input
-                    type="number"
-                    disabled={readOnly}
-                    placeholder={t('agents.editor.preset.inherit')}
-                    value={bundle.generationParameters?.[key] ?? ''}
-                    onChange={(event) =>
-                      setGenerationParameter(
-                        key,
-                        event.target.value === '' ? undefined : Number(event.target.value)
-                      )
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-            <LineListField
-              label={t('agents.editor.preset.stop')}
-              value={bundle.generationParameters?.stop}
-              disabled={readOnly}
-              onChange={setStopSequences}
-            />
-
-            <h5 className="agent-editor__subhead">{t('agents.editor.preset.lorebooks')}</h5>
-            <label className="agent-field agent-field--inline">
-              <span>{t('agents.editor.preset.lorebookMode')}</span>
-              <select
-                disabled={readOnly}
-                value={bundle.lorebooks?.mode ?? ''}
-                onChange={(event) => {
-                  const mode = event.target.value
-                  const entries = bundle.lorebooks?.entries
-                  if (mode === 'session') setLorebookSelection({ mode, ...(entries ? { entries } : {}) })
-                  else if (mode === 'explicit')
-                    setLorebookSelection({ mode, lorebooks: [], ...(entries ? { entries } : {}) })
-                  else setLorebookSelection(undefined)
-                }}
-              >
-                <option value="">{t('agents.editor.preset.modeUnset')}</option>
-                <option value="session">{t('agents.editor.preset.modeSession')}</option>
-                <option value="explicit">{t('agents.editor.preset.modeExplicit')}</option>
-              </select>
-            </label>
-
-            {explicitLorebooks ? (
-              <div className="agent-field">
-                <span>{t('agents.editor.preset.lorebookNames')}</span>
-                {errorFor('preset.lorebooks') ? (
-                  <em className="agent-field__error">{t('agents.editor.err.lorebooksRequired')}</em>
-                ) : null}
-                {explicitLorebooks.map((name, index) => (
-                  <div key={index}>
-                    <div className="agent-lorebook-row">
-                      <input
-                        disabled={readOnly}
-                        className={
-                          errorFor(`preset.lorebooks.${index}`) ? 'agent-input--invalid' : ''
-                        }
-                        value={name}
-                        placeholder={t('agents.editor.preset.lorebookNamePlaceholder')}
-                        onChange={(event) =>
-                          setLorebookNames(
-                            explicitLorebooks.map((existing, i) =>
-                              i === index ? event.target.value : existing
-                            )
-                          )
-                        }
-                      />
-                      <button
-                        type="button"
-                        disabled={readOnly}
-                        onClick={() =>
-                          setLorebookNames(explicitLorebooks.filter((_, i) => i !== index))
-                        }
-                      >
-                        {t('agents.editor.preset.removeLorebook')}
-                      </button>
-                    </div>
-                    {errorFor(`preset.lorebooks.${index}`) ? (
-                      <em className="agent-field__error">{t('agents.editor.err.required')}</em>
-                    ) : null}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  disabled={readOnly}
-                  onClick={() => setLorebookNames([...explicitLorebooks, ''])}
-                >
-                  {t('agents.editor.preset.addLorebook')}
-                </button>
-              </div>
-            ) : null}
-
-            {bundle.lorebooks ? (
-              <>
-                <p className="agent-editor__note">{t('agents.editor.preset.entriesHint')}</p>
-                <LineListField
-                  label={t('agents.editor.preset.include')}
-                  value={bundle.lorebooks.entries?.include}
-                  disabled={readOnly}
-                  onChange={(titles) => setEntryFilter('include', titles)}
-                />
-                <LineListField
-                  label={t('agents.editor.preset.exclude')}
-                  value={bundle.lorebooks.entries?.exclude}
-                  disabled={readOnly}
-                  onChange={(titles) => setEntryFilter('exclude', titles)}
-                />
-              </>
-            ) : null}
-
-            <button type="button" disabled={readOnly} onClick={() => setBundle(undefined)}>
-              {t('agents.editor.preset.remove')}
-            </button>
-          </>
-        )}
-      </section>
-
-      <section className="agent-editor__section">
-        <h4>{t('agents.editor.result')}</h4>
-        <label className="agent-field agent-field--inline">
-          <span>{t('agents.editor.resultMode')}</span>
-          <select
-            disabled={readOnly}
-            value={draft.result.mode}
-            onChange={(event) => {
-              const mode = event.target.value as AgentDefinition['result']['mode']
-              patch({
-                result:
-                  mode === 'json'
-                    ? { mode, schema: { type: 'object' } }
-                    : mode === 'text'
-                      ? { mode }
-                      : { mode }
-              })
-            }}
-          >
-            <option value="text">{t('agents.editor.resultMode.text')}</option>
-            <option value="json">{t('agents.editor.resultMode.json')}</option>
-            <option value="tools-only">{t('agents.editor.resultMode.toolsOnly')}</option>
-          </select>
-        </label>
-
-        {draft.result.mode !== 'tools-only' ? (
-          <label className="agent-field">
-            <span>{t('agents.editor.saveAs')}</span>
-            <input
-              disabled={readOnly}
-              className={errorFor('result.saveAs') ? 'agent-input--invalid' : ''}
-              placeholder="variables.__rpt.agent_results.my_slot"
-              value={draft.result.saveAs ?? ''}
-              onChange={(event) =>
-                patch({
-                  result: {
-                    ...draft.result,
-                    saveAs: (event.target.value || undefined) as never
-                  } as AgentDefinition['result']
-                })
-              }
-            />
-            {errorFor('result.saveAs') ? (
-              <em className="agent-field__error">{t('agents.editor.err.slotPath')}</em>
-            ) : null}
-          </label>
-        ) : null}
-
-        {draft.result.mode === 'text' ? (
+      <details className="agent-editor__disclosure">
+        <summary>{t('agents.editor.section.result')}</summary>
+        <section className="agent-editor__section">
           <label className="agent-field agent-field--inline">
-            <span>{t('agents.editor.validator')}</span>
+            <span>{t('agents.editor.resultMode')}</span>
             <select
               disabled={readOnly}
-              value={draft.result.validator ?? ''}
-              onChange={(event) =>
+              value={draft.result.mode}
+              onChange={(event) => {
+                const mode = event.target.value as AgentDefinition['result']['mode']
                 patch({
-                  result: {
-                    mode: 'text',
-                    ...(draft.result.mode === 'text' && draft.result.saveAs
-                      ? { saveAs: draft.result.saveAs }
-                      : {}),
-                    ...(event.target.value ? { validator: 'yss' as const } : {})
-                  }
+                  result:
+                    mode === 'json'
+                      ? { mode, schema: { type: 'object' } }
+                      : mode === 'text'
+                        ? { mode }
+                        : { mode }
                 })
-              }
+              }}
             >
-              <option value="">{t('agents.editor.validatorNone')}</option>
-              <option value="yss">{t('agents.editor.validatorYss')}</option>
+              <option value="text">{t('agents.editor.resultMode.text')}</option>
+              <option value="json">{t('agents.editor.resultMode.json')}</option>
+              <option value="tools-only">{t('agents.editor.resultMode.toolsOnly')}</option>
             </select>
           </label>
-        ) : null}
 
-        {draft.result.mode === 'json' ? (
+          {draft.result.mode !== 'tools-only' ? (
+            <label className="agent-field">
+              <span>{t('agents.editor.saveAs')}</span>
+              <input
+                disabled={readOnly}
+                className={errorFor('result.saveAs') ? 'agent-input--invalid' : ''}
+                placeholder="variables.__rpt.agent_results.my_slot"
+                value={draft.result.saveAs ?? ''}
+                onChange={(event) =>
+                  patch({
+                    result: {
+                      ...draft.result,
+                      saveAs: (event.target.value || undefined) as never
+                    } as AgentDefinition['result']
+                  })
+                }
+              />
+              {errorFor('result.saveAs') ? (
+                <em className="agent-field__error">{t('agents.editor.err.slotPath')}</em>
+              ) : null}
+            </label>
+          ) : null}
+
+          {draft.result.mode === 'text' ? (
+            <label className="agent-field agent-field--inline">
+              <span>{t('agents.editor.validator')}</span>
+              <select
+                disabled={readOnly}
+                value={draft.result.validator ?? ''}
+                onChange={(event) =>
+                  patch({
+                    result: {
+                      mode: 'text',
+                      ...(draft.result.mode === 'text' && draft.result.saveAs
+                        ? { saveAs: draft.result.saveAs }
+                        : {}),
+                      ...(event.target.value ? { validator: 'yss' as const } : {})
+                    }
+                  })
+                }
+              >
+                <option value="">{t('agents.editor.validatorNone')}</option>
+                <option value="yss">{t('agents.editor.validatorYss')}</option>
+              </select>
+            </label>
+          ) : null}
+
+          {draft.result.mode === 'json' ? (
+            <JsonField
+              t={t}
+              label={t('agents.editor.resultSchema')}
+              value={draft.result.schema}
+              onError={setJsonError}
+              onChange={(schema) =>
+                patch({
+                  result: { ...draft.result, schema: schema as never } as AgentDefinition['result']
+                })
+              }
+            />
+          ) : null}
+        </section>
+      </details>
+
+      <details className="agent-editor__disclosure">
+        <summary>{t('agents.editor.section.toolsInput')}</summary>
+        <section className="agent-editor__section">
+          <h4>{t('agents.editor.preset.section')}</h4>
+          <label className="agent-field">
+            <span>{t('agents.editor.modelHint')}</span>
+            <input
+              disabled={readOnly}
+              value={draft.modelHint ?? ''}
+              placeholder={t('agents.editor.modelHintPlaceholder')}
+              onChange={(event) => patch({ modelHint: event.target.value || undefined })}
+            />
+          </label>
+          {!bundle ? (
+            <>
+              <p className="agent-editor__note">{t('agents.editor.preset.none')}</p>
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={() => setBundle({ preset: EMPTY_PRESET_ENVELOPE })}
+              >
+                {t('agents.editor.preset.add')}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="agent-editor__note">{t('agents.editor.preset.envelopeHint')}</p>
+              <JsonField
+                t={t}
+                label={t('agents.editor.preset.envelope')}
+                value={bundle.preset}
+                rows={10}
+                onError={setJsonError}
+                onChange={(envelope) => setBundle({ ...bundle, preset: envelope as never })}
+              />
+              {errorFor('preset.envelope') ? (
+                <em className="agent-field__error">
+                  {t(`agents.editor.err.${errorFor('preset.envelope')}`)}
+                </em>
+              ) : null}
+
+              <h5 className="agent-editor__subhead">{t('agents.editor.preset.parameters')}</h5>
+              <p className="agent-editor__note">{t('agents.editor.preset.parametersHint')}</p>
+              <div className="agent-field-grid">
+                {NUMERIC_GENERATION_PARAMETERS.map((key) => (
+                  <label className="agent-field agent-field--inline" key={key}>
+                    <span>{t(`agents.editor.preset.param.${key}`)}</span>
+                    <input
+                      type="number"
+                      disabled={readOnly}
+                      placeholder={t('agents.editor.preset.inherit')}
+                      value={bundle.generationParameters?.[key] ?? ''}
+                      onChange={(event) =>
+                        setGenerationParameter(
+                          key,
+                          event.target.value === '' ? undefined : Number(event.target.value)
+                        )
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+              <LineListField
+                label={t('agents.editor.preset.stop')}
+                value={bundle.generationParameters?.stop}
+                disabled={readOnly}
+                onChange={setStopSequences}
+              />
+
+              <h5 className="agent-editor__subhead">{t('agents.editor.preset.lorebooks')}</h5>
+              <label className="agent-field agent-field--inline">
+                <span>{t('agents.editor.preset.lorebookMode')}</span>
+                <select
+                  disabled={readOnly}
+                  value={bundle.lorebooks?.mode ?? ''}
+                  onChange={(event) => {
+                    const mode = event.target.value
+                    const entries = bundle.lorebooks?.entries
+                    if (mode === 'session')
+                      setLorebookSelection({ mode, ...(entries ? { entries } : {}) })
+                    else if (mode === 'explicit')
+                      setLorebookSelection({ mode, lorebooks: [], ...(entries ? { entries } : {}) })
+                    else setLorebookSelection(undefined)
+                  }}
+                >
+                  <option value="">{t('agents.editor.preset.modeUnset')}</option>
+                  <option value="session">{t('agents.editor.preset.modeSession')}</option>
+                  <option value="explicit">{t('agents.editor.preset.modeExplicit')}</option>
+                </select>
+              </label>
+
+              {explicitLorebooks ? (
+                <div className="agent-field">
+                  <span>{t('agents.editor.preset.lorebookNames')}</span>
+                  {errorFor('preset.lorebooks') ? (
+                    <em className="agent-field__error">
+                      {t('agents.editor.err.lorebooksRequired')}
+                    </em>
+                  ) : null}
+                  {explicitLorebooks.map((name, index) => (
+                    <div key={index}>
+                      <div className="agent-lorebook-row">
+                        <input
+                          disabled={readOnly}
+                          className={
+                            errorFor(`preset.lorebooks.${index}`) ? 'agent-input--invalid' : ''
+                          }
+                          value={name}
+                          placeholder={t('agents.editor.preset.lorebookNamePlaceholder')}
+                          onChange={(event) =>
+                            setLorebookNames(
+                              explicitLorebooks.map((existing, i) =>
+                                i === index ? event.target.value : existing
+                              )
+                            )
+                          }
+                        />
+                        <button
+                          type="button"
+                          disabled={readOnly}
+                          onClick={() =>
+                            setLorebookNames(explicitLorebooks.filter((_, i) => i !== index))
+                          }
+                        >
+                          {t('agents.editor.preset.removeLorebook')}
+                        </button>
+                      </div>
+                      {errorFor(`preset.lorebooks.${index}`) ? (
+                        <em className="agent-field__error">{t('agents.editor.err.required')}</em>
+                      ) : null}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => setLorebookNames([...explicitLorebooks, ''])}
+                  >
+                    {t('agents.editor.preset.addLorebook')}
+                  </button>
+                </div>
+              ) : null}
+
+              {bundle.lorebooks ? (
+                <>
+                  <p className="agent-editor__note">{t('agents.editor.preset.entriesHint')}</p>
+                  <LineListField
+                    label={t('agents.editor.preset.include')}
+                    value={bundle.lorebooks.entries?.include}
+                    disabled={readOnly}
+                    onChange={(titles) => setEntryFilter('include', titles)}
+                  />
+                  <LineListField
+                    label={t('agents.editor.preset.exclude')}
+                    value={bundle.lorebooks.entries?.exclude}
+                    disabled={readOnly}
+                    onChange={(titles) => setEntryFilter('exclude', titles)}
+                  />
+                </>
+              ) : null}
+
+              <button type="button" disabled={readOnly} onClick={() => setBundle(undefined)}>
+                {t('agents.editor.preset.remove')}
+              </button>
+            </>
+          )}
+        </section>
+
+        <section className="agent-editor__section">
+          <h4>{t('agents.editor.contracts')}</h4>
           <JsonField
             t={t}
-            label={t('agents.editor.resultSchema')}
-            value={draft.result.schema}
+            label={t('agents.editor.inputSchema')}
+            value={draft.inputSchema}
             onError={setJsonError}
-            onChange={(schema) =>
-              patch({
-                result: { ...draft.result, schema: schema as never } as AgentDefinition['result']
-              })
-            }
+            onChange={(inputSchema) => patch({ inputSchema: inputSchema as never })}
           />
-        ) : null}
-      </section>
-
-      <section className="agent-editor__section">
-        <h4>{t('agents.editor.contracts')}</h4>
-        <JsonField
-          t={t}
-          label={t('agents.editor.inputSchema')}
-          value={draft.inputSchema}
-          onError={setJsonError}
-          onChange={(inputSchema) => patch({ inputSchema: inputSchema as never })}
-        />
-        <JsonField
-          t={t}
-          label={t('agents.editor.tools', { count: draft.tools.length })}
-          value={draft.tools}
-          rows={6}
-          onError={setJsonError}
-          onChange={(tools) => patch({ tools: (Array.isArray(tools) ? tools : []) as never })}
-        />
-      </section>
-
-      <section className="agent-editor__section">
-        <h4>{t('agents.editor.trigger.section')}</h4>
-        <p className="agent-editor__note">{t('agents.editor.trigger.hint')}</p>
-        <label className="agent-field agent-field--check">
-          <input
-            type="checkbox"
-            disabled={readOnly}
-            checked={!!draft.trigger}
-            onChange={(event) => setTrigger(event.target.checked ? 3 : undefined)}
+          <JsonField
+            t={t}
+            label={t('agents.editor.tools', { count: draft.tools.length })}
+            value={draft.tools}
+            rows={6}
+            onError={setJsonError}
+            onChange={(tools) => patch({ tools: (Array.isArray(tools) ? tools : []) as never })}
           />
-          <span>{t('agents.editor.trigger.enable')}</span>
-        </label>
-        {draft.trigger ? (
-          <label className="agent-field agent-field--inline">
-            <span>{t('agents.editor.trigger.everyNFloors')}</span>
+        </section>
+      </details>
+
+      <details className="agent-editor__disclosure">
+        <summary>{t('agents.editor.triggering')}</summary>
+        <section className="agent-editor__section">
+          <h4>{t('agents.editor.trigger.section')}</h4>
+          <p className="agent-editor__note">{t('agents.editor.trigger.hint')}</p>
+          <label className="agent-field agent-field--check">
             <input
-              type="number"
-              min={1}
-              step={1}
+              type="checkbox"
               disabled={readOnly}
-              className={errorFor('trigger.everyNFloors') ? 'agent-input--invalid' : ''}
-              value={draft.trigger.onFloorCommitted.everyNFloors}
-              onChange={(event) => setTrigger(Math.trunc(Number(event.target.value)))}
+              checked={!!draft.trigger}
+              onChange={(event) => setTrigger(event.target.checked ? 3 : undefined)}
             />
-            {errorFor('trigger.everyNFloors') ? (
-              <em className="agent-field__error">{t('agents.editor.err.atLeastOne')}</em>
-            ) : null}
+            <span>{t('agents.editor.trigger.enable')}</span>
           </label>
-        ) : null}
-      </section>
+          {draft.trigger ? (
+            <label className="agent-field agent-field--inline">
+              <span>{t('agents.editor.trigger.everyNFloors')}</span>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                disabled={readOnly}
+                className={errorFor('trigger.everyNFloors') ? 'agent-input--invalid' : ''}
+                value={draft.trigger.onFloorCommitted.everyNFloors}
+                onChange={(event) => setTrigger(Math.trunc(Number(event.target.value)))}
+              />
+              {errorFor('trigger.everyNFloors') ? (
+                <em className="agent-field__error">{t('agents.editor.err.atLeastOne')}</em>
+              ) : null}
+            </label>
+          ) : null}
+        </section>
+      </details>
 
-      <section className="agent-editor__section">
-        <h4>{t('agents.editor.defaults')}</h4>
-        <div className="agent-field-grid">
-          {num('defaults.maxSteps', t('agents.editor.maxSteps'), draft.defaults.maxSteps, (n) =>
-            patchDefaults({ maxSteps: n })
-          )}
-          {num(
-            'defaults.maxRetryAttempts',
-            t('agents.editor.maxRetryAttempts'),
-            draft.defaults.maxRetryAttempts,
-            (n) => patchDefaults({ maxRetryAttempts: n })
-          )}
-          {num(
-            'defaults.retryDelayMs',
-            t('agents.editor.retryDelayMs'),
-            draft.defaults.retryDelayMs,
-            (n) => patchDefaults({ retryDelayMs: n })
-          )}
-          {num(
-            'defaults.toolResultMaxTokens',
-            t('agents.editor.toolResultMaxTokens'),
-            draft.defaults.toolResultMaxTokens,
-            (n) => patchDefaults({ toolResultMaxTokens: n })
-          )}
-        </div>
-        <label className="agent-field agent-field--check">
-          <input
-            type="checkbox"
-            disabled={readOnly}
-            checked={draft.defaults.required}
-            onChange={(event) => patchDefaults({ required: event.target.checked })}
-          />
-          <span>{t('agents.editor.required')}</span>
-        </label>
-        <label className="agent-field agent-field--check">
-          <input
-            type="checkbox"
-            disabled={readOnly}
-            checked={draft.defaults.blocksNextTurn}
-            onChange={(event) => patchDefaults({ blocksNextTurn: event.target.checked })}
-          />
-          <span>{t('agents.editor.blocksNextTurn')}</span>
-        </label>
-        {draft.defaults.blocksNextTurn ? (
-          <p className="agent-editor__note">{t('agents.editor.blocksNextTurnNote')}</p>
-        ) : null}
-        <label className="agent-field agent-field--inline">
-          <span>{t('agents.editor.notification')}</span>
-          <select
-            disabled={readOnly}
-            value={draft.defaults.notification}
-            onChange={(event) =>
-              patchDefaults({ notification: event.target.value as NotificationPolicy })
-            }
-          >
-            <option value="none">{t('agents.editor.notification.none')}</option>
-            <option value="failure">{t('agents.editor.notification.failure')}</option>
-            <option value="completion">{t('agents.editor.notification.completion')}</option>
-          </select>
-        </label>
-      </section>
+      <details className="agent-editor__disclosure">
+        <summary>{t('agents.editor.reliability')}</summary>
+        <section className="agent-editor__section">
+          <h4>{t('agents.editor.defaults')}</h4>
+          <div className="agent-field-grid">
+            {num('defaults.maxSteps', t('agents.editor.maxSteps'), draft.defaults.maxSteps, (n) =>
+              patchDefaults({ maxSteps: n })
+            )}
+            {num(
+              'defaults.maxRetryAttempts',
+              t('agents.editor.maxRetryAttempts'),
+              draft.defaults.maxRetryAttempts,
+              (n) => patchDefaults({ maxRetryAttempts: n })
+            )}
+            {num(
+              'defaults.retryDelayMs',
+              t('agents.editor.retryDelayMs'),
+              draft.defaults.retryDelayMs,
+              (n) => patchDefaults({ retryDelayMs: n })
+            )}
+            {num(
+              'defaults.toolResultMaxTokens',
+              t('agents.editor.toolResultMaxTokens'),
+              draft.defaults.toolResultMaxTokens,
+              (n) => patchDefaults({ toolResultMaxTokens: n })
+            )}
+          </div>
+          <label className="agent-field agent-field--check">
+            <input
+              type="checkbox"
+              disabled={readOnly}
+              checked={draft.defaults.required}
+              onChange={(event) => patchDefaults({ required: event.target.checked })}
+            />
+            <span>{t('agents.editor.required')}</span>
+          </label>
+          <label className="agent-field agent-field--check">
+            <input
+              type="checkbox"
+              disabled={readOnly}
+              checked={draft.defaults.blocksNextTurn}
+              onChange={(event) => patchDefaults({ blocksNextTurn: event.target.checked })}
+            />
+            <span>{t('agents.editor.blocksNextTurn')}</span>
+          </label>
+          {draft.defaults.blocksNextTurn ? (
+            <p className="agent-editor__note">{t('agents.editor.blocksNextTurnNote')}</p>
+          ) : null}
+          <label className="agent-field agent-field--inline">
+            <span>{t('agents.editor.notification')}</span>
+            <select
+              disabled={readOnly}
+              value={draft.defaults.notification}
+              onChange={(event) =>
+                patchDefaults({ notification: event.target.value as NotificationPolicy })
+              }
+            >
+              <option value="none">{t('agents.editor.notification.none')}</option>
+              <option value="failure">{t('agents.editor.notification.failure')}</option>
+              <option value="completion">{t('agents.editor.notification.completion')}</option>
+            </select>
+          </label>
+        </section>
+      </details>
 
       {serverError ? (
         <p className="agents-panel__error" role="alert">

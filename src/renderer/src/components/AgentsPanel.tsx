@@ -7,6 +7,7 @@ import type {
 } from '../../../shared/agentRuntime'
 import { useT } from '../i18n'
 import { agentErrorMessage, agentImportErrorMessage } from '../i18n/errorMessages'
+import { ConfirmDialog } from './ConfirmDialog'
 
 const ROLES: AgentRole[] = ['classic.narrator', 'yuzu.sceneDirector']
 
@@ -15,6 +16,10 @@ const number = (value: number): string => new Intl.NumberFormat().format(value)
 /** Card- and file-sourced Agents are "imported": owner policy gives them no API preset on install. */
 const isImported = (agent: AgentCatalogSummary): boolean =>
   agent.sourceKind === 'card' || agent.sourceKind === 'user-imported'
+
+type PendingAction =
+  | { type: 'delete'; agent: AgentCatalogSummary }
+  | { type: 'use-source'; names: string }
 
 /**
  * The Agent Workspace (design §4): a FLAT library view — no canvas, node palette, ports, or edges.
@@ -31,6 +36,7 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
   const [sync, setSync] = useState<AgentFolderSync | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     const [list, roles] = await Promise.all([
@@ -76,6 +82,17 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
 
   const hasConflicts = sync?.items.some((item) => item.status === 'conflict') ?? false
 
+  const confirmPendingAction = (): void => {
+    const pending = pendingAction
+    if (!pending) return
+    setPendingAction(null)
+    if (pending.type === 'delete') {
+      void run(() => window.api.deleteAgent(profileId, pending.agent.id))
+      return
+    }
+    void doSync('use-source')
+  }
+
   return (
     <div className="agents-panel">
       <div className="agents-panel__header">
@@ -104,7 +121,10 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
           ) : (
             <ul>
               {sync.items.map((item) => (
-                <li key={item.file} className={`agents-sync__item agents-sync__item--${item.status}`}>
+                <li
+                  key={item.file}
+                  className={`agents-sync__item agents-sync__item--${item.status}`}
+                >
                   <code>{item.file}</code>
                   <span>{t(`agents.status.${item.status}`)}</span>
                   {item.conflicts?.length ? (
@@ -127,10 +147,26 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
           {hasConflicts ? (
             <div className="agents-sync__resolve">
               <span>{t('agents.conflictPrompt')}</span>
-              <button type="button" onClick={() => void doSync('keep-customization')} disabled={busy}>
+              <button
+                type="button"
+                onClick={() => void doSync('keep-customization')}
+                disabled={busy}
+              >
                 {t('agents.keepCustomization')}
               </button>
-              <button type="button" onClick={() => void doSync('use-source')} disabled={busy}>
+              <button
+                type="button"
+                onClick={() =>
+                  setPendingAction({
+                    type: 'use-source',
+                    names: sync.items
+                      .filter((item) => item.status === 'conflict')
+                      .map((item) => item.name ?? item.file)
+                      .join(', ')
+                  })
+                }
+                disabled={busy}
+              >
                 {t('agents.useSource')}
               </button>
             </div>
@@ -228,9 +264,7 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
                   disabled={busy || agent.roles.length > 0}
                   title={agent.roles.length > 0 ? t('agents.roleBoundLocked') : undefined}
                   onClick={() =>
-                    void run(() =>
-                      window.api.setAgentEnabled(profileId, agent.id, !agent.enabled)
-                    )
+                    void run(() => window.api.setAgentEnabled(profileId, agent.id, !agent.enabled))
                   }
                 >
                   {agent.enabled ? t('agents.disable') : t('agents.enable')}
@@ -240,7 +274,7 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
                   className="agents-row__delete"
                   disabled={busy || agent.roles.length > 0}
                   title={agent.roles.length > 0 ? t('agents.roleBoundLocked') : undefined}
-                  onClick={() => void run(() => window.api.deleteAgent(profileId, agent.id))}
+                  onClick={() => setPendingAction({ type: 'delete', agent })}
                 >
                   {t('agents.delete')}
                 </button>
@@ -249,6 +283,26 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
           ))}
         </ul>
       )}
+      {pendingAction ? (
+        <ConfirmDialog
+          title={
+            pendingAction.type === 'delete'
+              ? t('agents.workspace.confirm.delete.title', { name: pendingAction.agent.name })
+              : t('agents.confirm.useSource.title')
+          }
+          body={
+            pendingAction.type === 'delete'
+              ? t('agents.workspace.confirm.delete.body', { name: pendingAction.agent.name })
+              : t('agents.confirm.useSource.body', { names: pendingAction.names })
+          }
+          confirmLabel={
+            pendingAction.type === 'delete' ? t('agents.delete') : t('agents.useSource')
+          }
+          danger
+          onConfirm={confirmPendingAction}
+          onCancel={() => setPendingAction(null)}
+        />
+      ) : null}
     </div>
   )
 }

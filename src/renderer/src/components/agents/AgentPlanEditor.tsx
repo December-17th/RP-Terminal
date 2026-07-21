@@ -19,13 +19,19 @@ const isGroup = (step: Step): step is { parallel: Array<{ agent: string }> } =>
   typeof step === 'object' && step !== null && 'parallel' in step
 
 export function AgentPlanEditor({
-  agents
+  agents,
+  plan,
+  onPlanChange,
+  importText,
+  onImportTextChange
 }: {
   agents: AgentCatalogSummary[]
+  plan: InvocationPlan
+  onPlanChange: (next: InvocationPlan) => void
+  importText: string
+  onImportTextChange: (next: string) => void
 }): React.ReactElement {
   const t = useT()
-  const [plan, setPlan] = useState<InvocationPlan>({ steps: [] })
-  const [importText, setImportText] = useState('')
   const [importError, setImportError] = useState<string | null>(null)
 
   const names = useMemo(() => agents.map((agent) => agent.name), [agents])
@@ -46,7 +52,7 @@ export function AgentPlanEditor({
     return [...dupes]
   }, [plan])
 
-  const setSteps = (steps: Step[]): void => setPlan({ ...plan, steps })
+  const setSteps = (steps: Step[]): void => onPlanChange({ ...plan, steps })
 
   const move = (index: number, delta: number): void => {
     const target = index + delta
@@ -208,7 +214,7 @@ export function AgentPlanEditor({
             spellCheck={false}
             value={importText}
             placeholder='{"steps":[{"agent":"World Progression"}]}'
-            onChange={(event) => setImportText(event.target.value)}
+            onChange={(event) => onImportTextChange(event.target.value)}
           />
         </label>
         <button
@@ -231,8 +237,8 @@ export function AgentPlanEditor({
               )
               return
             }
-            setPlan(parsed.value)
-            setImportText('')
+            onPlanChange(parsed.value)
+            onImportTextChange('')
           }}
         >
           {t('agents.plan.importButton')}

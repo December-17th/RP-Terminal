@@ -5,6 +5,7 @@ import {
   latestRunPerAgent,
   useAgentRunStore
 } from '../stores/agentRunStore'
+import { useUiStore } from '../stores/uiStore'
 
 // The detailed run list (AgentRunActivityListView / AgentRunActivity) was removed in the Agent Runtime
 // cutover: nothing mounted it, and run inspectability lives in the Agent Workspace's own list. The two
@@ -83,6 +84,12 @@ export function AgentRunActivityToggle({
   )
 }
 
+const runTitle = (
+  run: ReturnType<typeof latestRunPerAgent>[number],
+  t: ReturnType<typeof useT>
+): string =>
+  `${run.agentName} · ${t(`agentRuns.status.${run.status}`)} · ${t('agentRuns.activity.floor', { floor: run.floor })}`
+
 export function AgentRunStatusStrip({ chatId }: { chatId: string }): React.ReactElement {
   const t = useT()
   const byChat = useAgentRunStore((state) => state.byChat)
@@ -114,26 +121,63 @@ export function AgentRunStatusStrip({ chatId }: { chatId: string }): React.React
       ) : (
         <>
           <span className="tstrip-agent-status__items">
-            {visibleRuns.map((run) => (
-              <span
-                className={`tstrip-agent-status__item tstrip-agent-status__item--${run.status}`}
-                key={run.invocationId}
-                title={`${run.agentName} · ${t(`agentRuns.status.${run.status}`)} · ${t('agentRuns.activity.floor', { floor: run.floor })}`}
-              >
-                <span className="tstrip-agent-status__dot" aria-hidden="true" />
-                <span className="tstrip-agent-status__name">{run.agentName}</span>
-                <span className="tstrip-agent-status__state">
-                  {t(`agentRuns.status.${run.status}`)}
+            {visibleRuns.map((run) => {
+              const openable =
+                run.status === 'running' || run.status === 'failed' || run.status === 'degraded'
+              const contents = (
+                <>
+                  <span className="tstrip-agent-status__dot" aria-hidden="true" />
+                  <span className="tstrip-agent-status__name">{run.agentName}</span>
+                  <span className="tstrip-agent-status__state">
+                    {t(`agentRuns.status.${run.status}`)}
+                  </span>
+                  <span className="tstrip-agent-status__floor">
+                    {t('agentRuns.activity.floor', { floor: run.floor })}
+                  </span>
+                </>
+              )
+              const title = runTitle(run, t)
+
+              return openable ? (
+                <button
+                  type="button"
+                  className={`tstrip-agent-status__item tstrip-agent-status__item--${run.status}`}
+                  key={run.invocationId}
+                  title={t('agentRuns.activity.openRun', { run: title })}
+                  onClick={() =>
+                    useUiStore.getState().openAgentWorkspace({
+                      runId: run.invocationId,
+                      agentName: run.agentName,
+                      tab: 'runs'
+                    })
+                  }
+                >
+                  {contents}
+                </button>
+              ) : (
+                <span
+                  className={`tstrip-agent-status__item tstrip-agent-status__item--${run.status}`}
+                  key={run.invocationId}
+                  title={title}
+                >
+                  {contents}
                 </span>
-                <span className="tstrip-agent-status__floor">
-                  {t('agentRuns.activity.floor', { floor: run.floor })}
-                </span>
-              </span>
-            ))}
+              )
+            })}
             {hiddenCount > 0 ? (
-              <span className="tstrip-agent-status__more">
-                {t('agentRuns.activity.more', { count: hiddenCount })}
-              </span>
+              <button
+                type="button"
+                className="tstrip-agent-status__more"
+                title={t('agentRuns.activity.hiddenCount', { count: hiddenCount })}
+                onClick={() =>
+                  useUiStore.getState().openAgentWorkspace({
+                    agentName: visibleRuns[0]?.agentName ?? null,
+                    tab: 'runs'
+                  })
+                }
+              >
+                {t('agentRuns.activity.viewAll')}
+              </button>
             ) : null}
           </span>
           <span className="tstrip-agent-status__compact">
