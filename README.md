@@ -156,6 +156,20 @@ The SQL-table memory maintenance that was formerly a workflow node is now a seed
 fires on a floor-commit cadence, composes its maintainer prompt through the shared composer, and applies
 the model's `<TableEdit>` output to the structured-memory tables — all recorded as a normal Agent run.
 
+### Memory Recall Agent
+
+Memory Recall is a seeded built-in Agent, enabled by default and toggleable in the Agents workspace. The
+direct narrator turn (both Classic and VN mode) explicitly invokes and awaits it before prompt assembly
+whenever the chat has an indexed memory table or markdown notes; with no eligible corpus it never calls
+out. Its API preset, prompt, budget, cancellation, and Run Record use the common Agent Runtime. Large
+catalogues are narrowed with per-table recent retention plus CJK-aware BM25 and, when configured, dense
+cosine retrieval fused by RRF (embedding fetches are budgeted per turn, so the cache fills incrementally).
+Dense vectors are derived cache rows in each chat's `session.sqlite`; no vector store or sidecar is used.
+RP Terminal resolves the Agent's selected codes by exact key, greps notes locally as literal text, and
+injects one capped memory block immediately before the pending player action. The whole recall stage runs
+under a hard deadline; failed, cancelled, or timed-out recall runs are fail-open: the main reply continues
+without recalled context, and failed runs report the degraded turn in the UI.
+
 ### Guardrails
 
 Agent model calls are bounded by the same **per-endpoint RPM budget and max-concurrency cap** as the main
@@ -163,7 +177,7 @@ pipeline, and coalesced/laned per floor by the invocation runtime, so triggered 
 unbounded parallel requests.
 
 > A card-facing `rpt.agents` API exists at inline/WCV parity but is **held** (not shipped) this release;
-> the declarative cadence trigger is the live path for unattended agents.
+> declarative cadence and the narrator turn's explicit pre-turn recall dispatch are the live built-in paths.
 
 ---
 

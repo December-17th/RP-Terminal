@@ -1,5 +1,6 @@
 import type { AgentRunRecord, JsonValue } from '../../../../shared/agentRuntime'
 import { useT } from '../../i18n'
+import { BudgetSection, ContextSection } from './AgentRunInspector'
 
 export const agentRunDurationMs = (
   record: Pick<AgentRunRecord, 'startedAt' | 'finishedAt'>
@@ -82,6 +83,17 @@ export function AgentRunDetail({
           </div>
         ) : null}
       </dl>
+
+      {/* Context Microscope (plan D5): the rendered-prompt snapshot with origin badges and the token
+          budget live here too, so the run drill-down keeps the same inspection depth as the preview. */}
+      {record.renderedPrompt?.length ? (
+        <ContextSection
+          messages={record.renderedPrompt}
+          prefixCount={record.attempts?.[0]?.immutablePrefix?.length ?? 0}
+          t={t}
+        />
+      ) : null}
+      {record.contextBudget ? <BudgetSection budget={record.contextBudget} t={t} /> : null}
 
       <ol className="agent-runs__timeline">
         <li>

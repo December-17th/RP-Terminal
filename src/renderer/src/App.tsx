@@ -22,7 +22,9 @@ import { YuzuCardSurface } from './components/yuzu/YuzuCardSurface'
 import { CardScriptWcvHost } from './components/CardScriptWcvHost'
 import { PluginHost } from './components/PluginHost'
 import { useAgentActivityStore } from './stores/agentActivityStore'
+import { useToastStore } from './stores/toastStore'
 import { useAgentRunStore } from './stores/agentRunStore'
+import { MEMORY_RECALL_AGENT_NAME } from '../../shared/memoryRecall'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useComposerStore } from './stores/composerStore'
 import { useWcvFreezeStore } from './stores/wcvFreezeStore'
@@ -37,7 +39,7 @@ import {
   mergeRuntimeTokens,
   hydratePlayTheme
 } from './cardBridge/playTheme'
-import { useI18nStore } from './i18n'
+import { t, useI18nStore } from './i18n'
 import { Launcher } from './components/Launcher'
 import { StDomCompat } from './components/StDomCompat'
 // Modal/overlay surfaces are code-split: each renders null until opened, so lazy-loading them keeps
@@ -190,13 +192,25 @@ export default function App(): React.ReactElement {
     const unsubAgentRuns = window.api.onAgentRunEvent((event) => {
       useAgentRunStore.getState().apply(event)
       if (event.type === 'started') {
+        const recall = event.run.agentName === MEMORY_RECALL_AGENT_NAME
         useAgentActivityStore
           .getState()
-          .start(event.run.chatId, event.run.invocationId, event.run.agentName, 'post')
+          .start(
+            event.run.chatId,
+            event.run.invocationId,
+            recall ? 'memory.recall' : event.run.agentName,
+            recall ? 'pre' : 'post'
+          )
       } else if (event.type === 'deleted') {
         useAgentActivityStore.getState().end(event.chatId, event.invocationId)
       } else if (event.run.status !== 'running') {
         useAgentActivityStore.getState().end(event.run.chatId, event.run.invocationId)
+        if (
+          event.run.agentName === MEMORY_RECALL_AGENT_NAME &&
+          event.run.status === 'failed'
+        ) {
+          useToastStore.getState().push(t('chat.recallFailedOpen'))
+        }
       }
     })
     // A combat/duel service switched the chat's mode main-side → the workspace must follow without a
@@ -307,9 +321,15 @@ export default function App(): React.ReactElement {
         if (!useAgentRunStore.getState().hydrate(activeChatId, records, generation)) return
         for (const run of Object.values(useAgentRunStore.getState().byChat[activeChatId] ?? {})) {
           if (run.status === 'running') {
+            const recall = run.agentName === MEMORY_RECALL_AGENT_NAME
             useAgentActivityStore
               .getState()
-              .start(run.chatId, run.invocationId, run.agentName, 'post')
+              .start(
+                run.chatId,
+                run.invocationId,
+                recall ? 'memory.recall' : run.agentName,
+                recall ? 'pre' : 'post'
+              )
           }
         }
       })

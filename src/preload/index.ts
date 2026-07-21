@@ -234,6 +234,8 @@ const api = {
     ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.upgrade, profileId, id, conflicts),
   runAgentManually: (profileId: string, chatId: string, agent: string, input?: unknown) =>
     ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.run, profileId, chatId, agent, input),
+  previewAgentPrompt: (profileId: string, chatId: string, agent: string, input?: unknown) =>
+    ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.previewPrompt, profileId, chatId, agent, input),
   getAgentInvocationConfig: (profileId: string, id: string) =>
     ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.getInvocationConfig, profileId, id),
   setAgentInvocationConfig: (profileId: string, id: string, config: { apiPresetId?: string }) =>

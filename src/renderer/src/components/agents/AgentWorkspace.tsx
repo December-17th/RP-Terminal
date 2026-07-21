@@ -11,6 +11,7 @@ import type {
   AgentDefinition,
   AgentRole,
   AgentRunRecord,
+  AgentPromptPreview,
   InvocationPlan,
   JsonObject
 } from '../../../../shared/agentRuntime'
@@ -26,6 +27,10 @@ import { AgentEditor, validateDraft } from './AgentEditor'
 import { AgentManualRunForm } from './AgentManualRunForm'
 import { AgentPlanEditor } from './AgentPlanEditor'
 import { AgentRunDetail } from './AgentRunDetail'
+import { AgentRunInspector } from './AgentRunInspector'
+import { AgentRunDiff } from './AgentRunDiff'
+
+type PreviewOk = Extract<AgentPromptPreview, { ok: true }>
 
 type Tab = 'definition' | 'plan' | 'runs'
 type CreationIntent = 'narrative' | 'background' | 'custom'
@@ -272,6 +277,10 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
   const [pendingTransition, setPendingTransition] = useState<PendingTransition | null>(null)
   const [pendingAgentAction, setPendingAgentAction] = useState<PendingAgentAction | null>(null)
   const handledDeepLinkRef = React.useRef<string | null>(null)
+  const [preview, setPreview] = useState<PreviewOk | null>(null)
+  const [previewBusy, setPreviewBusy] = useState(false)
+  // Up to two run ids selected for the prompt diff; both must belong to the same Agent (enforced below).
+  const [compareIds, setCompareIds] = useState<string[]>([])
 
   useWcvSuppression(open)
 
@@ -406,6 +415,22 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
   useEffect(() => {
     if (open && tab === 'runs') void refreshRuns()
   }, [open, tab, refreshRuns])
+
+  // Preview, diff selection, and open detail all belong to one Agent + session; clear them when either
+  // changes so a stale prompt from another Agent never lingers under the current one. This is React's
+  // documented "reset state when a value changes" pattern (adjust during render, not in an effect).
+  const runsScope = `${selectedId ?? ''}:${chatId ?? ''}`
+  const [runsScopeSeen, setRunsScopeSeen] = useState(runsScope)
+  if (runsScope !== runsScopeSeen) {
+    setRunsScopeSeen(runsScope)
+    setPreview(null)
+    setCompareIds([])
+    // The open detail only clears when it really belongs elsewhere — a deep-link sets the detail
+    // BEFORE its agent selection lands, and that scope flip must not wipe the target run.
+    if (runDetail && (runDetail.agentName !== selected?.name || runDetail.chatId !== chatId)) {
+      setRunDetail(null)
+    }
+  }
 
   if (!open) return null
 
@@ -572,6 +597,38 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
     )
     await refreshRuns()
   }
+
+  const previewNow = async (input: JsonObject): Promise<void> => {
+    if (!selected || !chatId) return
+    setPreviewBusy(true)
+    setNotice(null)
+    setPreview(null)
+    const result = await window.api.previewAgentPrompt(profileId, chatId, selected.name, input)
+    setPreviewBusy(false)
+    if (result.ok) {
+      setPreview(result)
+    } else {
+      setNotice(agentErrorMessage(t, result.code))
+    }
+  }
+
+  // Toggle a run into/out of the two-slot compare selection. A run can only join a selection whose
+  // other member is the SAME Agent — diffing two different Agents' prompts is meaningless.
+  const toggleCompare = (record: AgentRunRecord): void => {
+    setCompareIds((prev) => {
+      if (prev.includes(record.invocationId)) {
+        return prev.filter((id) => id !== record.invocationId)
+      }
+      const others = runs.filter((run) => prev.includes(run.invocationId))
+      const clash = others.some((run) => run.agentName !== record.agentName)
+      const base = clash ? [] : prev.slice(-1)
+      return [...base, record.invocationId]
+    })
+  }
+
+  const compareRecords = compareIds
+    .map((id) => runs.find((run) => run.invocationId === id))
+    .filter((run): run is AgentRunRecord => Boolean(run))
 
   return (
     <div className="modal-overlay" onClick={() => requestTransition({ type: 'close' })}>
@@ -892,38 +949,91 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
                         inputSchema={definition.inputSchema}
                         initialInput={manualInput}
                         disabled={saving}
+                        previewing={previewBusy}
                         hasChat={Boolean(chatId)}
                         onRun={(input) => void runNow(input)}
+                        onPreview={(input) => void previewNow(input)}
                       />
                     ) : null}
+                    {preview ? (
+                      <div className="agent-runs__detail">
+                        <div className="agent-runs__detail-head">
+                          <strong>{t('agents.run.previewTitle')}</strong>
+                          <button type="button" onClick={() => setPreview(null)}>
+                            {t('common.close')}
+                          </button>
+                        </div>
+                        <AgentRunInspector source={{ mode: 'preview', preview }} />
+                      </div>
+                    ) : null}
 
-                    <h4>{t('agents.run.history', { count: runs.length })}</h4>
+                    <div className="agent-runs__history-head">
+                      <h4>{t('agents.run.history', { count: runs.length })}</h4>
+                      {compareRecords.length > 0 ? (
+                        <span className="agents-panel__hint">
+                          {t('agents.diff.selected', { count: compareRecords.length })}
+                        </span>
+                      ) : null}
+                    </div>
                     {runs.length === 0 ? (
                       <p className="agents-panel__empty">{t('agents.run.noRuns')}</p>
                     ) : (
                       <ul className="agent-runs__list">
-                        {runs.map((record) => (
-                          <li key={record.invocationId}>
-                            <button type="button" onClick={() => setRunDetail(record)}>
-                              <strong>{record.agentName}</strong>
-                              <span>{t(`agentRuns.status.${record.status}`)}</span>
-                              {/* A run can succeed on a prompt that silently lost its card / persona /
-                                  world info (ADR 0021 fail-open). The status alone cannot show that. */}
-                              {record.warnings?.length ? (
-                                <span
-                                  className="agent-runs__degraded"
-                                  title={t('agents.run.degradedLabel')}
-                                >
-                                  {t('agents.run.degraded')}
-                                </span>
-                              ) : null}
-                              <span>{t('agents.run.floor', { floor: record.floor })}</span>
-                              <span>{record.startedAt}</span>
-                            </button>
-                          </li>
-                        ))}
+                        {runs.map((record) => {
+                          const checked = compareIds.includes(record.invocationId)
+                          // Once one run is picked, runs of a different Agent cannot join the diff.
+                          const disabled =
+                            !checked &&
+                            compareRecords.length > 0 &&
+                            compareRecords.some((run) => run.agentName !== record.agentName)
+                          return (
+                            <li key={record.invocationId} className="agent-runs__row">
+                              <input
+                                type="checkbox"
+                                className="agent-runs__compare"
+                                checked={checked}
+                                disabled={disabled}
+                                title={t('agents.diff.pick')}
+                                aria-label={t('agents.diff.pick')}
+                                onChange={() => toggleCompare(record)}
+                              />
+                              <button
+                                type="button"
+                                className="agent-runs__row-open"
+                                onClick={() => setRunDetail(record)}
+                              >
+                                <strong>{record.agentName}</strong>
+                                <span>{t(`agentRuns.status.${record.status}`)}</span>
+                                {/* A run can succeed on a prompt that silently lost its card / persona /
+                                    world info (ADR 0021 fail-open). The status alone cannot show that. */}
+                                {record.warnings?.length ? (
+                                  <span
+                                    className="agent-runs__degraded"
+                                    title={t('agents.run.degradedLabel')}
+                                  >
+                                    {t('agents.run.degraded')}
+                                  </span>
+                                ) : null}
+                                <span>{t('agents.run.floor', { floor: record.floor })}</span>
+                                <span>{record.startedAt}</span>
+                              </button>
+                            </li>
+                          )
+                        })}
                       </ul>
                     )}
+
+                    {compareRecords.length === 2 ? (
+                      <div className="agent-runs__detail">
+                        <div className="agent-runs__detail-head">
+                          <strong>{t('agents.diff.title')}</strong>
+                          <button type="button" onClick={() => setCompareIds([])}>
+                            {t('common.close')}
+                          </button>
+                        </div>
+                        <AgentRunDiff before={compareRecords[0]} after={compareRecords[1]} />
+                      </div>
+                    ) : null}
 
                     {runDetail ? (
                       <AgentRunDetail

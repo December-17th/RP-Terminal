@@ -330,6 +330,7 @@ describe('HarnessRunAdapter', () => {
     await vi.waitFor(() => expect(provider.calls).toHaveLength(2))
 
     expect(runtime.stop('first')).toBe(true)
+    expect(runtime.stop('first')).toBe(true)
     expect(provider.calls[0].request.signal?.aborted).toBe(true)
     expect(provider.calls[1].request.signal?.aborted).toBe(false)
     provider.calls[1].succeed('Second completed.')
@@ -340,7 +341,11 @@ describe('HarnessRunAdapter', () => {
     })
     const secondResult = await second
     expect(secondResult).toMatchObject({ ok: true, result: 'Second completed.' })
-    expect(runStore.get('chat-1', 'first')?.status).toBe('cancelled')
+    const cancelled = runStore.get('chat-1', 'first')
+    expect(cancelled?.status).toBe('cancelled')
+    expect(cancelled?.attempts).toMatchObject([{ outcome: 'cancelled', providerCalls: 1 }])
+    expect(cancelled?.contextBudget).toBeDefined()
+    expect(cancelled?.attempts[0].contextBudget).toEqual(cancelled?.contextBudget)
     expect(runStore.get('chat-1', 'second')?.status).toBe('running')
     if (!secondResult.ok) throw new Error('expected successful fixture')
     runtime.commitSuccess('second', secondResult, { status: 'committed', operations: 0 })
@@ -399,7 +404,14 @@ describe('HarnessRunAdapter', () => {
     // Rendering happened once, and the record is the dispatched message list verbatim.
     expect(renders).toBe(1)
     const dispatched = scripted.requests[0].messages.map(({ role, content }) => ({ role, content }))
-    expect(runStore.get('chat-1', 'single-render')?.renderedPrompt).toEqual(dispatched)
+    const recorded = runStore.get('chat-1', 'single-render')?.renderedPrompt
+    // Bytes are the dispatched message list verbatim; each carries its coarse origin (D3).
+    expect(recorded?.map(({ role, content }) => ({ role, content }))).toEqual(dispatched)
+    expect(recorded?.map((message) => message.origin)).toEqual([
+      'harness-policy',
+      'agent-prompt',
+      'input'
+    ])
     expect(dispatched.some((message) => message.content.includes('[render#1]'))).toBe(true)
   })
 

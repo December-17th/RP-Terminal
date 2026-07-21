@@ -843,12 +843,12 @@ export class AgentCatalog {
           this.insert(
             builtin.definition,
             { kind: 'builtin', key: builtin.key, version: '1' },
-            true
+            builtin.enabled
           )
         }
       }
       // The `Classic Narrator` / `Yuzu Scene Director` decoys and their role auto-binding were removed in
-      // execution-plan M5a (D6). Only Memory Maintenance seeds now; roles are bound by cards/users, and a
+      // execution-plan M5a (D6). Only real memory workers seed now; roles are bound by cards/users, and a
       // one-time DB migration (`migrateRemoveDecoyBuiltinAgents`) purges any legacy decoy rows + bindings.
     })()
   }

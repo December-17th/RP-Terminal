@@ -107,14 +107,18 @@ export function AgentManualRunForm({
   inputSchema,
   initialInput,
   disabled,
+  previewing = false,
   hasChat,
-  onRun
+  onRun,
+  onPreview
 }: {
   inputSchema: JsonSchema
   initialInput?: JsonObject
   disabled: boolean
+  previewing?: boolean
   hasChat: boolean
   onRun: (input: JsonObject) => void
+  onPreview?: (input: JsonObject) => void
 }): React.ReactElement {
   const t = useT()
   const fields = useMemo(() => agentInputFields(inputSchema), [inputSchema])
@@ -137,7 +141,7 @@ export function AgentManualRunForm({
     setFormError(null)
   }
 
-  const run = (): void => {
+  const submit = (action: (input: JsonObject) => void): void => {
     const parsed = parseObject(raw)
     if (!parsed) {
       setRawError(true)
@@ -151,7 +155,7 @@ export function AgentManualRunForm({
       return
     }
     setFormError(null)
-    onRun(parsed)
+    action(parsed)
   }
 
   return (
@@ -266,9 +270,26 @@ export function AgentManualRunForm({
         </p>
       ) : null}
 
-      <button type="button" disabled={disabled || !hasChat || rawError} onClick={run}>
-        {disabled ? t('agents.run.running') : t('agents.run.runNow')}
-      </button>
+      <div className="agent-runs__manual-actions">
+        <button
+          type="button"
+          disabled={disabled || !hasChat || rawError}
+          onClick={() => submit(onRun)}
+        >
+          {disabled ? t('agents.run.running') : t('agents.run.runNow')}
+        </button>
+        {onPreview ? (
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={previewing || !hasChat || rawError}
+            title={hasChat ? t('agents.run.previewHint') : t('agents.run.needsChat')}
+            onClick={() => submit(onPreview)}
+          >
+            {previewing ? t('agents.run.previewing') : t('agents.run.preview')}
+          </button>
+        ) : null}
+      </div>
       {hasChat ? null : <p className="agents-panel__hint">{t('agents.run.needsChat')}</p>}
     </div>
   )

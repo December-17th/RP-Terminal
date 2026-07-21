@@ -107,6 +107,117 @@ const deriveKeys = (table: TableDef, headers: string[], rows: unknown[][]): stri
   return keys
 }
 
+/** One retrievable, code-keyed table row. The catalogue and full entry are derived from the same
+ * positional snapshot so a selected code can never expand against different row content. */
+export interface RecallDocument {
+  id: string
+  tableId: string
+  tableOrder: number
+  rowOrder: number
+  keys: string[]
+  catalogueLine: string
+  catalogueWrapper: string
+  searchText: string
+  entry: LorebookEntry
+}
+
+/** Build the row documents eligible for exact Memory Recall. Only keyword, split-by-row tables with
+ * an enabled compact index participate; other table projections retain their ordinary prompt behavior. */
+export const synthesizeRecallDocuments = (
+  template: TableTemplate,
+  reads: TableRead[]
+): RecallDocument[] => {
+  const readBySql = new Map(reads.map((read) => [read.sqlName, read]))
+  const documents: RecallDocument[] = []
+  template.tables.forEach((table, tableOrder) => {
+    const config = table.exportConfig
+    if (
+      !config.enabled ||
+      !config.extraIndexEnabled ||
+      !config.splitByRow ||
+      config.entryType !== 'keyword'
+    ) {
+      return
+    }
+    const read = readBySql.get(table.sqlName)
+    if (!read) return
+    const placement = mapPlacement(config.entryPlacement)
+    const baseName = config.entryName || table.displayName
+    read.rows.forEach((row, rowOrder) => {
+      const keys = deriveKeys(table, table.headers, [row])
+      if (!keys.length) return
+      const rowText = renderRow(table.headers, row)
+      documents.push({
+        id: `${table.uid}:${read.rowids[rowOrder] ?? rowOrder}`,
+        tableId: table.uid,
+        tableOrder,
+        rowOrder,
+        keys,
+        catalogueLine: renderIndexLine(config.extraIndexColumns, table.headers, row),
+        catalogueWrapper: config.extraIndexInjectionTemplate,
+        searchText: `${renderIndexLine(config.extraIndexColumns, table.headers, row)}\n${rowText}`,
+        entry: entry({
+          keys,
+          content: applyTemplate(config.injectionTemplate, rowText),
+          constant: false,
+          comment: `${baseName}#${rowOrder}`,
+          ...placement
+        })
+      })
+    })
+  })
+  return documents
+}
+
+/** Render a possibly narrowed document set with the same per-table index wrapper as the full catalogue. */
+export const renderRecallDocumentCatalog = (documents: RecallDocument[]): string => {
+  const groups = new Map<string, RecallDocument[]>()
+  for (const document of documents) {
+    const group = groups.get(document.tableId) ?? []
+    group.push(document)
+    groups.set(document.tableId, group)
+  }
+  return [...groups.values()]
+    .sort((left, right) => left[0].tableOrder - right[0].tableOrder)
+    .map((group) =>
+      applyTemplate(
+        group[0].catalogueWrapper,
+        [...group]
+          .sort((left, right) => left.rowOrder - right.rowOrder)
+          .map((document) => document.catalogueLine)
+          .join('\n')
+      )
+    )
+    .join('\n\n')
+}
+
+/** Expand codes in the Agent's declared order. A row selected by multiple keys appears once. */
+export const resolveRecallDocumentsByCodes = (
+  documents: RecallDocument[],
+  codes: Iterable<string>,
+  cap: number
+): LorebookEntry[] => {
+  const byKey = new Map<string, RecallDocument[]>()
+  for (const document of documents) {
+    for (const key of document.keys) {
+      const matches = byKey.get(key) ?? []
+      matches.push(document)
+      byKey.set(key, matches)
+    }
+  }
+  const seen = new Set<string>()
+  const entries: LorebookEntry[] = []
+  for (const code of codes) {
+    for (const document of byKey.get(code) ?? []) {
+      if (seen.has(document.id)) continue
+      seen.add(document.id)
+      entries.push(document.entry)
+      if (entries.length >= Math.max(0, cap)) return entries
+    }
+  }
+  return entries
+}
+
 /**
  * Synthesize the projection entries for every ENABLED-`exportConfig` table in the template, reading
  * rows from the matching `TableRead`. Pure — takes template + reads, returns entries. The caller

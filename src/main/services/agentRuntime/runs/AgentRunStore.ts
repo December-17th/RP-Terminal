@@ -500,6 +500,7 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
     const activeDb = db === undefined ? dbFor(live.chatId) : db
     live.controller.abort(code)
     const record = read(live.chatId, invocationId, activeDb)
+    if (record?.status === 'cancelled') return record
     if (!record || record.status !== 'running') {
       controllers.delete(invocationId)
       return record
@@ -519,7 +520,8 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
       replay: { status: 'discarded', operations: 0 }
     }
     persist(cancelled, activeDb)
-    controllers.delete(invocationId)
+    // Keep the live entry until the aborted Harness returns. Its terminal attempt evidence (including
+    // step-zero context attribution) arrives asynchronously after this immediate UI cancellation.
     emit({ type: 'finished', run: summary(cancelled) })
     return cancelled
   }
@@ -655,7 +657,13 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
       const live = controllers.get(invocationId)
       if (!live) return null
       const record = read(live.chatId, invocationId)
-      if (!record || record.status !== 'running') return record ? publicRecord(record) : null
+      if (!record) return null
+      if (record.status === 'cancelled') {
+        const updated = withEvidence(record, evidence, warnings)
+        persist(updated)
+        return publicRecord(updated)
+      }
+      if (record.status !== 'running') return publicRecord(record)
       const updated = withEvidence(record, evidence, warnings)
       persist(updated)
       emit({ type: 'updated', run: summary(updated) })
