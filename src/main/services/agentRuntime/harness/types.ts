@@ -1,5 +1,6 @@
 import type {
   AgentDefinition,
+  AgentPromptOrigin,
   InvocationOptions,
   JsonObject,
   JsonValue,
@@ -56,8 +57,11 @@ export interface HarnessExecuteRequest {
    * mutable state (`getvar`/`getMessageVar`), so a second `buildAttemptLog` by the caller would
    * produce a prompt that merely RESEMBLES the dispatched one. Run Records are exact evidence, so
    * they subscribe here instead of re-rendering.
+   *
+   * `origins` carries the coarse provenance of each message (D3), aligned index-for-index with
+   * `messages`. Optional so observers that only need the bytes ignore it.
    */
-  onPromptBuilt?: (messages: ProviderMessage[]) => void
+  onPromptBuilt?: (messages: ProviderMessage[], origins?: AgentPromptOrigin[]) => void
   signal?: AbortSignal
   yssVocabulary?: SceneVocabulary
   corrective?: {
@@ -118,6 +122,9 @@ export interface HarnessAttemptEvidence {
   discardedOperations?: number
   irreversibleBoundary?: boolean
   irreversibleBoundaries?: IrreversibleBoundaryEvidence[]
+  /** Step-0 token attribution for this attempt (Microscope-lite D2). Always populated once the attempt
+   *  reaches its first provider step; absent only if it failed before step 0 (e.g. pre-loop abort). */
+  contextBudget?: ContextBudgetAttribution
 }
 
 export interface HarnessEvidence {

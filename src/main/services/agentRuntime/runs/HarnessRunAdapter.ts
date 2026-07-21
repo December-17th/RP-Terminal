@@ -1,6 +1,7 @@
 import {
   resolveInvocationOptions,
   type AgentDefinition,
+  type AgentPromptOrigin,
   type AgentRunMessage,
   type AgentRunReplayOutcome,
   type InvocationOptions,
@@ -111,8 +112,14 @@ const linkSignals = (signals: Array<AbortSignal | undefined>): Link => {
 }
 
 const recordMessages = (
-  messages: Array<{ role: AgentRunMessage['role']; content: string }>
-): AgentRunMessage[] => messages.map(({ role, content }) => ({ role, content }))
+  messages: Array<{ role: AgentRunMessage['role']; content: string }>,
+  origins?: AgentPromptOrigin[]
+): AgentRunMessage[] =>
+  messages.map(({ role, content }, index) => ({
+    role,
+    content,
+    ...(origins?.[index] ? { origin: origins[index] } : {})
+  }))
 
 const unexpectedFailure = (cause: unknown): HarnessFailure => ({
   code: 'HARNESS_EXECUTION_FAILED',
@@ -204,8 +211,11 @@ export const createHarnessRunAdapter = ({
         const execution = await harness.execute({
           ...harnessRequest,
           signal: linked.signal,
-          onPromptBuilt: (messages) =>
-            runStore.attachRenderedPrompt(request.invocationId, recordMessages(messages))
+          onPromptBuilt: (messages, origins) =>
+            runStore.attachRenderedPrompt(
+              request.invocationId,
+              recordMessages(messages, origins)
+            )
         })
         const evidence = combinedEvidence(request.invocationId, execution.evidence)
         runStore.update(request.invocationId, evidence)

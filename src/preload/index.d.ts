@@ -111,6 +111,13 @@ declare global {
         agent: string,
         input?: unknown
       ) => Promise<import('../shared/agentRuntime').AgentManualRunResult>
+      // Dry-run Prompt Preview (Microscope-lite D4): the exact prompt a run would send, no model call.
+      previewAgentPrompt: (
+        profileId: string,
+        chatId: string,
+        agent: string,
+        input?: unknown
+      ) => Promise<import('../shared/agentRuntime').AgentPromptPreview>
       getAgentInvocationConfig: (
         profileId: string,
         id: string

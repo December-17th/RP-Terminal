@@ -1,5 +1,6 @@
 import type {
   AgentDefinition,
+  AgentPromptOrigin,
   EffectiveInvocationOptions,
   JsonValue,
   PromptMessage
@@ -8,7 +9,14 @@ import type { ProviderMessage } from '../provider'
 import type { HarnessExecuteRequest, HarnessFailure } from './types'
 
 export type BuildAttemptLogResult =
-  | { ok: true; immutablePrefix: ProviderMessage[]; attemptLog: ProviderMessage[] }
+  | {
+      ok: true
+      immutablePrefix: ProviderMessage[]
+      attemptLog: ProviderMessage[]
+      /** Coarse origin per message, aligned to the concatenated `[...immutablePrefix, ...attemptLog]`
+       *  order — NOT push order (D3). Length equals prefix.length + log.length. */
+      origins: AgentPromptOrigin[]
+    }
   | { ok: false; failure: HarnessFailure }
 
 /**
@@ -64,6 +72,10 @@ export const buildAttemptLog = (
 ): BuildAttemptLogResult => {
   const immutablePrefix: ProviderMessage[] = [{ role: 'system', content: policy }]
   const attemptLog: ProviderMessage[] = []
+  // Origins tracked separately per array so the concatenated result aligns to `[...prefix, ...log]`,
+  // not push order (D3). The policy line is the first — and, on the assembled path, only — prefix entry.
+  const prefixOrigins: AgentPromptOrigin[] = ['harness-policy']
+  const logOrigins: AgentPromptOrigin[] = []
   let volatile = false
   // ADR 0021: an upstream-assembled prompt SUBSTITUTES for the definition's own messages. It already
   // ends with those messages (the preset assembles context, `prompt` is the task instruction), so
@@ -72,7 +84,8 @@ export const buildAttemptLog = (
   // An assembled prompt is also never re-rendered: the assembler already ran the engine over it, and
   // a second pass would treat card/lore/history CONTENT as template code. Enforced structurally here
   // rather than left to the caller to remember.
-  const render = request.prompt ? undefined : request.render
+  const fromAssembledPrompt = request.prompt !== undefined
+  const render = fromAssembledPrompt ? undefined : request.render
   for (const prompt of request.prompt ?? definition.prompt) {
     const rendered = resolvePromptMessage(prompt, request, render)
     if (!rendered.ok) {
@@ -85,20 +98,45 @@ export const buildAttemptLog = (
         }
       }
     }
-    // VOLATILITY TRAP (ADR 0021): only a `binding` segment marks a message volatile. A rendered TEXT
-    // segment also reads mutable state (`getvar`/`getMessageVar`) yet lands in the immutable prefix.
-    // Harmless today — nothing reuses the prefix across calls, the split is flattened at dispatch, and
-    // Anthropic cache_control is placed positionally (provider/shaping.ts). But the design's
-    // "the Harness does not rebuild earlier bytes" prefix reuse (docs/agent-system/agent-runtime-design.md
-    // §229-236) is UNIMPLEMENTED; whoever implements it must first treat templated text as volatile,
-    // or a stale prefix will be replayed. Do not reclassify here casually — it reorders messages.
-    volatile ||= prompt.content.some((segment) => segment.type === 'binding')
-    ;(volatile ? attemptLog : immutablePrefix).push({
-      role: prompt.role,
-      content: rendered.content
-    })
+    // VOLATILITY BOUNDARY (ADR 0021 + Microscope-lite D1). A message is volatile — excluded from the
+    // reuse-safe immutable prefix — when ANY of:
+    //   (a) it has a `binding` segment (bound values read mutable state);
+    //   (b) `render` is active AND an authored text segment contains template syntax (`<%`/`{{`), since
+    //       templated text evaluates `getvar`/macros against mutable state at render time. `render`
+    //       absent ⇒ text is used verbatim, so it is stable and stays in the prefix;
+    //   (c) it was SUBSTITUTED from `request.prompt` — the assembled stack embeds per-floor state
+    //       (history, lorebook activation), so every substituted message is volatile and only the
+    //       harness policy line remains reusable.
+    // The flag is sticky, so the split stays a single clean cut: dispatch concatenates
+    // `[...immutablePrefix, ...attemptLog]`, so the wire bytes are identical to before — only the split
+    // point moves. Cross-call prefix reuse (agent-runtime-design.md §229-236) is still UNIMPLEMENTED;
+    // this boundary is now truthful so that reuse, and today's visualization, no longer misclassify
+    // templated or assembled messages as immutable.
+    const templated =
+      render !== undefined &&
+      prompt.content.some(
+        (segment) =>
+          segment.type === 'text' &&
+          (segment.text.includes('<%') || segment.text.includes('{{'))
+      )
+    volatile ||=
+      fromAssembledPrompt ||
+      templated ||
+      prompt.content.some((segment) => segment.type === 'binding')
+    const origin: AgentPromptOrigin = fromAssembledPrompt ? 'assembled-preset' : 'agent-prompt'
+    if (volatile) {
+      attemptLog.push({ role: prompt.role, content: rendered.content })
+      logOrigins.push(origin)
+    } else {
+      immutablePrefix.push({ role: prompt.role, content: rendered.content })
+      prefixOrigins.push(origin)
+    }
   }
   attemptLog.push({ role: 'user', content: JSON.stringify(request.input) })
-  if (options.addendum) attemptLog.push({ role: 'user', content: options.addendum })
-  return { ok: true, immutablePrefix, attemptLog }
+  logOrigins.push('input')
+  if (options.addendum) {
+    attemptLog.push({ role: 'user', content: options.addendum })
+    logOrigins.push('addendum')
+  }
+  return { ok: true, immutablePrefix, attemptLog, origins: [...prefixOrigins, ...logOrigins] }
 }

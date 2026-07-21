@@ -1,4 +1,5 @@
 import type { AgentRole } from './types'
+import type { AgentPromptOrigin, AgentRunContextBudget } from './runs'
 
 /**
  * Renderer-facing projections of the Agent catalog.
@@ -91,6 +92,51 @@ export type AgentManualRunResult =
   | { ok: true; status: 'skipped' }
   | { ok: false; error: string; code?: string }
 
+/**
+ * One message of a dry-run Prompt Preview (Microscope-lite D4). Byte-identical to what a real run
+ * would dispatch for the same floor/vars, plus its coarse origin badge.
+ */
+export interface AgentPromptPreviewMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string
+  origin?: AgentPromptOrigin
+}
+
+/**
+ * Result of the pre-run Prompt Preview (design §D4): the exact messages an Agent run WOULD send against
+ * the latest committed floor, with token attribution and provider/preset info, computed with ZERO
+ * provider calls and ZERO side effects. `prefixCount` is the modeled reuse-boundary index — the number
+ * of leading messages that are reuse-safe (immutable prefix). The preview reflects the floor/vars as
+ * they stand NOW; a later run re-renders and may differ.
+ */
+export type AgentPromptPreview =
+  | {
+      ok: true
+      messages: AgentPromptPreviewMessage[]
+      prefixCount: number
+      attribution: AgentRunContextBudget
+      provider?: {
+        presetId: string
+        presetName: string
+        provider: string
+        model: string
+        contextWindow: number
+        cacheMode: string
+      }
+      warnings: string[]
+    }
+  | {
+      ok: false
+      code:
+        | 'INVALID_REQUEST'
+        | 'NO_COMMITTED_FLOOR'
+        | 'AGENT_NOT_FOUND'
+        | 'PROMPT_BINDING_MISSING'
+        | 'PROVIDER_SELECTION'
+        | 'PREVIEW_FAILED'
+      message?: string
+    }
+
 export const AGENT_CATALOG_CHANNELS = {
   list: 'agent-catalog-list',
   get: 'agent-catalog-get',
@@ -106,6 +152,9 @@ export const AGENT_CATALOG_CHANNELS = {
   inspectUpgrade: 'agent-catalog-inspect-upgrade',
   upgrade: 'agent-catalog-upgrade',
   run: 'agent-catalog-run',
+  // Dry-run Prompt Preview (Microscope-lite D4): builds the exact prompt an Agent WOULD send against the
+  // latest committed floor, with zero provider calls and zero side effects.
+  previewPrompt: 'agent-catalog-preview-prompt',
   // Profile-local invocation config (M5b) — the re-homed per-Agent API preset. Kept off the definition
   // get/edit channels because it never belongs to the portable definition (never exported).
   getInvocationConfig: 'agent-catalog-get-invocation-config',

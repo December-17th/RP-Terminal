@@ -399,7 +399,14 @@ describe('HarnessRunAdapter', () => {
     // Rendering happened once, and the record is the dispatched message list verbatim.
     expect(renders).toBe(1)
     const dispatched = scripted.requests[0].messages.map(({ role, content }) => ({ role, content }))
-    expect(runStore.get('chat-1', 'single-render')?.renderedPrompt).toEqual(dispatched)
+    const recorded = runStore.get('chat-1', 'single-render')?.renderedPrompt
+    // Bytes are the dispatched message list verbatim; each carries its coarse origin (D3).
+    expect(recorded?.map(({ role, content }) => ({ role, content }))).toEqual(dispatched)
+    expect(recorded?.map((message) => message.origin)).toEqual([
+      'harness-policy',
+      'agent-prompt',
+      'input'
+    ])
     expect(dispatched.some((message) => message.content.includes('[render#1]'))).toBe(true)
   })
 

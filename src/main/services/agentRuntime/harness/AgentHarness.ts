@@ -35,6 +35,7 @@ import { cancelledFailure, correctiveMessage, sleepWithSignal } from './retry'
 import { compileJsonSchema } from './schemaValidation'
 import type {
   AgentHarness,
+  ContextBudgetAttribution,
   CreateAgentHarnessOptions,
   HarnessAttemptEvidence,
   HarnessEvidence,
@@ -185,6 +186,10 @@ const runAttempt = async ({
   let finalFinishReason: ProviderResult['finishReason'] | undefined
   let currentStep = 0
   let lastDispatchedAttemptLog: ProviderMessage[] | undefined
+  // Step-0 token attribution, captured once the first provider step computes it (D2). Surfaced on this
+  // attempt's evidence regardless of outcome, so every finished run carries a budget — not only the
+  // CONTEXT_BUDGET failures that historically copied it onto the failure shape.
+  let stepZeroBudget: ContextBudgetAttribution | undefined
   const orderedIrreversibleBoundaries = (): IrreversibleBoundaryEvidence[] =>
     structuredClone(
       [...irreversibleBoundaries].sort(
@@ -235,6 +240,7 @@ const runAttempt = async ({
         ...(irreversibleBoundaries.length
           ? { irreversibleBoundaries: orderedIrreversibleBoundaries() }
           : {}),
+        ...(stepZeroBudget ? { contextBudget: stepZeroBudget } : {}),
         error: effectiveFailure
       }
     }
@@ -259,6 +265,7 @@ const runAttempt = async ({
       provider.preset.parameters.max_tokens ?? 0,
       contextWindowTokens
     )
+    if (currentStep === 0) stepZeroBudget = budget
     if (budget.total > budget.limit) {
       return fail({
         code: 'CONTEXT_BUDGET',
@@ -676,6 +683,7 @@ const runAttempt = async ({
       ...(irreversibleBoundaries.length
         ? { irreversibleBoundaries: orderedIrreversibleBoundaries() }
         : {}),
+      ...(stepZeroBudget ? { contextBudget: stepZeroBudget } : {}),
       ...(repairs?.length ? { repairs } : {})
     }
   }
@@ -775,7 +783,10 @@ export const createAgentHarness = ({
     }
     // Publish THESE bytes — the ones every attempt below is built from — to whoever records the run.
     // Rendering happens exactly once per execution; nobody downstream re-renders (see `onPromptBuilt`).
-    request.onPromptBuilt?.([...context.immutablePrefix, ...context.attemptLog])
+    request.onPromptBuilt?.(
+      [...context.immutablePrefix, ...context.attemptLog],
+      context.origins
+    )
     const tools = preflightTools(
       request.definition,
       toolRegistry,
@@ -808,6 +819,8 @@ export const createAgentHarness = ({
       })
       if (outcome.ok) {
         evidence.attempts.push(outcome.evidence)
+        // Record-level budget reflects the LATEST attempt (D2), populated on every finished run.
+        if (outcome.evidence.contextBudget) evidence.contextBudget = outcome.evidence.contextBudget
         return {
           ok: true,
           result: outcome.value,
@@ -823,6 +836,9 @@ export const createAgentHarness = ({
           ? 'retry'
           : 'failure'
       evidence.attempts.push(outcome.evidence)
+      // Record-level budget reflects the LATEST attempt (D2), populated on every finished run; the
+      // failure-shape copy below stays as the fallback for a CONTEXT_BUDGET failure.
+      if (outcome.evidence.contextBudget) evidence.contextBudget = outcome.evidence.contextBudget
       if (!canRetry) {
         outcome.evidence.discardedOperations = outcome.transaction.stagedOperations().length
         outcome.transaction.discard()
