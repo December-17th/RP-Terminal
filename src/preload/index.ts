@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { VarsOrigin } from '../shared/thRuntime/types'
-import { AGENT_CATALOG_CHANNELS, CARD_AGENT_CHANNELS } from '../shared/agentRuntime'
+import { AGENT_CATALOG_CHANNELS, AGENT_LAB_CHANNELS, CARD_AGENT_CHANNELS } from '../shared/agentRuntime'
 import type {
   AgentRunCancelResult,
   AgentRunEvent,
@@ -240,6 +240,29 @@ const api = {
     ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.getInvocationConfig, profileId, id),
   setAgentInvocationConfig: (profileId: string, id: string, config: { apiPresetId?: string }) =>
     ipcRenderer.invoke(AGENT_CATALOG_CHANNELS.setInvocationConfig, profileId, id, config),
+  // Agent Lab (case fixtures). Gated main-side: cards never reach these.
+  listAgentLabCases: (profileId: string, agentId: string) =>
+    ipcRenderer.invoke(AGENT_LAB_CHANNELS.list, profileId, agentId),
+  getAgentLabCase: (profileId: string, caseId: string) =>
+    ipcRenderer.invoke(AGENT_LAB_CHANNELS.get, profileId, caseId),
+  captureAgentLabCase: (profileId: string, chatId: string, invocationId: string, name: string) =>
+    ipcRenderer.invoke(AGENT_LAB_CHANNELS.captureFromRun, profileId, chatId, invocationId, name),
+  createAgentLabCaseFromInput: (
+    profileId: string,
+    agentId: string,
+    name: string,
+    input: unknown
+  ) => ipcRenderer.invoke(AGENT_LAB_CHANNELS.createFromInput, profileId, agentId, name, input),
+  renameAgentLabCase: (profileId: string, caseId: string, name: string) =>
+    ipcRenderer.invoke(AGENT_LAB_CHANNELS.rename, profileId, caseId, name),
+  deleteAgentLabCase: (profileId: string, caseId: string) =>
+    ipcRenderer.invoke(AGENT_LAB_CHANNELS.remove, profileId, caseId),
+  replayAgentLabCase: (profileId: string, chatId: string, caseId: string) =>
+    ipcRenderer.invoke(AGENT_LAB_CHANNELS.replay, profileId, chatId, caseId),
+  runAgentLabCaseLive: (profileId: string, chatId: string, caseId: string) =>
+    ipcRenderer.invoke(AGENT_LAB_CHANNELS.runLive, profileId, chatId, caseId),
+  getAgentLabRun: (profileId: string, chatId: string, invocationId: string) =>
+    ipcRenderer.invoke(AGENT_LAB_CHANNELS.getRun, profileId, chatId, invocationId),
   cardAgentRun: (request: unknown) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.run, request),
   cardAgentRunPlan: (request: unknown) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.runPlan, request),
   cardAgentCancel: (requestId: string) => ipcRenderer.invoke(CARD_AGENT_CHANNELS.cancel, requestId),

@@ -2884,7 +2884,7 @@ select {
 .tstrip-agent-status__items {
   max-width: 100%;
   justify-content: center;
-  gap: 8px;
+  gap: 16px;
   overflow: hidden;
 }
 .tstrip-agent-status__item {
@@ -2934,7 +2934,6 @@ button.tstrip-agent-status__more:hover {
   font-weight: 600;
   text-overflow: ellipsis;
 }
-.tstrip-agent-status__state,
 .tstrip-agent-status__floor,
 .tstrip-agent-status__more,
 .tstrip-agent-status__message,
@@ -2954,11 +2953,6 @@ button.tstrip-agent-status__more:hover {
 }
 @container (max-width: 360px) {
   .tstrip-agent-status__floor {
-    display: none;
-  }
-}
-@container (max-width: 260px) {
-  .tstrip-agent-status__state {
     display: none;
   }
 }
@@ -4704,6 +4698,108 @@ button.tstrip-agent-status__more:hover {
   cursor: pointer;
 }
 .agent-runs__row-open:hover {
+  background: var(--rpt-surface-2, rgba(127, 127, 127, 0.1));
+}
+.agent-runs__detail-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Agent Lab tab (case fixtures) — reuses the run-detail card styles for inspector/diff panels. */
+.agent-lab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.agent-lab__intro h4 {
+  margin: 0 0 2px;
+}
+.agent-lab__capture {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+  border-radius: 8px;
+  background: var(--rpt-surface-2, rgba(127, 127, 127, 0.08));
+}
+.agent-lab__capture-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.agent-lab__cases {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.agent-lab__case {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
+  border-radius: 8px;
+}
+.agent-lab__case-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+.agent-lab__case-name {
+  font-size: 13px;
+}
+.agent-lab__case-meta {
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+}
+.agent-lab__rename {
+  min-width: 200px;
+}
+.agent-lab__case-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agent-lab__runs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-lab__run-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-lab__run {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-lab__run-open {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex: 1 1 auto;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+.agent-lab__run-open:hover {
   background: var(--rpt-surface-2, rgba(127, 127, 127, 0.1));
 }
 

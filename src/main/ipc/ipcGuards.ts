@@ -88,6 +88,17 @@ export const GATED_CHANNELS = [
   // Dry-run Prompt Preview (Microscope-lite): reads floor/vars + preset to build the prompt an Agent
   // WOULD send. No model work, but it exposes prompt/preset detail a trusted card must not reach.
   'agent-catalog-preview-prompt',
+  // Agent Lab (case fixtures). Replaying/live-running a case decides what model work runs (a live run
+  // bills a provider call) and cases expose captured prompts/evidence — a trusted card must not reach.
+  'agent-lab-list',
+  'agent-lab-get',
+  'agent-lab-capture-from-run',
+  'agent-lab-create-from-input',
+  'agent-lab-rename',
+  'agent-lab-remove',
+  'agent-lab-replay',
+  'agent-lab-run-live',
+  'agent-lab-get-run',
   // Inline card Agent transport. Main validates its explicit card scope against the authoritative chat.
   'card-agent-run',
   'card-agent-run-plan',

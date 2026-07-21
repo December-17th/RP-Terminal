@@ -59,6 +59,9 @@ afterEach(() => {
   delete apiOverrides.restoreAgent
   delete apiOverrides.upgradeAgent
   delete apiOverrides.deleteAgent
+  delete apiOverrides.listAgentLabCases
+  delete apiOverrides.runAgentLabCaseLive
+  delete apiOverrides.captureAgentLabCase
   sessionStorage.clear()
 })
 
@@ -658,6 +661,161 @@ describe('Agent-Runtime renderer surfaces mount without crashing', () => {
       settingsOpen: true,
       settingsSection: 'preset'
     })
+  })
+
+  // Agent Lab (Slice B). Reuse one Agent summary + definition; vary the cases the Lab tab lists.
+  const labAgentSummary = {
+    id: 'a1',
+    name: 'Agent One',
+    sourceKind: 'user-authored' as const,
+    sourceKey: 'user:a1',
+    sourceVersion: '1',
+    sourcePresent: true,
+    enabled: true,
+    upgradeAvailable: false,
+    blocksNextTurn: false,
+    resultMode: 'text' as const,
+    promptMessages: 1,
+    promptChars: 5,
+    roles: []
+  }
+  const labDefinition = {
+    format: 'rpt-agent' as const,
+    formatVersion: 1 as const,
+    name: 'Agent One',
+    prompt: [{ role: 'system' as const, content: [{ type: 'text' as const, text: 'Work.' }] }],
+    inputSchema: { type: 'object' as const },
+    result: { mode: 'text' as const },
+    tools: [],
+    defaults: {
+      required: false,
+      maxSteps: 1,
+      maxRetryAttempts: 3,
+      retryDelayMs: 3000,
+      blocksNextTurn: false,
+      toolResultMaxTokens: 10000,
+      notification: 'failure' as const
+    }
+  }
+  const capturedCase = {
+    id: 'case-1',
+    agentId: 'a1',
+    agentName: 'Agent One',
+    name: 'Captured case',
+    createdAt: '2026-07-21T00:00:00.000Z',
+    agentHash: 'abcdef1234567890',
+    sourceInvocationId: 'run-src',
+    hasSource: true,
+    runs: [
+      {
+        invocationId: 'run-y',
+        chatId: 'smoke-chat-1',
+        mode: 'live' as const,
+        startedAt: '2026-07-21T01:00:00.000Z',
+        status: 'succeeded'
+      }
+    ]
+  }
+  const authoredCase = {
+    id: 'case-2',
+    agentId: 'a1',
+    agentName: 'Agent One',
+    name: 'Authored case',
+    createdAt: '2026-07-21T02:00:00.000Z',
+    hasSource: false,
+    runs: []
+  }
+
+  async function openLabTab(cases: unknown[]): Promise<ReturnType<typeof render>> {
+    await seedActiveSession()
+    apiOverrides.listAgentCatalog = async () => [labAgentSummary]
+    apiOverrides.getAgentDefinition = async () => labDefinition
+    apiOverrides.listAgentLabCases = async () => cases
+    const { useAgentCatalogStore } = await import('../../src/renderer/src/stores/agentCatalogStore')
+    useAgentCatalogStore.setState({ agents: [], definitions: {}, bindings: {} })
+    const { AgentWorkspace } =
+      await import('../../src/renderer/src/components/agents/AgentWorkspace')
+    const view = render(<AgentWorkspace profileId="p1" />)
+    fireEvent.click(await view.findByRole('button', { name: /Agent One/i }))
+    fireEvent.click(await view.findByRole('button', { name: 'Lab' }))
+    return view
+  }
+
+  it('Lab tab lists saved cases for the selected Agent', async () => {
+    const view = await openLabTab([capturedCase])
+    expect(await view.findByText('Captured case')).toBeTruthy()
+    expect(view.getByText(/Captured against/)).toBeTruthy()
+  })
+
+  it('disables Replay for an authored case with no captured source', async () => {
+    const view = await openLabTab([authoredCase])
+    await view.findByText('Authored case')
+    const replay = view.getByRole('button', { name: 'Replay' }) as HTMLButtonElement
+    expect(replay.disabled).toBe(true)
+  })
+
+  it('gates Run live behind a spend confirmation before dispatching', async () => {
+    let liveCalls = 0
+    apiOverrides.runAgentLabCaseLive = async () => {
+      liveCalls += 1
+      return { ok: true, invocationId: 'run-live', status: 'succeeded' }
+    }
+    const view = await openLabTab([capturedCase])
+    await view.findByText('Captured case')
+    fireEvent.click(view.getByRole('button', { name: 'Run live' }))
+    const dialog = view
+      .getByText('Run “Captured case” live?')
+      .closest('.modal-panel') as HTMLElement
+    expect(within(dialog).getByText(/spends real tokens/)).toBeTruthy()
+    expect(liveCalls).toBe(0)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Run live' }))
+    await vi.waitFor(() => expect(liveCalls).toBe(1))
+  })
+
+  it('captures a run as a Lab case from the run detail', async () => {
+    await seedActiveSession()
+    apiOverrides.listAgentCatalog = async () => [labAgentSummary]
+    apiOverrides.getAgentDefinition = async () => labDefinition
+    apiOverrides.listAgentRuns = async () => [
+      {
+        invocationId: 'run-capture',
+        chatId: 'smoke-chat-1',
+        agentName: 'Agent One',
+        status: 'succeeded',
+        floor: 1,
+        startedAt: '2026-07-21T10:00:00.000Z',
+        finishedAt: '2026-07-21T10:00:00.100Z',
+        metrics: { retries: 0 },
+        attempts: [],
+        warnings: []
+      }
+    ]
+    let captureArgs: unknown[] = []
+    apiOverrides.captureAgentLabCase = async (...args: unknown[]) => {
+      captureArgs = args
+      return { ok: true, case: capturedCase }
+    }
+    const { useAgentCatalogStore } = await import('../../src/renderer/src/stores/agentCatalogStore')
+    useAgentCatalogStore.setState({ agents: [], definitions: {}, bindings: {} })
+    const { AgentWorkspace } =
+      await import('../../src/renderer/src/components/agents/AgentWorkspace')
+    const view = render(<AgentWorkspace profileId="p1" />)
+    fireEvent.click(await view.findByRole('button', { name: /Agent One/i }))
+    fireEvent.click(await view.findByRole('button', { name: 'Runs' }))
+    // Wait for the tab's async refreshRuns() to paint the history row (its unique timestamp).
+    await view.findByText('2026-07-21T10:00:00.000Z')
+
+    const history = view.container.querySelector('.agent-runs__list') as HTMLElement
+    fireEvent.click(await within(history).findByRole('button', { name: /Agent One/ }))
+    const detail = view.container.querySelector('.agent-runs__detail') as HTMLElement
+    fireEvent.click(within(detail).getByRole('button', { name: 'Save as Lab case' }))
+
+    // The inline name panel is prefilled with a default name; confirm captures without a modal.
+    fireEvent.click(await view.findByRole('button', { name: 'Save case' }))
+    await vi.waitFor(() => expect(captureArgs[0]).toBe('p1'))
+    expect(captureArgs[1]).toBe('smoke-chat-1')
+    expect(captureArgs[2]).toBe('run-capture')
+    expect(typeof captureArgs[3]).toBe('string')
   })
 
   it('AgentsPanel (Settings → Agents) mounts', async () => {

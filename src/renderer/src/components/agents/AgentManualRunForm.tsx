@@ -110,7 +110,8 @@ export function AgentManualRunForm({
   previewing = false,
   hasChat,
   onRun,
-  onPreview
+  onPreview,
+  onSaveCase
 }: {
   inputSchema: JsonSchema
   initialInput?: JsonObject
@@ -119,6 +120,8 @@ export function AgentManualRunForm({
   hasChat: boolean
   onRun: (input: JsonObject) => void
   onPreview?: (input: JsonObject) => void
+  /** When present, renders a ghost button that saves the current (validated) input as a Lab case. */
+  onSaveCase?: (input: JsonObject) => void
 }): React.ReactElement {
   const t = useT()
   const fields = useMemo(() => agentInputFields(inputSchema), [inputSchema])
@@ -287,6 +290,17 @@ export function AgentManualRunForm({
             onClick={() => submit(onPreview)}
           >
             {previewing ? t('agents.run.previewing') : t('agents.run.preview')}
+          </button>
+        ) : null}
+        {onSaveCase ? (
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={rawError}
+            title={t('agents.lab.saveFromInputHint')}
+            onClick={() => submit(onSaveCase)}
+          >
+            {t('agents.lab.saveFromInput')}
           </button>
         ) : null}
       </div>
