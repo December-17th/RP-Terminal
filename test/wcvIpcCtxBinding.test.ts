@@ -72,7 +72,11 @@ vi.mock('../src/main/services/wcvManager', () => ({
   notifyVarsChanged: h.notifyVarsChanged,
   requestOverlay: h.requestOverlay,
   pushHostReload: h.pushHostReload,
-  pushHostVars: h.pushHostVars
+  pushHostVars: h.pushHostVars,
+  // DisplayHost render broker (ADR 0023): registerWcvIpc wires these at registration time.
+  sendToMain: vi.fn(),
+  chatScopeFor: vi.fn(() => null),
+  onSlotDestroyed: vi.fn(() => () => {})
 }))
 vi.mock('../src/main/services/characterService', () => ({ getCharacter: h.getCharacter }))
 vi.mock('../src/main/services/chatService', () => ({ getChat: h.getChat }))

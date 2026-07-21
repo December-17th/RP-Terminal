@@ -82,6 +82,11 @@ export function createNullHost(ctx?: CardCtx): Host {
     generateRaw: async () => '',
     getDuelPreview: async () => null,
 
+    // --- DisplayHost (ADR 0023) — inert; a real transport serves it via the render broker ---
+    renderFloors: async () => [],
+    displayRevision: () => 0,
+    setDisplayStreamEnabled: async () => {},
+
     // --- EngineHost ---
     evalTemplate: () => '',
     evalTemplateError: () => null,

@@ -502,6 +502,13 @@ export function createInlineHost(ctx: CardCtx): Host {
         return null
       }
     },
+    // --- DisplayHost (ADR 0023) ---
+    // Inline (non-WCV) DisplayHost parity is a NON-GOAL for v1 (docs/display-host-design.md §3.2): an
+    // inline card already renders inside the native transcript, and a card that OWNS the transcript is
+    // a WCV cartridge by definition. Inert stubs keep the flat Host intersection satisfied.
+    renderFloors: async () => [],
+    displayRevision: () => 0,
+    setDisplayStreamEnabled: async () => {},
     // Overlay surfaces (PM-A7): the same app mechanism as the WCV transport. Inline cards pass their
     // ctx explicitly (main resolves the WCV transport's ctx from e.sender instead); main validates the
     // id against the active card's panel_ui.overlays and mounts/closes the overlay WCV over the play area.

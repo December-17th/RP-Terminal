@@ -132,7 +132,12 @@ export const WCV_CHANNEL_SPEC: Record<WcvSpecMember, ChannelSpec> = {
   // --- GenHost ---
   generate: { channel: 'wcv-host-generate', kind: 'invoke' },
   generateRaw: { channel: 'wcv-host-generate-raw', kind: 'invoke' },
-  getDuelPreview: { channel: 'wcv-host-duel-preview', kind: 'invoke' }
+  getDuelPreview: { channel: 'wcv-host-duel-preview', kind: 'invoke' },
+
+  // --- DisplayHost (ADR 0023) ---
+  renderFloors: { channel: 'wcv-host-render-floors', kind: 'invoke' },
+  displayRevision: { channel: 'wcv-host-display-revision-sync', kind: 'sync', fallback: 0 },
+  setDisplayStreamEnabled: { channel: 'wcv-host-display-stream-enabled', kind: 'invoke' }
 }
 
 /**

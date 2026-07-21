@@ -127,6 +127,32 @@ const api = {
     ipcRenderer.send('wcv-broadcast-vars', chatId, statData, origin),
   wcvBroadcastEvent: (chatId: string, name: string, payload: unknown) =>
     ipcRenderer.send('wcv-broadcast-event', chatId, name, payload),
+  // DisplayHost render broker (ADR 0023): main forwards a WCV card's renderFloors to THIS renderer,
+  // which renders the floors and replies. `onDisplayRenderRequest` returns a disposer. The renderer
+  // also pushes revision bumps and receives the set of chats with ≥1 stream-opted-in panel.
+  onDisplayRenderRequest: (
+    cb: (req: {
+      reqId: number
+      profileId: string
+      chatId: string
+      from: number
+      to: number
+      scope?: unknown
+    }) => void
+  ) => {
+    const l = (_e: unknown, req: any): void => cb(req)
+    ipcRenderer.on('display-render-request', l)
+    return () => ipcRenderer.removeListener('display-render-request', l)
+  },
+  sendDisplayRenderResponse: (msg: { reqId: number; views: unknown }) =>
+    ipcRenderer.send('display-render-response', msg),
+  sendDisplayRevisionChanged: (revision: number) =>
+    ipcRenderer.send('display-revision-changed', revision),
+  onDisplayStreamEnabledChats: (cb: (chatIds: string[]) => void) => {
+    const l = (_e: unknown, chatIds: string[]): void => cb(Array.isArray(chatIds) ? chatIds : [])
+    ipcRenderer.on('display-stream-enabled-chats', l)
+    return () => ipcRenderer.removeListener('display-stream-enabled-chats', l)
+  },
   generate: (profileId: string, chatId: string, userAction: string, source?: 'player' | 'script') =>
     ipcRenderer.invoke('generate', profileId, chatId, userAction, source),
   regenerate: (profileId: string, chatId: string) =>
