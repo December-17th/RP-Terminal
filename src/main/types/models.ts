@@ -55,6 +55,20 @@ export interface ModeConfig {
   addendum: string
 }
 
+/** Shujuku-style long-memory candidate retrieval. Dense vectors remain derived cache data inside the
+ * chat's session.sqlite; no external vector store or sidecar index participates in this contract. */
+export interface MemoryRetrievalSettings {
+  enabled: boolean
+  /** Saved OpenAI-compatible API preset used only for `/embeddings`; blank = sparse BM25 only. */
+  embedding_api_preset_id: string
+  /** Keep the full catalogue below this row count. */
+  activation_threshold: number
+  /** Newest rows retained independently of retrieval scores. */
+  recent_fixed_count: number
+  /** Older rows retained after BM25/dense Reciprocal Rank Fusion. */
+  candidate_limit: number
+}
+
 export interface Settings {
   // The live/active connection used by generation. Mirrors the selected api_preset.
   api: {
@@ -117,6 +131,7 @@ export interface Settings {
     /** When true (default), a new session with no memory-table template assigned pops a one-time
      *  reminder to set one. Disabled globally from Settings (or the popup's "don't remind me"). */
     remind_set_template?: boolean
+    retrieval: MemoryRetrievalSettings
   }
   /** ST-Prompt-Template EJS engine (`<% %>` template processing) on/off. */
   templates: {

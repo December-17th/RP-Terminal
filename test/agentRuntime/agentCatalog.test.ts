@@ -17,6 +17,7 @@ import {
   type AgentImportPackage
 } from '../../src/main/services/agentRuntime/catalog/AgentCatalog'
 import { getProfiles } from '../../src/main/services/profileService'
+import { MEMORY_RECALL_AGENT_NAME } from '../../src/shared/memoryRecall'
 
 const textAgent = (name: string, prompt = `${name} prompt`) => ({
   format: 'rpt-agent' as const,
@@ -47,6 +48,15 @@ describe('AgentCatalog', () => {
     const catalog = new AgentCatalog('p')
     // The Classic Narrator / Yuzu Scene Director decoys no longer seed, so no role is auto-bound.
     expect(catalog.getRoleBindings()).toEqual({})
+    expect(catalog.get(MEMORY_RECALL_AGENT_NAME)).toMatchObject({
+      source: { kind: 'builtin', key: 'memory-recall' },
+      enabled: false,
+      effective: {
+        result: { mode: 'text' },
+        defaults: { required: false, maxSteps: 1, blocksNextTurn: false }
+      }
+    })
+    expect(catalog.get('Memory Maintenance')?.enabled).toBe(true)
 
     catalog.create(textAgent('Shared Name'))
     expect(() =>

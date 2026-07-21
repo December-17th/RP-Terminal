@@ -1,7 +1,7 @@
 # Table templates — the chatSheets v2 import surface (SQL-table memory)
 
 **Status:** Current contract. chatSheets v2 import, per-chat enablement, the Tables view, validated SQL
-writes, op-log/rewind, direct Classic prompt projection, built-in Agent maintenance, template export,
+writes, op-log/rewind, direct Classic prompt projection, built-in Agent recall and maintenance, template export,
 structural migration, refill, and per-table progress are implemented. World Cards may embed templates
 in `data.extensions.rp_terminal.table_templates[]`; import adds them to the profile library without
 auto-assigning them to a chat.
@@ -99,7 +99,7 @@ silently create duplicates. Importing the card as a new world still installs its
 | `sourceData.note`                            | `note`                                | Table-definition prompt.                                                                                                                                                                                        |
 | `sourceData.{init,insert,update,delete}Node` | `{init,insert,update,delete}Node`     | Per-op AI instructions; default `''`.                                                                                                                                                                           |
 | `updateConfig.updateFrequency`               | `updateFrequency`                     | `-1`/absent → **`-1` = use the global default** `settings.tables.default_update_frequency` (default 3); `0` = **off** (excluded from auto-maintenance); positive ints kept. `<= -2` clamped to `-1` (issue 04). |
-| `exportConfig.*`                             | `exportConfig.*`                      | Verbatim (see below); projected by `generation/classicStages.ts` through the direct Classic prompt path.                                                                                                                                   |
+| `exportConfig.*`                             | `exportConfig.*`                      | Verbatim (see below); projected by `generation/classicStages.ts` through the direct Classic prompt path.                                                                                                        |
 | `mate.globalInjectionConfig`                 | `TableTemplate.globalInjection`       | `readableEntryPlacement` / `wrapperPlacement`.                                                                                                                                                                  |
 
 ### `exportConfig` mapping (direct Classic projection)
@@ -147,6 +147,65 @@ memory-tail block; `exportConfig` controls entry activation and placement.
   keeps `parseChatSheets(exportChatSheets(tpl))` lossless-for-the-model (the reader never emits a
   non-default value), so the round-trip test stays honest (`test/chatSheetsParser.test.ts`). It is
   editable via the same `table-template-update` patch (`injectionPolicy?`); the editing **UI is WS6+**.
+
+## Memory Recall Agent — opt-in pre-turn selection
+
+Memory Recall is the seeded built-in Agent with `source_key = memory-recall`. It is disabled by default
+because an eligible turn adds one awaited provider call. Its profile-local Agent settings own the enabled
+switch, API preset, and editable prompt. The definition is `required: false`, `maxSteps: 1`, and
+`blocksNextTurn: false`: Classic already awaits this current-turn call instead of scheduling it from a
+floor-commit trigger.
+
+`services/memoryRecallService.ts` prepares the invocation input and explicitly runs the Agent through the
+shared Invocation Runtime before prompt assembly. That runtime owns the Run Record, endpoint budget,
+cancellation, and configured API preset. The call runs only when the chat has either an enabled
+`exportConfig.extraIndexEnabled` table or a non-empty `notes.md`; otherwise it is a zero-call no-op.
+On an eligible turn it:
+
+1. passes a full or locally narrowed summary index, notes table of contents, prior plan, recent transcript,
+   pending player action, user persona, and character context as the Agent invocation input;
+2. asks for `<Recall>`, `<Query>`, `<QuestPlan>`, and `<StoryEngine>` tags;
+3. resolves `<Recall>` codes by exact key over the same candidate-row snapshot the Agent saw—Agent
+   text is never SQL and cannot select a row hidden by retrieval;
+4. greps requested note sections locally with the CJK-safe notes engine;
+5. caps resolved rows at 24 and note sections at 6, injects one composed block into `assemblePrompt`'s
+   memory tail, and persists the display-only `plot_block` on the resulting floor.
+
+The Run Record is attached to the latest committed source floor, while the resulting floor receives the
+new `plot_block`. That prior-floor plan supplies the next turn's advisory state, so truncation/rewind
+naturally removes stale plans. Failed or cancelled Agent runs return no recall block and the main turn
+continues fail-open; failed runs also show a localized renderer warning. This fail-open policy is RP
+Terminal's explicit behavior.
+
+### Large-catalog retrieval
+
+`services/memory/memoryRetrieval.ts` narrows large code-keyed catalogues before the Agent call. The
+retrieval switch defaults on, but the full eligible code-keyed catalogue remains unchanged below 200
+rows. At or above the threshold it mirrors Shujuku's Crossfire shape:
+
+- the query is the pending player action plus the three-floor recent transcript;
+- the newest 50 rows **per table** are retained independently of score;
+- older rows are ranked by BM25 (`k1 = 1.5`, `b = 0.75`, at most 1000 sparse candidates) using NFKC,
+  lower-cased Latin/code terms and CJK unigrams+bigrams;
+- when an OpenAI-compatible embedding preset is selected, cosine matches at `>= 0.45` join BM25 via
+  reciprocal-rank fusion (`k = 60`); without one, retrieval is BM25-only;
+- at most 200 ranked older rows are unioned with the fixed recent rows, de-duplicated, then restored to
+  original table/row order before rendering the Agent catalogue.
+
+The threshold, recent count, candidate count, and enabled flag are profile settings; the current Settings
+UI exposes the switch, threshold, and embedding preset. Embeddings are a derived, fingerprinted cache in
+the chat's existing `session.sqlite` table `memory_retrieval_embeddings`; canonical memories remain rows
+in `table.sqlite`. There is no vector database or vector sidecar. Missing, stale, or corrupt vectors are
+rebuilt lazily. An absent/unsupported preset or an embedding failure logs the degradation and preserves
+the deterministic BM25 result. Cancellation still aborts the Recall Agent turn rather than starting work
+after Stop (`memoryRetrieval.ts`, `sessionDbService.ts`, `settingsService.ts`).
+
+The Shujuku artifacts establish recall as a blocking pre-generation selector over compact memory codes,
+with local expansion of the chosen rows in the same narrator turn. RP Terminal adopts its recent-row,
+BM25, dense, and RRF candidate shape but keeps the vector cache in per-chat SQLite. It currently uses the
+pending action plus recent story directly rather than Shujuku's separate keyword-generation call, has no
+external reranker, and intentionally keeps one planner call rather than Shujuku's three serial plot tasks.
+Markdown-note `<Query>` retrieval is an RP Terminal extension, not claimed Shujuku parity.
 
 ## Verified against the real template
 
@@ -353,6 +412,7 @@ auto-maintain by the stale expiry:
 - `tryBeginTableWrite(chatId): boolean` / `endTableWrite(chatId)` — thin wrappers for short-hold
   callers (`applyTableEdit`, backfill, hand-edit, and sandbox rebuild) that complete well inside 120s.
   A busy chat yields a recoverable `busy` result so automatic maintenance can retry later.
+
 ### Refill engine (`tableRefillService.ts` — the chunk-committed regenerate)
 
 `startRefill(profileId, chatId, { tables?, fromFloor?, extraHint?, apiPresetId?, retries?, batchSize? })`

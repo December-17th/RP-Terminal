@@ -93,7 +93,9 @@ describe('settings normalize', () => {
 
   it('migrates a legacy single persona into a one-entry library and projects it back', () => {
     const s = normalize({ persona: { name: 'Lyra', description: 'a mage', inject: true } as any })
-    expect(s.personas).toEqual([{ id: 'default', name: 'Lyra', description: 'a mage', inject: true }])
+    expect(s.personas).toEqual([
+      { id: 'default', name: 'Lyra', description: 'a mage', inject: true }
+    ])
     expect(s.active_persona_id).toBe('default')
     // The `persona` mirror is projected from the active preset.
     expect(s.persona).toEqual({ name: 'Lyra', description: 'a mage', inject: true })
@@ -183,6 +185,13 @@ describe('settings tables section (memory-table reminder)', () => {
     expect(t.default_update_frequency).toBe(3)
     expect(t.injection_max_rows).toBe(20)
     expect(t.remind_set_template).toBe(true)
+    expect(t.retrieval).toEqual({
+      enabled: true,
+      embedding_api_preset_id: '',
+      activation_threshold: 200,
+      recent_fixed_count: 50,
+      candidate_limit: 200
+    })
   })
 
   it('preserves a stored remind_set_template=false and keeps the other tables defaults', () => {
@@ -190,6 +199,13 @@ describe('settings tables section (memory-table reminder)', () => {
     expect(s.tables.remind_set_template).toBe(false)
     expect(s.tables.default_update_frequency).toBe(3) // default preserved
     expect(s.tables.injection_max_rows).toBe(20) // default preserved
+  })
+
+  it('deep-merges a partial retrieval override', () => {
+    const s = normalize({ tables: { retrieval: { activation_threshold: 500 } } } as any)
+    expect(s.tables.retrieval.activation_threshold).toBe(500)
+    expect(s.tables.retrieval.recent_fixed_count).toBe(50)
+    expect(s.tables.retrieval.enabled).toBe(true)
   })
 })
 

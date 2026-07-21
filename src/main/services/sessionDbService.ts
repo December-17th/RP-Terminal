@@ -144,6 +144,21 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_runs_chat_floor ON agent_runs(chat_id, floor);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_chat_started ON agent_runs(chat_id, started_at);
+
+-- Derived dense-retrieval cache for Memory Recall. Vectors stay inside the portable per-chat SQL
+-- save; table.sqlite remains the canonical memory data and this cache is safe to rebuild or discard.
+CREATE TABLE IF NOT EXISTS memory_retrieval_embeddings (
+  chat_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  model_key TEXT NOT NULL,
+  dimensions INTEGER NOT NULL,
+  vector_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (chat_id, document_id)
+);
+CREATE INDEX IF NOT EXISTS idx_memory_retrieval_embeddings_chat
+  ON memory_retrieval_embeddings(chat_id);
 `
 
 // ---- pure helpers (unit-tested) --------------------------------------------------------------

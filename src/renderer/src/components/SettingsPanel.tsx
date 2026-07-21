@@ -434,6 +434,95 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               }
             />
 
+            <label
+              className="entry-toggles"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 18 }}
+            >
+              <input
+                type="checkbox"
+                checked={settings.tables?.retrieval?.enabled !== false}
+                onChange={(e) =>
+                  updateSettings(profileId, {
+                    tables: {
+                      default_update_frequency: settings.tables?.default_update_frequency ?? 3,
+                      injection_max_rows: settings.tables?.injection_max_rows ?? 20,
+                      ...settings.tables,
+                      retrieval: {
+                        enabled: e.target.checked,
+                        embedding_api_preset_id:
+                          settings.tables?.retrieval?.embedding_api_preset_id ?? '',
+                        activation_threshold:
+                          settings.tables?.retrieval?.activation_threshold ?? 200,
+                        recent_fixed_count: settings.tables?.retrieval?.recent_fixed_count ?? 50,
+                        candidate_limit: settings.tables?.retrieval?.candidate_limit ?? 200
+                      }
+                    }
+                  })
+                }
+              />
+              {t('settings.memoryRetrievalEnabled')}
+            </label>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('settings.memoryRetrievalHint')}
+            </div>
+
+            <label className="field-label" style={{ marginTop: 14 }}>
+              {t('settings.memoryEmbeddingPreset')}
+            </label>
+            <select
+              value={settings.tables?.retrieval?.embedding_api_preset_id ?? ''}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  tables: {
+                    default_update_frequency: settings.tables?.default_update_frequency ?? 3,
+                    injection_max_rows: settings.tables?.injection_max_rows ?? 20,
+                    ...settings.tables,
+                    retrieval: {
+                      enabled: settings.tables?.retrieval?.enabled !== false,
+                      embedding_api_preset_id: e.target.value,
+                      activation_threshold:
+                        settings.tables?.retrieval?.activation_threshold ?? 200,
+                      recent_fixed_count: settings.tables?.retrieval?.recent_fixed_count ?? 50,
+                      candidate_limit: settings.tables?.retrieval?.candidate_limit ?? 200
+                    }
+                  }
+                })
+              }
+            >
+              <option value="">{t('settings.memoryEmbeddingPresetNone')}</option>
+              {settings.api_presets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.name} · {preset.model}
+                </option>
+              ))}
+            </select>
+
+            <label className="field-label" style={{ marginTop: 14 }}>
+              {t('settings.memoryRetrievalThreshold')}
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={settings.tables?.retrieval?.activation_threshold ?? 200}
+              onChange={(e) =>
+                updateSettings(profileId, {
+                  tables: {
+                    default_update_frequency: settings.tables?.default_update_frequency ?? 3,
+                    injection_max_rows: settings.tables?.injection_max_rows ?? 20,
+                    ...settings.tables,
+                    retrieval: {
+                      enabled: settings.tables?.retrieval?.enabled !== false,
+                      embedding_api_preset_id:
+                        settings.tables?.retrieval?.embedding_api_preset_id ?? '',
+                      activation_threshold: Math.max(1, Number(e.target.value) || 200),
+                      recent_fixed_count: settings.tables?.retrieval?.recent_fixed_count ?? 50,
+                      candidate_limit: settings.tables?.retrieval?.candidate_limit ?? 200
+                    }
+                  }
+                })
+              }
+            />
+
             {/* New-session reminder to assign a memory-table template (templates never auto-bind —
                 assignment is destructive, so we nudge instead of assigning silently). */}
             <label

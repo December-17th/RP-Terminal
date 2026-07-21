@@ -5,7 +5,12 @@ import { getAllFloors, getFloor, saveFloor } from './floorService'
 import { normalizeSwipes } from './swipeHelpers'
 import { collectRenderMarkers } from './promptBuilder'
 import { DeltaCallback } from './apiService'
-import { parseMvuCommands, applyMvuCommands, applyJsonPatch, JsonPatchOp } from '../parsers/mvuParser'
+import {
+  parseMvuCommands,
+  applyMvuCommands,
+  applyJsonPatch,
+  JsonPatchOp
+} from '../parsers/mvuParser'
 import { stripThinking } from '../parsers/contentParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
@@ -151,7 +156,7 @@ export const generate = async (
     }
 
     // SINGLE-PATH, WORKFLOW-FREE CLASSIC (execution-plan M5a single-path → M5c-1 workflow-free). Every
-    // Classic turn takes the DIRECT orchestration (`runClassicTurnDirect` — eight awaited service calls,
+    // Classic turn takes the DIRECT orchestration (`runClassicTurnDirect` — straight-line awaited calls,
     // no engine, no doc, no run-trace/run-history/trigger chain). The detached post-turn chain that fed
     // the deleted workflow trace / run-history / doc-and-pack trigger evaluation is gone; memory
     // maintenance now fires from the M3 floor-commit trigger runtime, not `evaluateDocTriggers`. The
@@ -231,9 +236,7 @@ export const reevaluateVariables = (
   const stat: Record<string, unknown> =
     start > 0
       ? JSON.parse(
-          JSON.stringify(
-            (floors[start - 1].variables as Record<string, unknown>)?.stat_data ?? {}
-          )
+          JSON.stringify((floors[start - 1].variables as Record<string, unknown>)?.stat_data ?? {})
         )
       : {}
   const opsByFloor = new Map<number, VarsOpRow[]>()
@@ -366,7 +369,14 @@ export const generateSwipe = async (
 
   truncateFloors(profileId, chatId, lastIndex)
   // ST generation type 'swipe' — same as regenerate but the prior alternates are preserved below.
-  const fresh = await generate(profileId, chatId, last.user_message.content, onDelta, 'player', 'swipe')
+  const fresh = await generate(
+    profileId,
+    chatId,
+    last.user_message.content,
+    onDelta,
+    'player',
+    'swipe'
+  )
   if (!fresh) {
     // Aborted / empty — restore the original floor so the swipe attempt loses nothing.
     saveFloor(profileId, chatId, last)

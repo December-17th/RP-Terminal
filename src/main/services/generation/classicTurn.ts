@@ -9,15 +9,17 @@ import { persistFloor } from './persistFloor'
 import { runVnGate, mergeYuzuMvu } from '../yuzu/vnGate'
 import { GenContext } from './types'
 import { FloorFile } from '../../types/chat'
+import { runMemoryRecallAgent } from '../memoryRecallService'
 
 /**
  * THE DIRECT CLASSIC ORCHESTRATION (Classic Narrator first execution plan, Milestone 3; single-path as
  * of M5a; workflow-free as of M5c-1).
  *
- * A straight-line reproduction of the eight stages a Classic turn runs — proven, node by node and in this
- * exact order, by the (deleted-with-the-engine) classicTurnInventory characterization — calling the SAME
- * services the corresponding nodes called. No pipeline, graph, hook bus, scheduler, or registry dispatch
- * is involved: this is eight awaited calls. As of M5c-1 the RunResult/NodeTrace scaffolding is gone — the
+ * A straight-line orchestration of the Classic turn. The original eight stages remain in order and call
+ * the same services pinned by the (deleted-with-the-engine) classicTurnInventory characterization; the
+ * opt-in memory-recall module sits between context creation and history compaction. No pipeline, graph,
+ * hook bus, scheduler, or registry dispatch is involved. As of M5c-1 the RunResult/NodeTrace scaffolding
+ * is gone — the
  * turn no longer synthesizes a workflow run for the deleted trace/run-history chain — so this returns the
  * persisted floor directly (`null` on abort, a THROW on a fatal stage, which `generate()` surfaces as a
  * real error rather than a silent user-Stop).
@@ -59,26 +61,30 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
   )
   if (seed === ABORTED) return null
 
-  // ── 2. context.trimProcessed (identity when no progress pointer — returns the SAME object) ─────
+  // ── 2. memory.recall ───────────────────────────────────────────────────────────────────────────
+  // Recall reads the untrimmed seed: it needs the most recent transcript and persisted prior plan even
+  // when table progress lets the main assembly discard every processed floor.
+  const recall = await stage(() => runMemoryRecallAgent(ctx, seed))
+  if (recall === ABORTED) return null
+
+  // ── 3. context.trimProcessed (identity when no progress pointer — returns the SAME object) ─────
   const trimmed = await stage(() => trimProcessedContext(seed))
   if (trimmed === ABORTED) return null
   // From here on `gen` is THE shared object for the rest of the turn (see the header's channel list).
   const gen: GenContext = trimmed
 
-  // ── 3. table.export (silent empty projection when no table template is bound) ──────────────────
+  // ── 4. table.export (silent empty projection when no table template is bound) ──────────────────
   const exported = await stage(() => exportTableEntries(gen, {}))
   if (exported === ABORTED) return null
 
-  // ── 4. prompt.assemble ─────────────────────────────────────────────────────────────────────────
+  // ── 5. prompt.assemble ─────────────────────────────────────────────────────────────────────────
   const assembled = await stage(() => {
     const matched = matchWorldInfo(gen)
     const extra = exported.entries
     const result = assemblePrompt(
       gen,
       extra.length ? [...matched, ...extra] : matched,
-      // The seeded doc leaves assemble's `block` input UNWIRED (export feeds `entries`), so the
-      // memory block is `undefined` here exactly as it was on the workflow path.
-      undefined as unknown as string
+      recall?.block ?? ''
     )
     // OFF-PORT CHANNEL: stamp the forensic record onto the shared `gen` so persistFloor stores it.
     if (result.record) gen.executionRecord = result.record
@@ -87,8 +93,10 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
   if (assembled === ABORTED) return null
   const { sendMessages, params } = assembled
 
-  // ── 5. llm.sample — the ONE provider call, through the Milestone 1 Harness seam ────────────────
-  const sampled = await stage(() => sampleMainCall(ctx, gen, { sendMessages, params }, undefined, {}))
+  // ── 6. llm.sample — the main provider call, through the Milestone 1 Harness seam ───────────────
+  const sampled = await stage(() =>
+    sampleMainCall(ctx, gen, { sendMessages, params }, undefined, {})
+  )
   if (sampled === ABORTED) return null
   if (sampled === null) {
     // Abort-with-EMPTY: nothing to persist. Abort the graph signal so a caller inspecting it sees the
@@ -98,7 +106,7 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
   }
   // Abort-with-TEXT lands here and runs on, so the partial floor is persisted (pre-workflow behavior).
 
-  // ── 6. parse.response ─────────────────────────────────────────────────────────────────────────
+  // ── 7. parse.response ─────────────────────────────────────────────────────────────────────────
   const parsedOut = await stage(async () => {
     // Project Yuzu WP-S2 (ADR 0009 §1): the mode-gated acceptance-gate seam. In VN mode the raw reply
     // runs the WP-B ladder BEFORE anything downstream sees it; the validated/fallback scene text
@@ -124,11 +132,11 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
   })
   if (parsedOut === ABORTED) return null
 
-  // ── 7. apply.state (folds onto gen.workingVars IN PLACE — the by-reference channel) ────────────
+  // ── 8. apply.state (folds onto gen.workingVars IN PLACE — the by-reference channel) ────────────
   const variables = await stage(() => foldState(gen, parsedOut.parsed, parsedOut.mvu, sampled.raw))
   if (variables === ABORTED) return null
 
-  // ── 8. output.writeFloor — the durable write, BEFORE the response is handed over ───────────────
+  // ── 9. output.writeFloor — the durable write, BEFORE the response is handed over ───────────────
   const floor = await stage(() =>
     persistFloor(gen, {
       userAction: gen.userAction,
@@ -140,6 +148,7 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
       events: parsedOut.parsed.events,
       variables,
       metrics: parsedOut.metrics,
+      ...(recall?.plotBlock ? { plot_block: recall.plotBlock } : {}),
       ...(gen.yuzuGate?.trace ? { yuzu_trace: gen.yuzuGate.trace } : {})
     })
   )

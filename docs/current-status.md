@@ -34,11 +34,13 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
 - World portrait assets support a conventional `舞台` 立绘 variant with automatic base-立绘 fallback;
   `.jpe` joins the accepted image extensions.
 - Pure deterministic tactical-combat and deckbuilder engines with native workspace views.
-- Agent Runtime (ADR 0020): a single direct-path Classic Narrator turn, a built-in Memory Maintenance
-  Agent, a declarative commit-boundary cadence trigger for unattended runs, a profile-wide Agent Catalog,
-  floor-owned immutable Run Records, and a typed Agent Activity read/cancel surface. This replaces the
-  former one-canvas workflow/node-graph engine (packs, nodes, canvas, `memory.maintain` node, importable
-  example workflows), which is deleted. SQL-table memory is unchanged.
+- Agent Runtime (ADR 0020): a single direct-path Classic Narrator turn, built-in Memory Recall and Memory
+  Maintenance Agents, a declarative commit-boundary cadence trigger for unattended runs, a profile-wide
+  Agent Catalog, floor-owned immutable Run Records, and a typed Agent Activity read/cancel surface.
+  Classic explicitly invokes and awaits the opt-in recall Agent before prompt assembly; large recall
+  catalogues use recent rows plus CJK-aware BM25 and optional SQLite-cached dense/RRF retrieval, while
+  maintenance runs after commits. This replaces the former one-canvas workflow/node-graph engine (packs,
+  nodes, canvas, `memory.maintain` node, importable example workflows), which is deleted.
 - Partial World Card support: lossless card import, bundled regex/preset/lorebook/agent routing, and JSON
   world export.
 
@@ -70,8 +72,6 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
 
 ## Designed or queued
 
-- Agentic plot recall (`docs/plot-recall-memory-design.md` and `.scratch/plot-recall/`) is designed and
-  ready for implementation but is not part of `main`.
 - The AI-called function/tool loop in `.scratch/ai-called-functions/PRD.md` needs triage.
 - POD card-side game-engine work under `.scratch/pod-game-engine/` spans this repository and the separate
   POD repository. Cartridge import and card-code serving exist on local feature branches only; they are

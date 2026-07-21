@@ -352,6 +352,12 @@ const en: Record<string, string> = {
   'settings.tablesDefaultFrequency': 'Default maintenance frequency (turns)',
   'settings.tablesInjectionMaxRows': 'Table injection row cap ("recent N rows" default)',
   'settings.tablesRemindSetTemplate': 'Remind me to set a memory table template on new sessions',
+  'settings.memoryRetrievalEnabled': 'Hybrid retrieval for long memory indexes',
+  'settings.memoryRetrievalHint':
+    'Keeps recent rows, combines CJK-aware BM25 with optional dense embeddings, and stores embedding vectors only in this session’s SQLite file.',
+  'settings.memoryEmbeddingPreset': 'Embedding API preset (OpenAI-compatible)',
+  'settings.memoryEmbeddingPresetNone': 'None — BM25 only',
+  'settings.memoryRetrievalThreshold': 'Hybrid retrieval activation row count',
   // New-session memory-table reminder popup (TableTemplateReminderModal)
   'tableReminder.title': 'Set a memory table template?',
   'tableReminder.body':
@@ -839,6 +845,7 @@ const en: Record<string, string> = {
   'chat.streamingCard': 'Interactive card renders when generation finishes…',
   // Live side-agent activity indicator (agent-activity-indicator): a SIDE LLM node is calling the API.
   'chat.activity.recall': 'Recalling memories…',
+  'chat.recallFailedOpen': 'Memory recall failed; generating the reply without recalled context.',
   'chat.activity.memoryMaintain': 'Updating memory…',
   'chat.activity.notesMaintain': 'Updating notes…',
   'chat.activity.agent': 'Running agent…',

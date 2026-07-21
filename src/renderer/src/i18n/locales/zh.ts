@@ -345,6 +345,12 @@ const zh: Record<string, string> = {
   'settings.tablesDefaultFrequency': '默认维护频率（轮）',
   'settings.tablesInjectionMaxRows': '表格注入行数上限（「最近 N 行」默认值）',
   'settings.tablesRemindSetTemplate': '新会话时提醒我设置记忆表格模板',
+  'settings.memoryRetrievalEnabled': '长记忆索引启用混合检索',
+  'settings.memoryRetrievalHint':
+    '固定保留近期行，结合适配中日韩文本的 BM25 与可选稠密嵌入；嵌入向量仅存于本会话的 SQLite 文件。',
+  'settings.memoryEmbeddingPreset': '嵌入 API 预设（OpenAI 兼容）',
+  'settings.memoryEmbeddingPresetNone': '无——仅使用 BM25',
+  'settings.memoryRetrievalThreshold': '启用混合检索的行数阈值',
   // 新会话记忆表格提醒弹窗（TableTemplateReminderModal）
   'tableReminder.title': '设置记忆表格模板？',
   'tableReminder.body':
@@ -814,6 +820,7 @@ const zh: Record<string, string> = {
   'chat.streamingCard': '交互卡片将在生成完成后渲染…',
   // 实时侧位智能体活动指示（agent-activity-indicator）：某个侧位 LLM 节点正在调用 API。
   'chat.activity.recall': '正在召回记忆…',
+  'chat.recallFailedOpen': '记忆召回失败；将不带召回上下文继续生成回复。',
   'chat.activity.memoryMaintain': '正在更新记忆…',
   'chat.activity.notesMaintain': '正在更新笔记…',
   'chat.activity.agent': '智能体运行中…',
