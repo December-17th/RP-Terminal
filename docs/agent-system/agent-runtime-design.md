@@ -174,7 +174,8 @@ alias and does not attempt to rewrite arbitrary card-script source. If a player 
 ### 3.3 Bindings and versions
 
 An Agent Binding selects a version-pinned Agent Definition for use by a card or Player-facing Agent
-Role. Source updates never alter a binding silently. Upgrade is explicit and reviewed.
+Role. Source updates never alter a binding silently. Upgrade is explicit: the player chooses whether
+source changes or local customizations win overlapping fields.
 
 Every Agent is editable, including built-in and card-bundled Agents. RP Terminal retains the pinned
 source version as a restoration baseline:
@@ -182,7 +183,7 @@ source version as a restoration baseline:
 - user changes apply profile-wide to every binding of that Agent;
 - Restore to default clears changes back to the current pinned source version;
 - explicit upgrade reapplies still-valid customized fields over the new source version;
-- the upgrade UI shows a diff before activation; and
+- the upgrade UI offers **Keep customizations** and **Use source** strategies; and
 - invalid customizations block activation until the player resolves or restores them.
 
 Built-in and card-bundled Agents remain restorable while their source exists, so they may be disabled
@@ -820,3 +821,9 @@ npm.cmd run check:docs
 Only one architectural decision remains intentionally deferred: whether in-flight Agent Invocations
 survive app reload or restart. The first implementation may cancel them cleanly at shutdown as long
 as no partial Attempt Transaction or Result Incorporation survives.
+
+An **upgrade diff preview** is deferred product UX, not a requirement for the current Agent testing
+surface. The backend inspection contract already reports incoming changed paths, locally customized
+paths, and overlaps ([`catalogView.ts:62`](../../src/shared/agentRuntime/catalogView.ts#L62)); a future
+UI may show those paths before the player selects an upgrade strategy. The current Workspace applies
+the selected strategy directly ([`AgentWorkspace.tsx:258`](../../src/renderer/src/components/agents/AgentWorkspace.tsx#L258)).
