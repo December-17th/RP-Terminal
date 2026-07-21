@@ -20,6 +20,12 @@ export interface CharacterAgentCollision {
   existing: { id: string; name: string }
 }
 
+export type CharacterImportErrorCode =
+  | 'INVALID_RENAMES'
+  | 'IMPORT_FAILED'
+  | 'PARSE_FAILED'
+  | 'REQUEST_EXPIRED'
+
 export type CharacterImportDialogResult =
   | { status: 'imported'; id: string; summary: CharacterImportSummary }
   | {
@@ -29,5 +35,5 @@ export type CharacterImportDialogResult =
       conflicts: CharacterAgentCollision[]
       requiredRenames: string[]
     }
-  | { status: 'invalid-renames'; message: string }
-  | { status: 'failed'; message: string }
+  | { status: 'invalid-renames'; errorCode: 'INVALID_RENAMES' }
+  | { status: 'failed'; errorCode: Exclude<CharacterImportErrorCode, 'INVALID_RENAMES'> }

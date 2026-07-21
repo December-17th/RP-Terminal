@@ -628,9 +628,9 @@ export function AgentEditor({
               })
             }}
           >
-            <option value="text">text</option>
-            <option value="json">json</option>
-            <option value="tools-only">tools-only</option>
+            <option value="text">{t('agents.editor.resultMode.text')}</option>
+            <option value="json">{t('agents.editor.resultMode.json')}</option>
+            <option value="tools-only">{t('agents.editor.resultMode.toolsOnly')}</option>
           </select>
         </label>
 
@@ -676,7 +676,7 @@ export function AgentEditor({
               }
             >
               <option value="">{t('agents.editor.validatorNone')}</option>
-              <option value="yss">yss</option>
+              <option value="yss">{t('agents.editor.validatorYss')}</option>
             </select>
           </label>
         ) : null}
@@ -801,9 +801,9 @@ export function AgentEditor({
               patchDefaults({ notification: event.target.value as NotificationPolicy })
             }
           >
-            <option value="none">none</option>
-            <option value="failure">failure</option>
-            <option value="completion">completion</option>
+            <option value="none">{t('agents.editor.notification.none')}</option>
+            <option value="failure">{t('agents.editor.notification.failure')}</option>
+            <option value="completion">{t('agents.editor.notification.completion')}</option>
           </select>
         </label>
       </section>

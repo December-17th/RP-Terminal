@@ -3,9 +3,12 @@ import type {
   AgentCatalogSummary,
   AgentDefinition,
   AgentFolderSync,
+  AgentMutationResult,
   AgentRole,
   AgentUpgradeResolution
 } from '../../../shared/agentRuntime'
+import { t } from '../i18n'
+import { agentErrorMessage } from '../i18n/errorMessages'
 
 /**
  * Agent Workspace store (Session 10).
@@ -40,24 +43,21 @@ interface AgentCatalogState {
   setError: (error: string | null) => void
 }
 
-const failure = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error ?? 'Unknown error')
-
 export const useAgentCatalogStore = create<AgentCatalogState>((set, get) => {
   /** Run a mutation, refresh the list, and return an error string (or null on success). */
   const mutate = async (
     profileId: string,
-    action: () => Promise<{ ok: boolean; error?: string }>
+    action: () => Promise<AgentMutationResult | { ok: boolean; error?: string; code?: string }>
   ): Promise<string | null> => {
     try {
       const result = await action()
       await get().load(profileId)
       if (result.ok) return null
-      const error = result.error ?? 'Action failed'
+      const error = agentErrorMessage(t, result.code)
       set({ error })
       return error
-    } catch (caught) {
-      const error = failure(caught)
+    } catch {
+      const error = agentErrorMessage(t)
       set({ error })
       return error
     }
@@ -80,8 +80,8 @@ export const useAgentCatalogStore = create<AgentCatalogState>((set, get) => {
           window.api.getAgentRoleBindings(profileId)
         ])
         set({ agents, bindings: bindings ?? {}, loading: false })
-      } catch (caught) {
-        set({ loading: false, error: failure(caught) })
+      } catch {
+        set({ loading: false, error: agentErrorMessage(t) })
       }
     },
 
@@ -92,8 +92,8 @@ export const useAgentCatalogStore = create<AgentCatalogState>((set, get) => {
         const definition = await window.api.getAgentDefinition(profileId, id)
         if (definition) set({ definitions: { ...get().definitions, [id]: definition } })
         return definition
-      } catch (caught) {
-        set({ error: failure(caught) })
+      } catch {
+        set({ error: agentErrorMessage(t) })
         return null
       }
     },
@@ -104,8 +104,8 @@ export const useAgentCatalogStore = create<AgentCatalogState>((set, get) => {
         const sync = await window.api.syncAgentFolder(profileId, conflicts)
         set({ sync, loading: false })
         await get().load(profileId)
-      } catch (caught) {
-        set({ loading: false, error: failure(caught) })
+      } catch {
+        set({ loading: false, error: agentErrorMessage(t) })
       }
     },
 

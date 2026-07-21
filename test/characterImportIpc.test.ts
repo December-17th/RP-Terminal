@@ -97,7 +97,7 @@ describe('character Agent collision IPC continuation', () => {
 
     expect(
       handlers.get('confirm-character-import')!(event, inspection.token, { Shared: 'Shared' })
-    ).toMatchObject({ status: 'invalid-renames' })
+    ).toMatchObject({ status: 'invalid-renames', errorCode: 'INVALID_RENAMES' })
     expect(
       handlers.get('confirm-character-import')!(event, inspection.token, { Shared: 'Unique' })
     ).toMatchObject({ status: 'imported', id: 'new-card' })
@@ -110,7 +110,7 @@ describe('character Agent collision IPC continuation', () => {
     ).toEqual({ ok: true })
     expect(
       handlers.get('confirm-character-import')!(event, inspection.token, { Shared: 'Unique' })
-    ).toMatchObject({ status: 'failed' })
+    ).toMatchObject({ status: 'failed', errorCode: 'REQUEST_EXPIRED' })
     expect(hoisted.importCharacter).not.toHaveBeenCalled()
   })
 })

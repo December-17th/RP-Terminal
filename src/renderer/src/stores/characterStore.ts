@@ -6,6 +6,7 @@ import { useScriptsStore } from './scriptsStore'
 import { useChatStore } from './chatStore'
 import { useUiStore } from './uiStore'
 import { t } from '../i18n'
+import { characterImportErrorMessage } from '../i18n/errorMessages'
 import type { CharacterImportDialogResult } from '../../../shared/characterImport'
 
 type AgentCollisionResult = Extract<
@@ -115,14 +116,14 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
       return
     }
     if (res.status === 'imported') await finishCharacterImport(profileId, res, set)
-    else useToastStore.getState().push(res.message)
+    else useToastStore.getState().push(characterImportErrorMessage(t, res.errorCode))
   },
   confirmAgentImport: async (renames) => {
     const pending = get().pendingAgentImport
     if (!pending) return
     const res = await window.api.confirmCharacterImport(pending.token, renames)
     if (res.status === 'imported') await finishCharacterImport(pending.profileId, res, set)
-    else useToastStore.getState().push(res.message)
+    else useToastStore.getState().push(characterImportErrorMessage(t, res.errorCode))
   },
   cancelAgentImport: async () => {
     const pending = get().pendingAgentImport

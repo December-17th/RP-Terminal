@@ -6,6 +6,7 @@ import type {
   AgentUpgradeResolution
 } from '../../../shared/agentRuntime'
 import { useT } from '../i18n'
+import { agentErrorMessage, agentImportErrorMessage } from '../i18n/errorMessages'
 
 const ROLES: AgentRole[] = ['classic.narrator', 'yuzu.sceneDirector']
 
@@ -40,15 +41,17 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
     void refresh().catch(() => setError(t('agents.loadFailed')))
   }, [refresh, t])
 
-  const run = async (action: () => Promise<{ ok: boolean; error?: string }>): Promise<void> => {
+  const run = async (
+    action: () => Promise<{ ok: boolean; error?: string; code?: string }>
+  ): Promise<void> => {
     setBusy(true)
     setError(null)
     try {
       const result = await action()
-      if (!result.ok) setError(result.error ?? t('agents.actionFailed'))
+      if (!result.ok) setError(agentErrorMessage(t, result.code))
       await refresh()
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+    } catch {
+      setError(agentErrorMessage(t))
     } finally {
       setBusy(false)
     }
@@ -60,8 +63,8 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
     try {
       setSync(await window.api.syncAgentFolder(profileId, conflicts))
       await refresh()
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+    } catch {
+      setError(agentErrorMessage(t))
     } finally {
       setBusy(false)
     }
@@ -105,7 +108,11 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
                       {t('agents.conflictPaths', { paths: item.conflicts.join(', ') })}
                     </span>
                   ) : null}
-                  {item.message ? <span className="agents-sync__detail">{item.message}</span> : null}
+                  {item.errorCode ? (
+                    <span className="agents-sync__detail">
+                      {agentImportErrorMessage(t, item.errorCode)}
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ul>

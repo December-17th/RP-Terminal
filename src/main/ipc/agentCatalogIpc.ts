@@ -12,6 +12,7 @@ import type {
 import { AGENT_CATALOG_CHANNELS, normalizeAgentName } from '../../shared/agentRuntime'
 import {
   AgentCatalog,
+  AgentCatalogError,
   syncAgentFolder,
   resolveAgentFolder,
   type CatalogAgent
@@ -295,7 +296,12 @@ export const registerAgentCatalogIpc = (ipcMain: IpcMain): void => {
         return mutate(stringArg(rawProfileId), (catalog) => {
           const current = catalog.get(id)
           const available = current?.availableSource
-          if (!available) throw new Error('No pending source upgrade for this Agent')
+          if (!available) {
+            throw new AgentCatalogError(
+              'UPGRADE_NOT_AVAILABLE',
+              'No pending source upgrade for this Agent'
+            )
+          }
           return catalog.upgrade(
             id,
             available.baseline,
@@ -363,11 +369,19 @@ export const registerAgentCatalogIpc = (ipcMain: IpcMain): void => {
         const profileId = stringArg(rawProfileId)
         const chatId = stringArg(rawChatId)
         const agent = stringArg(rawAgent)
-        if (!profileId || !chatId || !agent) return { ok: false, error: 'INVALID_REQUEST' }
-        if (resolveProfileId(chatId) !== profileId) return { ok: false, error: 'INVALID_REQUEST' }
+        if (!profileId || !chatId || !agent) {
+          return { ok: false, error: 'INVALID_REQUEST', code: 'INVALID_REQUEST' }
+        }
+        if (resolveProfileId(chatId) !== profileId) {
+          return { ok: false, error: 'INVALID_REQUEST', code: 'INVALID_REQUEST' }
+        }
         const floor = getAllFloors(profileId, chatId).at(-1)?.floor
         if (floor === undefined) {
-          return { ok: false, error: 'No committed Invocation Floor exists' }
+          return {
+            ok: false,
+            error: 'NO_COMMITTED_FLOOR',
+            code: 'NO_COMMITTED_FLOOR'
+          }
         }
         const catalogAgent = new AgentCatalog(profileId).get(agent)
         const apiPresetId = catalogAgent?.invocationConfig.apiPresetId
@@ -400,7 +414,12 @@ export const registerAgentCatalogIpc = (ipcMain: IpcMain): void => {
             ...('result' in outcome ? { result: outcome.result } : {})
           }
         } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : String(error) }
+          const runError = error as { code?: string; message?: string }
+          return {
+            ok: false,
+            error: runError.message ?? String(error),
+            ...(runError.code ? { code: runError.code } : {})
+          }
         }
       }
     )

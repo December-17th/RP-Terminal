@@ -116,7 +116,10 @@ describe('syncAgentFolder', () => {
       status: 'installed'
     })
     for (const file of ['bad.rptagent', 'notjson.rptagent']) {
-      expect(items.find((item) => item.file === file)).toMatchObject({ status: 'failed' })
+      expect(items.find((item) => item.file === file)).toMatchObject({
+        status: 'failed',
+        errorCode: 'INVALID_DEFINITION'
+      })
     }
   })
 
@@ -126,7 +129,7 @@ describe('syncAgentFolder', () => {
     writeAgent('taken.rptagent', definition('Taken'))
 
     expect(syncAgentFolder(catalog, dir).items).toMatchObject([
-      { file: 'taken.rptagent', status: 'failed' }
+      { file: 'taken.rptagent', status: 'failed', errorCode: 'MISSING_RENAME' }
     ])
   })
 

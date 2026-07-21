@@ -17,6 +17,11 @@
 
 import { app, BrowserWindow, dialog } from 'electron'
 
+import {
+  EXIT_WARNING_KEYS,
+  translateExitWarning,
+  type ExitWarningKey
+} from '../shared/appExitI18n'
 import { createExitGuard } from './exitGuard'
 import * as logService from './services/logService'
 import * as sessionDbService from './services/sessionDbService'
@@ -26,22 +31,27 @@ import { shutdownInvocationRuntime } from './services/agentRuntime/InvocationRun
 // The window the exit-confirmation dialog is parented to. Set once the main window exists; the
 // app-level `before-quit` handler has no window in scope of its own.
 let guardedWindow: BrowserWindow | null = null
+let exitDialogLocale = 'en'
 
 export const setExitDialogWindow = (win: BrowserWindow | null): void => {
   guardedWindow = win
 }
 
+export const setExitDialogLocale = (locale: string): void => {
+  exitDialogLocale = locale
+}
+
 export const appExitGuard = createExitGuard({
   hasActiveBackgroundWork,
   confirmDiscard: async () => {
+    const t = (key: ExitWarningKey): string => translateExitWarning(exitDialogLocale, key)
     const options = {
       type: 'question' as const,
-      buttons: ['Quit anyway', 'Keep working'],
+      buttons: [t(EXIT_WARNING_KEYS.quitAnyway), t(EXIT_WARNING_KEYS.keepWorking)],
       defaultId: 1,
       cancelId: 1,
-      message: 'Background work is still running',
-      detail:
-        'A turn, a combat or duel narration, an Agent invocation, or a trigger evaluation is still in flight. Quitting now cancels it and discards whatever it has not saved yet.'
+      message: t(EXIT_WARNING_KEYS.message),
+      detail: t(EXIT_WARNING_KEYS.detail)
     }
     const { response } = guardedWindow
       ? await dialog.showMessageBox(guardedWindow, options)

@@ -15,6 +15,7 @@ import { useAgentCatalogStore } from '../../stores/agentCatalogStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useUiStore } from '../../stores/uiStore'
 import { useT } from '../../i18n'
+import { agentErrorMessage } from '../../i18n/errorMessages'
 import { useWcvSuppression } from '../useWcvSuppression'
 import { AgentEditor } from './AgentEditor'
 import { AgentPlanEditor } from './AgentPlanEditor'
@@ -136,7 +137,7 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
         ? 'invocationId' in result
           ? t('agents.run.started', { status: result.status, id: result.invocationId })
           : t('agents.run.nothingDue')
-        : result.error
+        : agentErrorMessage(t, result.code)
     )
     await refreshRuns()
   }

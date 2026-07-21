@@ -54,8 +54,8 @@ const findByFile = (catalog: AgentCatalog, file: string): CatalogAgent | undefin
     .list()
     .find((agent) => agent.source.kind === 'user-imported' && agent.source.key === file)
 
-const message = (error: unknown): string =>
-  error instanceof AgentCatalogError || error instanceof Error ? error.message : String(error)
+const errorCode = (error: unknown, fallback: string): string =>
+  error instanceof AgentCatalogError ? error.code : fallback
 
 const syncFile = (
   catalog: AgentCatalog,
@@ -66,8 +66,8 @@ const syncFile = (
   let text: string
   try {
     text = fs.readFileSync(path.join(dir, file), 'utf8')
-  } catch (error) {
-    return { file, status: 'failed', message: message(error) }
+  } catch {
+    return { file, status: 'failed', errorCode: 'FILE_READ_FAILED' }
   }
 
   const inspection = catalog.inspectStandalone(text)
@@ -75,11 +75,10 @@ const syncFile = (
     return {
       file,
       status: 'failed',
-      message:
+      errorCode:
         inspection.format === 'legacy-workflow-pack'
-          ? 'File is a legacy workflow pack, not an Agent Definition'
-          : (inspection.errors?.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ') ??
-            'File is not a valid Agent Definition')
+          ? 'LEGACY_WORKFLOW_PACK'
+          : 'INVALID_DEFINITION'
     }
   }
 
@@ -91,7 +90,12 @@ const syncFile = (
       const installed = catalog.importStandalone(text, { sourceKey: file, sourceVersion: version })
       return { file, status: 'installed', name: installed.name, agentId: installed.id }
     } catch (error) {
-      return { file, status: 'failed', name: inspection.definition.name, message: message(error) }
+      return {
+        file,
+        status: 'failed',
+        name: inspection.definition.name,
+        errorCode: errorCode(error, 'IMPORT_FAILED')
+      }
     }
   }
 
@@ -115,7 +119,13 @@ const syncFile = (
     })
     return { file, status: 'upgraded', name: upgraded.name, agentId: upgraded.id }
   } catch (error) {
-    return { file, status: 'failed', name: existing.name, agentId: existing.id, message: message(error) }
+    return {
+      file,
+      status: 'failed',
+      name: existing.name,
+      agentId: existing.id,
+      errorCode: errorCode(error, 'IMPORT_FAILED')
+    }
   }
 }
 

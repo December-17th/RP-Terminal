@@ -37,7 +37,7 @@ vi.mock('../src/main/services/locationPointer', () => ({
 }))
 
 const { registerStorageIpc } = await import('../src/main/ipc/storageIpc')
-const { appExitGuard } = await import('../src/main/appExit')
+const { appExitGuard, setExitDialogLocale } = await import('../src/main/appExit')
 const { setGuardMainWindow } = await import('../src/main/ipc/ipcGuards')
 
 // The gate only runs a handler for the app's own top frame, so the suite presents that identity.
@@ -61,6 +61,7 @@ const restartHandler = () => {
 describe('restart-app goes through the exit guard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    setExitDialogLocale('en')
     setGuardMainWindow({ webContents: mainWc, on: () => {} } as never)
     mockActiveWork.hasActiveBackgroundWork.mockReturnValue(false)
   })
@@ -85,6 +86,22 @@ describe('restart-app goes through the exit guard', () => {
     // Nothing was torn down, so the in-flight work really does keep running.
     expect(mockRuntime.shutdownInvocationRuntime).not.toHaveBeenCalled()
     expect(mockSessionDb.closeAll).not.toHaveBeenCalled()
+  })
+
+  it('uses the active profile locale for the native exit warning', async () => {
+    setExitDialogLocale('zh')
+    mockActiveWork.hasActiveBackgroundWork.mockReturnValue(true)
+    mockDialog.showMessageBox.mockResolvedValue({ response: 1 })
+
+    await restartHandler()()
+
+    expect(mockDialog.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buttons: ['仍然退出', '继续运行'],
+        message: '仍有后台任务正在运行',
+        detail: expect.stringContaining('智能体调用')
+      })
+    )
   })
 
   it('runs the full will-quit cleanup before relaunching when confirmed', async () => {

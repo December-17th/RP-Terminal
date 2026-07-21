@@ -49,8 +49,8 @@ const applyPendingImport = (
   return result
     ? { status: 'imported', id: result.id, summary: result.summary }
     : isContinuation
-      ? { status: 'invalid-renames', message: 'Agent renames are incomplete or already in use.' }
-      : { status: 'failed', message: 'The selected card could not be imported.' }
+      ? { status: 'invalid-renames', errorCode: 'INVALID_RENAMES' }
+      : { status: 'failed', errorCode: 'IMPORT_FAILED' }
 }
 
 const inspectOrApplyPendingImport = (
@@ -65,7 +65,7 @@ const inspectOrApplyPendingImport = (
     pending.filePath,
     sourceKey
   )
-  if (!inspection) return { status: 'failed', message: 'The selected card could not be parsed.' }
+  if (!inspection) return { status: 'failed', errorCode: 'PARSE_FAILED' }
   if (inspection.collisions.length === 0) return applyPendingImport(pending)
   const token = crypto.randomUUID()
   pendingCharacterImports.set(token, pending)
@@ -220,7 +220,7 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
       (_, token: string, agentRenames: Record<string, string>) => {
         const pending = pendingCharacterImports.get(token)
         if (!pending) {
-          return { status: 'failed', message: 'This import request has expired.' }
+          return { status: 'failed', errorCode: 'REQUEST_EXPIRED' }
         }
         const result = applyPendingImport(pending, agentRenames, true)
         if (result.status === 'imported') pendingCharacterImports.delete(token)

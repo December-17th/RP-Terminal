@@ -1,4 +1,6 @@
 // English UI strings (the source locale). Keys are dot-namespaced by area. `{{var}}` = interpolation.
+import { EXIT_WARNING_STRINGS } from '../../../../shared/appExitI18n'
+
 const en: Record<string, string> = {
   'nav.persona': 'Persona',
   'nav.preset': 'Preset',
@@ -11,6 +13,17 @@ const en: Record<string, string> = {
   'characterImport.agentRenameLabel':
     'Incoming “{{incoming}}” conflicts with existing “{{existing}}”',
   'characterImport.agentRenameConfirm': 'Continue import',
+  'characterImport.error.INVALID_RENAMES':
+    'Some Agent renames are missing or already in use. Choose a unique name for each Agent.',
+  'characterImport.error.IMPORT_FAILED': 'The selected card could not be imported.',
+  'characterImport.error.PARSE_FAILED': 'The selected card could not be parsed.',
+  'characterImport.error.REQUEST_EXPIRED':
+    'This import request has expired. Start the import again.',
+  'characterImport.error.UNKNOWN': 'The character import could not be completed.',
+  'exit.warning.quitAnyway': EXIT_WARNING_STRINGS.en['exit.warning.quitAnyway'],
+  'exit.warning.keepWorking': EXIT_WARNING_STRINGS.en['exit.warning.keepWorking'],
+  'exit.warning.message': EXIT_WARNING_STRINGS.en['exit.warning.message'],
+  'exit.warning.detail': EXIT_WARNING_STRINGS.en['exit.warning.detail'],
   'assets.heading': 'Assets',
   'assets.selectWorld': 'Select a World first.',
   'assets.openFolder': 'Open folder',
@@ -187,9 +200,13 @@ const en: Record<string, string> = {
   'agents.editor.preset.exclude': 'Exclude entries (one title per line)',
   'agents.editor.result': 'Result contract',
   'agents.editor.resultMode': 'Mode',
+  'agents.editor.resultMode.text': 'Text',
+  'agents.editor.resultMode.json': 'JSON',
+  'agents.editor.resultMode.toolsOnly': 'Tools only',
   'agents.editor.saveAs': 'Result slot',
   'agents.editor.validator': 'Validator',
   'agents.editor.validatorNone': 'none',
+  'agents.editor.validatorYss': 'YSS',
   'agents.editor.resultSchema': 'Result JSON schema',
   'agents.editor.contracts': 'Input and tools',
   'agents.editor.inputSchema': 'Input JSON schema',
@@ -209,6 +226,9 @@ const en: Record<string, string> = {
   'agents.editor.trigger.enable': 'Run automatically every N floors',
   'agents.editor.trigger.everyNFloors': 'Every N floors',
   'agents.editor.notification': 'Notify on',
+  'agents.editor.notification.none': 'Never',
+  'agents.editor.notification.failure': 'On failure',
+  'agents.editor.notification.completion': 'On completion',
   'agents.editor.save': 'Save',
   'agents.editor.saving': 'Saving…',
   'agents.editor.cancel': 'Cancel',
@@ -265,6 +285,24 @@ const en: Record<string, string> = {
   'agents.noFiles': 'No .rptagent files found in this folder.',
   'agents.loadFailed': 'Could not load the agent library.',
   'agents.actionFailed': 'That action could not be completed.',
+  'agents.error.INVALID_REQUEST': 'The request was invalid.',
+  'agents.error.INVALID_DEFINITION': 'The Agent definition is invalid.',
+  'agents.error.INVALID_SOURCE': 'The Agent source is invalid.',
+  'agents.error.NAME_COLLISION': 'That Agent name is already in use.',
+  'agents.error.MISSING_RENAME': 'Choose a unique name for every conflicting Agent.',
+  'agents.error.INCOMPATIBLE_ROLE': 'This Agent is not compatible with that role.',
+  'agents.error.SOURCE_BACKED': 'This source-backed Agent cannot be removed.',
+  'agents.error.UPGRADE_CONFLICT': 'The source update conflicts with your edits.',
+  'agents.error.UPGRADE_NOT_AVAILABLE': 'No source update is available for this Agent.',
+  'agents.error.NOT_FOUND': 'The Agent could not be found.',
+  'agents.error.ROLE_BOUND': 'Bind a replacement before changing or deleting this Agent.',
+  'agents.error.NO_COMMITTED_FLOOR':
+    'Open a session with a committed floor before running an Agent.',
+  'agents.importError.FILE_READ_FAILED': 'This Agent file could not be read.',
+  'agents.importError.LEGACY_WORKFLOW_PACK':
+    'This is a legacy workflow pack, not an Agent definition.',
+  'agents.importError.INVALID_DEFINITION': 'This file is not a valid Agent definition.',
+  'agents.importError.IMPORT_FAILED': 'This Agent file could not be imported.',
   'agents.status.installed': 'Installed',
   'agents.status.upgraded': 'Upgraded',
   'agents.status.unchanged': 'Unchanged',

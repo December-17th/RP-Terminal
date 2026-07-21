@@ -49,7 +49,7 @@ export interface AgentFileSyncItem {
   agentId?: string
   /** Customized paths the incoming file also changes; the upgrade is skipped until resolved. */
   conflicts?: string[]
-  message?: string
+  errorCode?: string
 }
 
 export interface AgentFolderSync {
@@ -77,7 +77,7 @@ export type AgentMutationResult =
 export type AgentManualRunResult =
   | { ok: true; invocationId: string; status: string; result?: unknown }
   | { ok: true; status: 'skipped' }
-  | { ok: false; error: string }
+  | { ok: false; error: string; code?: string }
 
 export const AGENT_CATALOG_CHANNELS = {
   list: 'agent-catalog-list',

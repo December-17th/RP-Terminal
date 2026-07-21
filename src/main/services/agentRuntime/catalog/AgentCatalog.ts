@@ -129,6 +129,7 @@ export class AgentCatalogError extends Error {
       | 'ROLE_BOUND'
       | 'INCOMPATIBLE_ROLE'
       | 'UPGRADE_CONFLICT'
+      | 'UPGRADE_NOT_AVAILABLE'
       | 'INVALID_SOURCE',
     message: string,
     readonly details?: unknown
