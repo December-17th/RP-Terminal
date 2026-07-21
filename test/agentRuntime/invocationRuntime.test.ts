@@ -110,6 +110,43 @@ describe('InvocationRuntime', () => {
     expect(execute).toHaveBeenCalledTimes(1)
   })
 
+  it('prunes a completed identity so the same floor is retryable with a fresh provider call', async () => {
+    const { runtime, execute } = setup(['A'])
+    execute
+      .mockResolvedValueOnce({
+        ok: false,
+        failure: { code: 'NO', message: 'no', retryable: false },
+        stagedOperations: [],
+        evidence: { attempts: [] }
+      })
+      .mockResolvedValueOnce(success('second'))
+    const request = { profileId: 'p', chatId: 'c', floor: 12, agent: 'A' }
+
+    // A FAILED run at floor 12 must not leave a stale resolved outcome in the identity ledger.
+    const first = runtime.run(request)
+    expect(first.invocationId).toBe('id-1')
+    await expect(first).resolves.toMatchObject({ status: 'failed', failure: { code: 'NO' } })
+
+    // Running the SAME identity again gets a fresh invocation (id-2) and a new provider call — not the
+    // coalesced id-1 failure.
+    const second = runtime.run(request)
+    expect(second.invocationId).toBe('id-2')
+    await expect(second).resolves.toMatchObject({ status: 'succeeded', result: 'second' })
+    expect(execute).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retain a succeeded identity in the dedupe ledger', async () => {
+    const { runtime, execute } = setup(['A'])
+    const request = { profileId: 'p', chatId: 'c', floor: 7, agent: 'A' }
+
+    await expect(runtime.run(request)).resolves.toMatchObject({ status: 'succeeded' })
+    // The first run completed and its identity was pruned; a second call re-executes rather than
+    // returning the earlier resolved outcome (no unbounded ledger growth).
+    await expect(runtime.run(request)).resolves.toMatchObject({ status: 'succeeded' })
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(runtime.hasActiveWork()).toBe(false)
+  })
+
   it('serializes the same Agent lane through incorporation before resolving later input', async () => {
     const first = deferred<HarnessExecutionResult>()
     const { runtime, execute } = setup(['A'])

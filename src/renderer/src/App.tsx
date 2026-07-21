@@ -1,4 +1,4 @@
-import { useEffect, useMemo, Suspense } from 'react'
+import { useEffect, useMemo, useState, Suspense } from 'react'
 import { lazyNamed } from './lib/lazyNamed'
 import { useProfileStore } from './stores/profileStore'
 import { useCharacterStore } from './stores/characterStore'
@@ -384,6 +384,11 @@ export default function App(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProfile?.id, activeChatId])
 
+  // When the user escapes a Yuzu full-card takeover (its localized exit control), remember the chat so
+  // App falls back to the classic workspace instead of re-mounting the surface. Keyed by chat, so
+  // switching sessions re-arms the takeover for a different Yuzu card.
+  const [yuzuExitedChatId, setYuzuExitedChatId] = useState<string | null>(null)
+
   if (!activeProfile) return <ProfilePicker />
 
   // An RPT-native card can declare its own static, card-determined layout (rp_terminal.panel_ui); else the
@@ -419,12 +424,13 @@ export default function App(): React.ReactElement {
             className="ws-overlay-root"
             style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}
           >
-            {yuzuSurface?.entry && activeChatId ? (
+            {yuzuSurface?.entry && activeChatId && yuzuExitedChatId !== activeChatId ? (
               <YuzuCardSurface
                 profileId={activeProfile.id}
                 chatId={activeChatId}
                 entry={yuzuSurface.entry}
                 enableVnMode={yuzuSurface.enable_vn_mode === true}
+                onExit={() => setYuzuExitedChatId(activeChatId)}
               />
             ) : staticLayout ? (
               <StaticWorkspace profileId={activeProfile.id} layout={staticLayout} />

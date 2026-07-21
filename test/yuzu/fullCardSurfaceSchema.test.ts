@@ -28,4 +28,18 @@ describe('Yuzu full-card surface schema', () => {
     })
     expect(result.success).toBe(false)
   })
+
+  it('rejects a non-card-code takeover entry (no bare/remote URL auto-load)', () => {
+    for (const entry of [
+      'https://evil.example/x.html',
+      'yuzu/index.html',
+      'file:///c:/x.html',
+      'card-code:'
+    ]) {
+      const result = RPTerminalExtSchema.safeParse({
+        yuzu: { version: 1, surface: { entry } }
+      })
+      expect(result.success, entry).toBe(false)
+    }
+  })
 })

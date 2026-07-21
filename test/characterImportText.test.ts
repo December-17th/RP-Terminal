@@ -24,6 +24,13 @@ describe('character import native-dialog text', () => {
     expect(chinese.bundleItem(1, 'cardCodeSurfaces')).toContain('卡片代码界面')
   })
 
+  it('no longer promises to refresh the deleted workflow system on update', () => {
+    const english = getCharacterImportText('en')
+    const chinese = getCharacterImportText('zh-CN')
+    expect(english.duplicateDetail(details)).not.toContain('workflows')
+    expect(chinese.duplicateDetail(details)).not.toContain('工作流')
+  })
+
   it('falls back to English for unknown locales', () => {
     expect(getCharacterImportText('fr').install).toBe('Install')
   })

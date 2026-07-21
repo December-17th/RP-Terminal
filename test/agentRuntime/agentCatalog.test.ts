@@ -204,4 +204,81 @@ describe('AgentCatalog', () => {
       expect(JSON.stringify(edited.effective)).not.toContain('preset-7')
     })
   })
+
+  describe('imported API-preset policy (owner policy)', () => {
+    // An incoming definition that (out of contract) declares an API preset + model plus legitimate
+    // parameter overrides. The strict definition schema does not carry apiPresetId/model, so these live
+    // at the top level and must be neutralized on import rather than rejected.
+    const importedAgent = (name: string, model = 'gpt-preview'): Record<string, unknown> => ({
+      format: 'rpt-agent',
+      formatVersion: 1,
+      name,
+      prompt: [{ role: 'system', content: `${name} prompt` }],
+      result: { mode: 'text' },
+      apiPresetId: 'card-local-preset',
+      model,
+      defaults: { maxRetryAttempts: 9 },
+      preset: {
+        preset: { prompts: [{ identifier: 'main', role: 'system', content: 'x' }] },
+        generationParameters: { temperature: 0.5 }
+      }
+    })
+
+    it('installs an imported package with preset/model neutralized, other overrides kept, model kept as recommendation', () => {
+      const catalog = new AgentCatalog('p')
+      const [agent] = catalog.installPackage({
+        source: { kind: 'card', key: 'card-import', version: '1' },
+        agents: [importedAgent('Imported Narrator')]
+      }).installed
+
+      // No API preset is applied at runtime: neither the definition nor the invocation config carries one.
+      expect(agent.effective).not.toHaveProperty('apiPresetId')
+      expect(agent.effective).not.toHaveProperty('model')
+      expect(agent.invocationConfig).toEqual({})
+      expect(JSON.stringify(agent.effective)).not.toContain('card-local-preset')
+      // The declared model survives only as the display-only recommendation.
+      expect(agent.effective.modelHint).toBe('gpt-preview')
+      // Every other imported override is preserved and remains active.
+      expect(agent.effective.defaults.maxRetryAttempts).toBe(9)
+      expect(agent.effective.preset?.generationParameters).toEqual({ temperature: 0.5 })
+    })
+
+    it('does not overwrite an explicit modelHint with the stripped model', () => {
+      const catalog = new AgentCatalog('p')
+      const [agent] = catalog.installPackage({
+        source: { kind: 'card', key: 'card-hint', version: '1' },
+        agents: [{ ...importedAgent('Hinted'), modelHint: 'author-hint' }]
+      }).installed
+      expect(agent.effective.modelHint).toBe('author-hint')
+      expect(agent.effective).not.toHaveProperty('model')
+    })
+
+    it('neutralizes a standalone imported Agent (folder / file path)', () => {
+      const catalog = new AgentCatalog('p')
+      const imported = catalog.importStandalone(JSON.stringify(importedAgent('Standalone')))
+      expect(imported.effective).not.toHaveProperty('apiPresetId')
+      expect(imported.effective.modelHint).toBe('gpt-preview')
+      expect(imported.invocationConfig).toEqual({})
+    })
+
+    it('keeps the policy through card re-import staging', () => {
+      const catalog = new AgentCatalog('p')
+      catalog.reconcileCardSource('card-x', '1', [importedAgent('Retained')])
+      const installed = catalog.get('Retained')!
+      expect(installed.effective).not.toHaveProperty('apiPresetId')
+      expect(installed.effective.modelHint).toBe('gpt-preview')
+
+      // Re-importing a newer card version stages the incoming definition — it too must be neutralized.
+      catalog.reconcileCardSource('card-x', '2', [importedAgent('Retained')])
+      const staged = catalog.get('Retained')!.availableSource
+      expect(staged?.baseline).not.toHaveProperty('apiPresetId')
+      expect(staged?.baseline).not.toHaveProperty('model')
+      expect(staged?.baseline.modelHint).toBe('gpt-preview')
+    })
+
+    it('still rejects a top-level apiPresetId on the in-app authoring path (create)', () => {
+      const catalog = new AgentCatalog('p')
+      expect(() => catalog.create(importedAgent('Authored'))).toThrowError(AgentCatalogError)
+    })
+  })
 })

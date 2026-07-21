@@ -236,7 +236,13 @@ export type CardAgentToolHandler = (
   context: CardAgentToolContext
 ) => CardAgentToolExecution | Promise<CardAgentToolExecution>
 
-export interface CardAgentRunOptions extends InvocationOptions {
+/**
+ * Card-supplied Agent Run options. `apiPresetId` and `model` are deliberately OMITTED: cards may never
+ * choose the API preset or model — the user's per-Agent binding (or the profile's active preset) decides
+ * (owner policy). The main-side Agent Host also strips these keys at runtime in case a card sends them
+ * anyway, so this Omit is the visible half of a contract the transport enforces.
+ */
+export interface CardAgentRunOptions extends Omit<InvocationOptions, 'apiPresetId' | 'model'> {
   signal?: AbortSignal
 }
 

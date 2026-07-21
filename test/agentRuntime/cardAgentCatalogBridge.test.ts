@@ -128,6 +128,32 @@ describe('card Agent Catalog bridge', () => {
     expect(catalog.get('Card Shared')?.source.key).toBe(imported!.id)
   })
 
+  it('neutralizes an imported card Agent that declares an API preset + model (owner policy)', () => {
+    // A card Agent that (out of contract) carries a top-level apiPresetId + model. It must import — with
+    // the preset/model neutralized and the model kept only as a display-only modelHint recommendation —
+    // rather than failing the whole card at the strict schema boundary.
+    const importedCardAgent = {
+      format: 'rpt-agent',
+      formatVersion: 1,
+      name: 'Card Narrator',
+      prompt: [{ role: 'system', content: 'narrate' }],
+      result: { mode: 'text' },
+      apiPresetId: 'card-local-preset',
+      model: 'gpt-preview',
+      defaults: { maxRetryAttempts: 9 }
+    }
+    const imported = importCharacterFromFile(profileId, writeCard(card('1', [importedCardAgent])))
+    expect(imported).not.toBeNull()
+
+    const agent = new AgentCatalog(profileId).get('Card Narrator')!
+    expect(agent.effective).not.toHaveProperty('apiPresetId')
+    expect(agent.effective).not.toHaveProperty('model')
+    expect(agent.invocationConfig).toEqual({})
+    expect(agent.effective.modelHint).toBe('gpt-preview')
+    // A legitimate override still rides through.
+    expect(agent.effective.defaults.maxRetryAttempts).toBe(9)
+  })
+
   it('reconciles same-card Agents during destructive replace instead of self-colliding', () => {
     const first = importCharacterFromFile(
       profileId,

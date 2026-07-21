@@ -12,6 +12,10 @@ const ROLES: AgentRole[] = ['classic.narrator', 'yuzu.sceneDirector']
 
 const number = (value: number): string => new Intl.NumberFormat().format(value)
 
+/** Card- and file-sourced Agents are "imported": owner policy gives them no API preset on install. */
+const isImported = (agent: AgentCatalogSummary): boolean =>
+  agent.sourceKind === 'card' || agent.sourceKind === 'user-imported'
+
 /**
  * The Agent Workspace (design §4): a FLAT library view — no canvas, node palette, ports, or edges.
  * It lists what the profile has installed, where each Agent came from, and the two role bindings.
@@ -117,6 +121,9 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
               ))}
             </ul>
           )}
+          {sync.items.some((item) => item.status === 'installed' || item.status === 'upgraded') ? (
+            <p className="agents-panel__hint">{t('agents.importedNeedPreset')}</p>
+          ) : null}
           {hasConflicts ? (
             <div className="agents-sync__resolve">
               <span>{t('agents.conflictPrompt')}</span>
@@ -186,6 +193,16 @@ export function AgentsPanel({ profileId }: { profileId: string }): React.ReactEl
                     {t('agents.sourceMissing')}
                   </span>
                 )}
+                {agent.recommendedModel ? (
+                  <span className="agents-badge">
+                    {t('agents.recommendedModel', { model: agent.recommendedModel })}
+                  </span>
+                ) : null}
+                {isImported(agent) && !agent.hasApiPreset ? (
+                  <span className="agents-badge agents-badge--missing">
+                    {t('agents.needsApiPreset')}
+                  </span>
+                ) : null}
               </div>
 
               {agent.description ? <p className="agents-row__desc">{agent.description}</p> : null}

@@ -16,6 +16,7 @@ import {
   liveCardToolRegistry
 } from '../services/agentRuntime/InvocationRuntimeService'
 import { AgentHostSession, agentToolRequestSender } from '../services/agentRuntime/AgentHostSession'
+import { AgentCatalog } from '../services/agentRuntime/catalog'
 import { resolveProfileId } from '../services/sessionDbService'
 import { gate } from './ipcGuards'
 
@@ -99,6 +100,10 @@ const ensureAgentSession = (
   const key = agentSessionKey(sender.id, scope)
   const current = agentSessions.get(key)
   if (current) return current.session
+  // Per-Agent binding source: the SAME catalog the manual Workspace / trigger paths read, so a
+  // card-invoked run honors the user's chosen API preset. Constructed lazily (only when a run resolves
+  // a binding) and reused across this session's runs.
+  let catalog: AgentCatalog | null = null
   const session = new AgentHostSession({
     scope,
     senderId: sender.id,
@@ -110,7 +115,11 @@ const ensureAgentSession = (
       (payload) => ({ ...(payload as object), scope })
     ),
     toolAuthority: 'completion-capability',
-    cancelInvocationsOnClose: false
+    cancelInvocationsOnClose: false,
+    resolveInvocationConfig: (agentName) => {
+      catalog ??= new AgentCatalog(scope.profileId)
+      return catalog.get(agentName)?.invocationConfig
+    }
   })
   agentSessions.set(key, { senderId: sender.id, session })
   ensureAgentSenderLifecycle(sender)

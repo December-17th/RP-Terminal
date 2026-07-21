@@ -12,6 +12,7 @@ const hoisted = vi.hoisted(() => ({
   toolRegister: vi.fn(),
   toolComplete: vi.fn(),
   toolUnregisterSender: vi.fn(),
+  catalogGet: vi.fn((_profileId: string, _name: string) => null as unknown),
   sent: [] as Array<{ channel: string; event: unknown }>,
   profilesByChat: new Map<string, string>(),
   chats: new Map<string, { character_id: string }>(),
@@ -43,6 +44,15 @@ vi.mock('../../src/main/services/agentRuntime/InvocationRuntimeService', () => (
     complete: hoisted.toolComplete,
     unregisterSender: hoisted.toolUnregisterSender
   })
+}))
+
+vi.mock('../../src/main/services/agentRuntime/catalog', () => ({
+  AgentCatalog: class {
+    constructor(readonly profileId: string) {}
+    get(name: string): unknown {
+      return hoisted.catalogGet(this.profileId, name)
+    }
+  }
 }))
 
 vi.mock('../../src/main/services/sessionDbService', () => ({
@@ -200,6 +210,34 @@ describe('Agent Run IPC', () => {
     }
     hoisted.listeners[0](event)
     expect(hoisted.sent).toContainEqual({ channel: 'agent-run-event', event })
+  })
+
+  it('applies the user per-Agent binding preset and drops a card-supplied preset/model on an inline run', async () => {
+    hoisted.catalogGet.mockReturnValue({ invocationConfig: { apiPresetId: 'user-preset' } })
+    hoisted.runtimeRun.mockReturnValue(
+      Object.assign(
+        Promise.resolve({
+          invocationId: 'inv-x',
+          status: 'succeeded',
+          sourceRestarts: 0,
+          required: true
+        }),
+        { invocationId: 'inv-x' }
+      )
+    )
+    await handlers.get(CARD_AGENT_CHANNELS.run)?.(topEvent, {
+      profileId: 'p1',
+      chatId: 'c1',
+      characterId: 'card-1',
+      requestId: 'req-1',
+      name: 'Agent',
+      options: { floor: 5, apiPresetId: 'card-preset', model: 'card-model' }
+    })
+    expect(hoisted.catalogGet).toHaveBeenCalledWith('p1', 'Agent')
+    expect(hoisted.runtimeRun.mock.calls.at(-1)![0].options).toEqual({
+      floor: 5,
+      apiPresetId: 'user-preset'
+    })
   })
 
   it('rejects a sibling inline card spoof while preserving the registered host completion', async () => {

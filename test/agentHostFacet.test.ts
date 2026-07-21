@@ -127,6 +127,18 @@ describe('Agent Host Facet', () => {
     expect(p.toolAbort()).toBeUndefined()
   })
 
+  it('surfaces a tool registration failure on the next runAgent (the double-mount poison the registry now avoids)', async () => {
+    const p = ports()
+    const duplicate = Object.assign(new Error('duplicate'), { code: 'CARD_TOOL_DUPLICATE' })
+    vi.mocked(p.tools.register).mockRejectedValueOnce(duplicate)
+    const host = createAgentHostFacet(p)
+    host.registerAgentTool(fixture.tool, vi.fn())
+    // A rejected registration parks the error and every subsequent runAgent rethrows it — this is exactly
+    // the double-mount poisoning that CardToolRegistry.register now sidesteps via last-registration-wins.
+    await expect(host.runAgent(fixture.name)).rejects.toBe(duplicate)
+    expect(p.invocation.run).not.toHaveBeenCalled()
+  })
+
   it('shares one floor subscription across public handlers', () => {
     const p = ports()
     const host = createAgentHostFacet(p)

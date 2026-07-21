@@ -333,6 +333,16 @@ const en: Record<string, string> = {
   'agents.disable': 'Disable',
   'agents.delete': 'Delete',
   'agents.roleBoundLocked': 'Bound to a role — unbind it first.',
+  'agents.recommendedModel': 'Recommends {{model}}',
+  'agents.needsApiPreset': 'Needs API preset',
+  'agents.importedNeedPreset':
+    'Imported agents start with no API preset. Open the Agent Workspace to pick one for each — until then they run on the profile’s active preset.',
+  'agents.apiPreset': 'API preset',
+  'agents.apiPreset.default': 'Profile’s active preset',
+  'agents.apiPreset.recommendation':
+    'Recommended model: {{model}} (a recommendation only — never applied unless you select it in a preset)',
+  'agents.apiPreset.notice':
+    'This imported agent has no API preset selected. Pick one, or it runs on the profile’s active preset.',
   'settings.assetsTitle': 'World assets',
   'settings.assetsBody':
     "Manage this world's portraits, standees, galleries, scene art, and CG in the Assets view — drag-drop import, rename, and export.",
@@ -868,6 +878,10 @@ const en: Record<string, string> = {
   'agentRuns.status.failed': 'Failed',
   'agentRuns.status.cancelled': 'Cancelled',
   'agentRuns.status.degraded': 'Degraded',
+  // Yuzu full-card takeover surface — escape control + failure fallback.
+  'yuzu.surface.exit': 'Exit',
+  'yuzu.surface.exitTitle': 'Leave the card view and return to the classic workspace',
+  'yuzu.surface.loadError': 'This card view could not be started. It may be untrusted or failed to load — use Exit to return to the classic workspace.',
 
   'status.waiting': 'Waiting for session...',
   'status.heading': 'RPG Status',

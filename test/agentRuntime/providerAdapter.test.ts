@@ -549,7 +549,7 @@ describe('ProviderDispatch', () => {
     expect(result).toMatchObject({
       toolCalls: [
         {
-          id: 'gemini:0:1',
+          id: 'gemini:0:0',
           name: 'lookup',
           argumentsText: '{"id":11}',
           input: { id: 11 }
@@ -560,6 +560,97 @@ describe('ProviderDispatch', () => {
       finishReason: 'stop'
     })
     expect(events).toContainEqual({ type: 'reasoning', delta: 'hidden', volatile: true })
+  })
+
+  it('throws a transient empty-stream error when a Gemini stream produces no model events', async () => {
+    const dispatch = testDispatch({
+      fetch: vi.fn(async () => {
+        return new Response(`data: ${JSON.stringify({ candidates: [] })}\n`, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      }) as typeof fetch
+    })
+
+    const error = await invoke(dispatch, 'google').catch((cause) => cause)
+
+    expect(error).toMatchObject({
+      name: 'ProviderDispatchError',
+      retryClass: 'transient',
+      diagnostics: { category: 'empty-stream' }
+    })
+  })
+
+  it('throws a transient empty-stream error when a Gemini stream carries only usage and finishReason', async () => {
+    const frame = {
+      candidates: [{ index: 0, finishReason: 'STOP' }],
+      usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 0 }
+    }
+    const dispatch = testDispatch({
+      fetch: vi.fn(async () => {
+        return new Response(`data: ${JSON.stringify(frame)}\n`, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      }) as typeof fetch
+    })
+
+    const error = await invoke(dispatch, 'google').catch((cause) => cause)
+
+    expect(error).toMatchObject({
+      name: 'ProviderDispatchError',
+      retryClass: 'transient',
+      diagnostics: { category: 'empty-stream' }
+    })
+  })
+
+  it('assigns distinct indices to Gemini function calls that arrive in separate SSE chunks', async () => {
+    const frames = [
+      {
+        candidates: [
+          {
+            index: 0,
+            content: {
+              parts: [{ functionCall: { name: 'weather', args: { city: 'Toronto' } } }]
+            }
+          }
+        ]
+      },
+      {
+        candidates: [
+          {
+            index: 0,
+            content: { parts: [{ functionCall: { name: 'time', args: { zone: 'UTC' } } }] },
+            finishReason: 'STOP'
+          }
+        ]
+      }
+    ]
+    const providerFetch = vi.fn(async () => {
+      const body = [...frames.map((frame) => `data: ${JSON.stringify(frame)}`), ''].join('\n')
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    })
+    const dispatch = testDispatch({ fetch: providerFetch as typeof fetch })
+
+    const result = await invoke(dispatch, 'google')
+
+    expect(result.toolCalls).toEqual([
+      {
+        id: 'gemini:0:0',
+        name: 'weather',
+        argumentsText: '{"city":"Toronto"}',
+        input: { city: 'Toronto' }
+      },
+      {
+        id: 'gemini:0:1',
+        name: 'time',
+        argumentsText: '{"zone":"UTC"}',
+        input: { zone: 'UTC' }
+      }
+    ])
   })
 
   it('classifies HTTP rate limits and parses Retry-After from production responses', async () => {

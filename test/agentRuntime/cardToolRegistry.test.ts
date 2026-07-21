@@ -97,13 +97,38 @@ describe('CardToolRegistry', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([{ days: 1 }, { days: 2 }])
   })
 
-  it('rejects duplicate names in a bound profile/chat/card scope with a typed error', () => {
+  it('rejects a conflicting (different-definition) duplicate name in a bound scope with a typed error', () => {
     const registry = createCardToolRegistry()
     registry.register({ scope, binding, send: vi.fn() })
 
-    expect(() => registry.register({ scope, binding, send: vi.fn() })).toThrowError(
+    // Same name, DIFFERENT input schema = a genuine conflict, not a double-mount → still rejected.
+    const conflicting = { ...binding, inputSchema: { type: 'object', required: ['days'] } }
+    expect(() => registry.register({ scope, binding: conflicting, send: vi.fn() })).toThrowError(
       expect.objectContaining({ code: 'CARD_TOOL_DUPLICATE' })
     )
+  })
+
+  it('lets a second mount take over an identical tool (last-registration-wins) and routes to it', async () => {
+    const registry = createCardToolRegistry()
+    const firstSend = vi.fn()
+    const secondSend = vi.fn()
+    // First mount registers; a second live mount of the same card (new sender, same scope) re-registers
+    // the identical binding. It must NOT throw — the later registration takes over the name.
+    registry.register({ scope, binding, send: firstSend })
+    expect(() =>
+      registry.register({ scope: { ...scope, senderId: 202 }, binding, send: secondSend })
+    ).not.toThrow()
+
+    // Model tool requests now route to the second (current) mount; the first mount's send is inert.
+    const pending = registry
+      .resolve(definition, scope)!
+      .execute({ days: 1 }, { stage: vi.fn(), beginExternalEffect: vi.fn() })
+    expect(secondSend).toHaveBeenCalledTimes(1)
+    expect(firstSend).not.toHaveBeenCalled()
+
+    const requestId = secondSend.mock.calls[0][1].requestId as string
+    expect(registry.complete({ senderId: 202, requestId, result: { advanced: true } })).toBe(true)
+    await expect(pending).resolves.toEqual({ advanced: true })
   })
 
   it('does not resolve an implementation outside its authoritative mounted scope', () => {

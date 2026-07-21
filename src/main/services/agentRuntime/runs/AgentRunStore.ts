@@ -100,7 +100,18 @@ interface Dependencies {
   getDb?: (chatId: string) => Database.Database | null
   getDbForProfile?: (profileId: string, chatId: string) => Database.Database | null
   now?: () => string
+  /** Rolling-retention window: keep the most-recent N run rows per chat (default
+   *  {@link DEFAULT_AGENT_RUN_RETENTION}). <= 0 keeps none. */
+  retention?: number
 }
+
+/**
+ * Default rolling-retention window for Agent run rows (Finding 4). Every run persists its full
+ * renderedPrompt plus per-attempt message logs, and only floor deletion pruned them, so agent_runs
+ * grew unboundedly over a long chat. Mirrors the execution-record retention pattern
+ * (executionRecordStore), pruning past the cap after each new run is created.
+ */
+export const DEFAULT_AGENT_RUN_RETENTION = 200
 
 const REDACTED_KEYS = new Set([
   'password',
@@ -344,15 +355,94 @@ const summary = (record: AgentRunRecord) => ({
 })
 
 export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunStore => {
-  const dbFor = dependencies.getDb ?? ((chatId: string) => getSessionDbByChat(chatId))
-  const dbForProfile =
+  const rawDbFor = dependencies.getDb ?? ((chatId: string) => getSessionDbByChat(chatId))
+  const rawDbForProfile =
     dependencies.getDbForProfile ??
     ((profileId: string, chatId: string) => getSessionDb(profileId, chatId))
   const now = dependencies.now ?? (() => new Date().toISOString())
+  const retention = dependencies.retention ?? DEFAULT_AGENT_RUN_RETENTION
   const controllers = new Map<
     string,
     { chatId: string; floor: number; controller: AbortController }
   >()
+  // Finding 2: a hard crash never runs `shutdown()`/`markCancelled`, so its in-flight rows stay at
+  // status='running' forever — the UI shows a perpetual "running" run and cadence logic
+  // (latestRunFloor) counts a ghost fire. There is no per-profile init hook (session DBs open
+  // lazily, LRU-evicted), so reconcile the FIRST time this store touches each handle: sweep every
+  // still-'running' row that this process is NOT actively driving (its invocation_id is absent from
+  // the live `controllers`) to a terminal, distinguishable state. Keyed on the handle object so a
+  // handle reopened after eviction re-sweeps — but the live-controller exclusion keeps it from
+  // clobbering a run that is genuinely in flight in this process.
+  const reconciled = new WeakSet<Database.Database>()
+  const reconcileStranded = (db: Database.Database | null): void => {
+    if (!db || reconciled.has(db)) return
+    reconciled.add(db)
+    const liveIds = [...controllers.keys()]
+    const exclusion = liveIds.length
+      ? ` AND invocation_id NOT IN (${liveIds.map(() => '?').join(',')})`
+      : ''
+    const rows = db
+      .prepare(`SELECT invocation_id, record FROM agent_runs WHERE status = 'running'${exclusion}`)
+      .all(...liveIds) as Array<{ invocation_id: string; record: string }>
+    if (!rows.length) return
+    const stamp = now()
+    const update = db.prepare(
+      'UPDATE agent_runs SET status = ?, finished_at = ?, record = ? WHERE invocation_id = ?'
+    )
+    for (const row of rows) {
+      let record: AgentRunRecord
+      try {
+        record = JSON.parse(row.record) as AgentRunRecord
+      } catch {
+        continue
+      }
+      const finished = sanitize({
+        ...record,
+        status: 'cancelled',
+        finishedAt: record.finishedAt ?? stamp,
+        failure: {
+          code: 'INTERRUPTED',
+          message: 'Agent Invocation interrupted by shutdown',
+          retryable: false
+        },
+        replay: { status: 'discarded', operations: 0 }
+      }) as unknown as AgentRunRecord
+      update.run(
+        finished.status,
+        finished.finishedAt ?? null,
+        JSON.stringify(finished),
+        finished.invocationId
+      )
+    }
+  }
+  const dbFor = (chatId: string): Database.Database | null => {
+    const db = rawDbFor(chatId)
+    reconcileStranded(db)
+    return db
+  }
+  const dbForProfile = (profileId: string, chatId: string): Database.Database | null => {
+    const db = rawDbForProfile(profileId, chatId)
+    reconcileStranded(db)
+    return db
+  }
+  // Finding 4: keep only the most-recent `retention` run rows per chat (by start time), pruning the
+  // rest after each new run is created. Mirrors pruneExecutionRecords.
+  const pruneRuns = (chatId: string, db: Database.Database | null): void => {
+    if (!db) return
+    const keep = Math.max(0, Math.floor(retention))
+    if (keep <= 0) {
+      db.prepare('DELETE FROM agent_runs WHERE chat_id = ?').run(chatId)
+      return
+    }
+    db.prepare(
+      `DELETE FROM agent_runs
+         WHERE chat_id = ?
+           AND invocation_id NOT IN (
+             SELECT invocation_id FROM agent_runs WHERE chat_id = ?
+               ORDER BY started_at DESC, rowid DESC LIMIT ?
+           )`
+    ).run(chatId, chatId, keep)
+  }
   const listeners = new Set<(event: AgentRunEvent) => void>()
   const beforeFloorDeleteListeners = new Set<(chatId: string, fromFloor: number) => void>()
   const emit = (event: AgentRunEvent): void => {
@@ -526,6 +616,9 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
         warnings: [...(start.warnings ?? [])]
       }) as unknown as AgentRunRecord
       persist(record)
+      // Finding 4: bound agent_runs growth — a new row was just added, so prune past the retention
+      // window now (mirrors executionRecordStore's prune-after-write).
+      pruneRuns(start.chatId, dbFor(start.chatId))
       controllers.set(start.invocationId, {
         chatId: start.chatId,
         floor: start.floor,

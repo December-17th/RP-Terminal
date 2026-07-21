@@ -79,6 +79,8 @@ const toSummary = (
     promptMessages: size.messages,
     promptChars: size.chars,
     roles,
+    ...(definition.modelHint ? { recommendedModel: definition.modelHint } : {}),
+    hasApiPreset: Boolean(agent.invocationConfig.apiPresetId),
     updatedAt: agent.updatedAt
   }
 }

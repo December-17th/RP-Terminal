@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import type Database from 'better-sqlite3'
 import {
   parseAgentDefinition,
+  neutralizeImportedPreset,
   normalizeAgentName,
   type AgentContractError,
   type AgentDefinition
@@ -224,6 +225,17 @@ const parseDefinition = (raw: unknown): AgentDefinition => {
   return result.value
 }
 
+/**
+ * Owner API-preset policy for IMPORTED Agents: strip any top-level `apiPresetId`/`model` before the
+ * strict parse so an imported Agent starts with NO preset/model applied at runtime, keeping the declared
+ * model only as the display-only `modelHint` recommendation. Shared with the card-embedding
+ * `AgentDefinitionSchema` so card and standalone imports behave identically; `invocationConfig` is never
+ * seeded from an import (`insert` always stores `{}`). In-app authoring (`create`/`edit`) uses the strict
+ * `parseDefinition` directly, so a hand-authored top-level `apiPresetId`/`model` is still rejected.
+ */
+const parseImportedDefinition = (raw: unknown): AgentDefinition =>
+  parseDefinition(neutralizeImportedPreset(raw))
+
 const validateSource = (source: AgentSource): void => {
   if (
     !['builtin', 'user-created', 'user-imported', 'card'].includes(source.kind) ||
@@ -273,7 +285,7 @@ export class AgentCatalog {
 
   inspectPackage(pkg: AgentImportPackage): PackageInspection {
     validateSource(pkg.source)
-    const definitions = pkg.agents.map(parseDefinition)
+    const definitions = pkg.agents.map(parseImportedDefinition)
     const names = new Set<string>()
     for (const definition of definitions) {
       const key = normalizeAgentName(definition.name)
@@ -352,7 +364,7 @@ export class AgentCatalog {
   inspectCardSource(sourceKey: string, version: string, agents: unknown[]): CardSourceInspection {
     const source: AgentSource = { kind: 'card', key: sourceKey, version }
     validateSource(source)
-    const definitions = agents.map(parseDefinition)
+    const definitions = agents.map(parseImportedDefinition)
     const names = new Set<string>()
     for (const definition of definitions) {
       const key = normalizeAgentName(definition.name)
@@ -754,7 +766,7 @@ export class AgentCatalog {
     ) {
       return { ok: false, format: 'legacy-workflow-pack' }
     }
-    const result = parseAgentDefinition(raw)
+    const result = parseAgentDefinition(neutralizeImportedPreset(raw))
     if (!result.ok) return { ok: false, format: 'invalid', errors: result.errors }
     return {
       ok: true,

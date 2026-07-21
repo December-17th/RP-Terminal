@@ -123,6 +123,23 @@ describe('syncAgentFolder', () => {
     }
   })
 
+  it('neutralizes an imported .rptagent that declares an API preset + model (owner policy)', () => {
+    writeAgent('preset.rptagent', {
+      ...definition('Preset Author'),
+      apiPresetId: 'card-local-preset',
+      model: 'gpt-preview'
+    })
+    const catalog = new AgentCatalog('p')
+    const item = syncAgentFolder(catalog, dir).items[0]
+    expect(item).toMatchObject({ status: 'installed', name: 'Preset Author' })
+
+    const agent = catalog.require(item!.agentId!)
+    expect(agent.effective).not.toHaveProperty('apiPresetId')
+    expect(agent.effective).not.toHaveProperty('model')
+    expect(agent.effective.modelHint).toBe('gpt-preview')
+    expect(agent.invocationConfig).toEqual({})
+  })
+
   it('reports a name collision as a failure rather than throwing', () => {
     const catalog = new AgentCatalog('p')
     catalog.create(definition('Taken'))

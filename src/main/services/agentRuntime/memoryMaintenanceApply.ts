@@ -1,4 +1,4 @@
-import { normalizeAgentName } from '../../../shared/agentRuntime'
+import { normalizeAgentName, parseInvocationPlan } from '../../../shared/agentRuntime'
 import type { InvocationRuntime } from './invocation'
 import {
   MEMORY_MAINTENANCE_AGENT_NAME,
@@ -19,6 +19,11 @@ import {
  * The bridge's `applyResult` is idempotently fenced (it consumes the compose context stashed by the
  * prompt planner and drops a moved/superseded floor), so a non-memory Agent, a failed/cancelled run,
  * or a run that never composed simply does nothing here.
+ *
+ * BOTH entry shapes are wrapped: `run` (a single invocation) and `runPlan` (a card `AgentHostSession`
+ * plan step). A plan dispatches its steps through the base runtime's INTERNAL enqueue, which never
+ * routes through the wrapped `run`, so without wrapping `runPlan` a plan step naming the Memory
+ * Maintenance Agent would bill the provider, record success, and silently discard its `<TableEdit>`.
  */
 export interface MemoryMaintenanceApplyDeps {
   /** The installed bridge's apply consumer, or undefined in lightweight/test compositions. */
@@ -51,17 +56,58 @@ export const withMemoryMaintenanceApply = (
     void promise
       .then((outcome) => {
         if (outcome.status !== 'succeeded') return
-        try {
-          bridge.applyResult(scope, outcome.result)
-        } catch (cause) {
-          deps.warn(
-            `Memory Maintenance apply failed — ${
-              cause instanceof Error ? cause.message : String(cause)
-            }`
-          )
-        }
+        applyOnce(bridge, deps, scope, outcome.result)
+      })
+      .catch(() => undefined)
+    return promise
+  },
+  runPlan(request) {
+    const promise = base.runPlan(request)
+    const bridge = deps.bridge()
+    if (!bridge) return promise
+    // Parse the plan the same way the runtime does so we can map each ordered outcome back to the
+    // Agent it ran (the outcomes themselves carry no name). base.runPlan already threw on an invalid
+    // plan, so a parse failure here is unreachable — fall open rather than crash the apply seam.
+    const parsed = parseInvocationPlan(request.plan)
+    if (!parsed.ok) return promise
+    const floor = request.floor ?? parsed.value.floor
+    if (floor === undefined) return promise
+    // Flatten steps → calls in the exact order the runtime enqueues them (step order, and call order
+    // within a parallel group), matching the order it pushes outcomes.
+    const orderedAgents = parsed.value.steps.flatMap((step) =>
+      'parallel' in step ? step.parallel.map((call) => call.agent) : [step.agent]
+    )
+    const memoryName = normalizeAgentName(MEMORY_MAINTENANCE_AGENT_NAME)
+    if (!orderedAgents.some((name) => normalizeAgentName(name) === memoryName)) return promise
+    const scope: MemoryMaintenanceScope = {
+      profileId: request.profileId,
+      chatId: request.chatId,
+      floor
+    }
+    void promise
+      .then((plan) => {
+        plan.outcomes.forEach((outcome, index) => {
+          if (normalizeAgentName(orderedAgents[index] ?? '') !== memoryName) return
+          if (outcome.status !== 'succeeded') return
+          applyOnce(bridge, deps, scope, outcome.result)
+        })
       })
       .catch(() => undefined)
     return promise
   }
 })
+
+const applyOnce = (
+  bridge: { applyResult(scope: MemoryMaintenanceScope, rawResult: unknown): void },
+  deps: MemoryMaintenanceApplyDeps,
+  scope: MemoryMaintenanceScope,
+  rawResult: unknown
+): void => {
+  try {
+    bridge.applyResult(scope, rawResult)
+  } catch (cause) {
+    deps.warn(
+      `Memory Maintenance apply failed — ${cause instanceof Error ? cause.message : String(cause)}`
+    )
+  }
+}

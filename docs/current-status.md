@@ -34,8 +34,11 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
 - World portrait assets support a conventional `舞台` 立绘 variant with automatic base-立绘 fallback;
   `.jpe` joins the accepted image extensions.
 - Pure deterministic tactical-combat and deckbuilder engines with native workspace views.
-- One-canvas workflow/agent engine, trigger-rooted headless chains, run history, reusable modules,
-  SQL-table memory, the consolidated `memory.maintain` node, and importable example workflows.
+- Agent Runtime (ADR 0020): a single direct-path Classic Narrator turn, a built-in Memory Maintenance
+  Agent, a declarative commit-boundary cadence trigger for unattended runs, a profile-wide Agent Catalog,
+  floor-owned immutable Run Records, and a typed Agent Activity read/cancel surface. This replaces the
+  former one-canvas workflow/node-graph engine (packs, nodes, canvas, `memory.maintain` node, importable
+  example workflows), which is deleted. SQL-table memory is unchanged.
 - Partial World Card support: lossless card import, bundled regex/preset/lorebook/agent routing, and JSON
   world export.
 

@@ -20,6 +20,7 @@ export {
 } from './jsonSchema'
 export {
   AgentDefinitionSchema,
+  neutralizeImportedPreset,
   normalizePrompt,
   parseAgentDefinition,
   parseInputBindings,

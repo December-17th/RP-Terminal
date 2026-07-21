@@ -197,7 +197,15 @@ export const RPTerminalExtSchema = z
         opening: z.string().optional(),
           surface: z
             .object({
-              entry: z.string().min(1),
+              /** MUST be a card-code path (`card-code:...`) served from the card's own embedded code
+               * dir — never a bare/remote URL. Without this a card could auto-load an arbitrary remote
+               * document full-screen on session open. Matches wcvManager's CODE_ENTRY_PREFIX. */
+              entry: z
+                .string()
+                .startsWith('card-code:', 'Yuzu surface entry must use the card-code: scheme')
+                .refine((s) => s.length > 'card-code:'.length, {
+                  message: 'Yuzu surface entry needs a path after card-code:'
+                }),
               /** Presentation and generation are orthogonal. Opt in only when this UI consumes YSS. */
               enable_vn_mode: z.boolean().optional()
             })

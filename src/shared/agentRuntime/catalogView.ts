@@ -27,6 +27,18 @@ export interface AgentCatalogSummary {
   promptChars: number
   /** Roles currently bound to this Agent. A bound Agent cannot be disabled or deleted. */
   roles: AgentRole[]
+  /**
+   * The Agent's `modelHint` — a DISPLAY-ONLY model recommendation. For imported Agents this may carry the
+   * model the card/file declared (owner policy neutralizes the imported preset/model at install time and
+   * preserves the model here as a recommendation only; it is never applied at runtime).
+   */
+  recommendedModel?: string
+  /**
+   * Whether the user has bound an API preset to this Agent (`invocationConfig.apiPresetId`). Imported
+   * Agents start with NO preset (owner policy) — the UI surfaces a "pick a preset" notice when this is
+   * false. When no preset is bound, a run falls back to the profile's active preset.
+   */
+  hasApiPreset: boolean
   updatedAt: string
 }
 

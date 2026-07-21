@@ -98,8 +98,9 @@ export const streamProvider = async (
     if (cause instanceof ProviderDispatchError) {
       const compatibilityMessage = ordinaryGenerationHttpErrorMessage(cause)
       if (compatibilityMessage) throw new Error(compatibilityMessage)
-      if (transport === 'openai-compatible' && cause.diagnostics?.category === 'empty-stream') {
-        throw new Error('Stream produced no text')
+      if (cause.diagnostics?.category === 'empty-stream') {
+        if (transport === 'gemini') throw new Error('Gemini stream produced no text')
+        if (transport === 'openai-compatible') throw new Error('Stream produced no text')
       }
     }
     throw cause

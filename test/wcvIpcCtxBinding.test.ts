@@ -56,6 +56,7 @@ const h = vi.hoisted(() => ({
   unregisterCardTool: vi.fn(() => true),
   unregisterCardSender: vi.fn(() => 1),
   completeCardTool: vi.fn(() => true),
+  catalogGet: vi.fn((_profileId: string, _name: string) => null as unknown),
   senderSend: vi.fn(),
   lifecycle: new Map<string, () => void>(),
   floorListener: undefined as
@@ -109,6 +110,14 @@ vi.mock('../src/main/services/agentRuntime/InvocationRuntimeService', () => ({
     complete: h.completeCardTool
   })
 }))
+vi.mock('../src/main/services/agentRuntime/catalog', () => ({
+  AgentCatalog: class {
+    constructor(readonly profileId: string) {}
+    get(name: string): unknown {
+      return h.catalogGet(this.profileId, name)
+    }
+  }
+}))
 vi.mock('../src/main/services/generationService', () => ({}))
 vi.mock('../src/main/services/lorebookService', () => ({}))
 vi.mock('../src/main/services/scriptApiService', () => ({}))
@@ -148,6 +157,7 @@ beforeEach(() => {
   handlers.clear()
   vi.clearAllMocks()
   h.contextFor.mockImplementation((id: number) => (id === WCV_ID ? SLOT : null))
+  h.catalogGet.mockReturnValue(null)
   h.getSettings.mockReturnValue({
     persona: { name: 'Lyra', description: 'A quiet cartographer', inject: false }
   })
@@ -330,11 +340,65 @@ describe('WCV AgentHost IPC authority and lifecycle', () => {
     })
   })
 
-  it('rejects an unmounted sender with a typed preflight error', async () => {
+  it('rejects an unresolvable sender scope with an accurate scope-rejection code', async () => {
     await expect(
       call(WCV_AGENT_CHANNELS.run, 999, { requestId: 'request-1', name: 'Agent', options: {} })
-    ).rejects.toMatchObject({ code: 'CARD_TOOL_UNMOUNTED' })
+    ).rejects.toMatchObject({ code: 'AGENT_RUN_SCOPE_REJECTED' })
     expect(h.runAgent).not.toHaveBeenCalled()
+  })
+
+  it('rebinds to a fresh session when the slot ctx moves to a new chat/profile (no navigation)', async () => {
+    await call(WCV_AGENT_CHANNELS.run, WCV_ID, {
+      requestId: 'r1',
+      name: 'Agent',
+      options: { floor: 12 }
+    })
+    expect(h.runAgent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ profileId: 'pA', chatId: 'cA', characterId: 'charA' })
+    )
+    // The SAME slot/webContents is reused for a new (profile, chat) WITHOUT a navigation event.
+    h.contextFor.mockImplementation((id: number) =>
+      id === WCV_ID ? { slotId: 's1', profileId: 'pB', chatId: 'cB', characterId: 'charB' } : null
+    )
+    await call(WCV_AGENT_CHANNELS.run, WCV_ID, {
+      requestId: 'r2',
+      name: 'Agent',
+      options: { floor: 12 }
+    })
+    // The stale session was closed (its tools unregistered) and a fresh one bound to the new scope.
+    expect(h.unregisterCardSender).toHaveBeenCalledWith(WCV_ID)
+    expect(h.runAgent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        profileId: 'pB',
+        chatId: 'cB',
+        characterId: 'charB',
+        toolScope: { profileId: 'pB', chatId: 'cB', characterId: 'charB' }
+      })
+    )
+  })
+
+  it('applies the user per-Agent binding preset and ignores a card-supplied preset/model', async () => {
+    h.catalogGet.mockReturnValue({ invocationConfig: { apiPresetId: 'user-preset' } })
+    await call(WCV_AGENT_CHANNELS.run, WCV_ID, {
+      requestId: 'r1',
+      name: 'Agent',
+      options: { floor: 12, apiPresetId: 'card-preset', model: 'card-model' }
+    })
+    expect(h.catalogGet).toHaveBeenCalledWith('pA', 'Agent')
+    expect(h.runAgent.mock.calls.at(-1)![0].options).toEqual({
+      floor: 12,
+      apiPresetId: 'user-preset'
+    })
+  })
+
+  it('rejects a malformed tool binding on the WCV registerTool channel', () => {
+    expect(() =>
+      call(WCV_AGENT_CHANNELS.registerTool, WCV_ID, { inputSchema: { type: 'object' } })
+    ).toThrow(expect.objectContaining({ code: 'AGENT_RUN_INVALID_REQUEST' }))
+    expect(() => call(WCV_AGENT_CHANNELS.registerTool, WCV_ID, { name: '' })).toThrow(
+      expect.objectContaining({ code: 'AGENT_RUN_INVALID_REQUEST' })
+    )
+    expect(h.registerCardTool).not.toHaveBeenCalled()
   })
 
   it('registers card tools under authoritative scope and unregisters them on reload', () => {

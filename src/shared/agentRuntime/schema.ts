@@ -244,13 +244,44 @@ const RawAgentDefinitionSchema = z.strictObject({
 })
 
 /**
+ * Owner API-preset policy for IMPORTED Agents. An Agent imported from a card or a `.rptagent` file must
+ * start with NO API preset or model applied at runtime, regardless of what the incoming definition
+ * declares — the user picks the preset themselves. This strips any top-level `apiPresetId`/`model` off the
+ * raw definition BEFORE the strict parse so they can never enter the portable definition nor reach
+ * provider dispatch. The declared `model` is preserved as the display-only `modelHint` recommendation
+ * (when the definition does not already carry one); `apiPresetId` is a profile-local reference (the
+ * portable definition forbids user-local preset refs) and is dropped outright, never preserved. Every
+ * other imported override (`generationParameters`, `maxRetryAttempts`, the bundled preset, …) is left
+ * untouched.
+ *
+ * Applied only at IMPORT boundaries — the card-embedding `AgentDefinitionSchema` and the catalog's
+ * standalone/package parse. In-app authoring (`parseAgentDefinition` directly, via catalog `create`/
+ * `edit`) stays strict, so a hand-authored top-level `apiPresetId`/`model` is rejected rather than
+ * silently swallowed.
+ */
+export function neutralizeImportedPreset(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
+  const record = raw as Record<string, unknown>
+  if (!('apiPresetId' in record) && !('model' in record)) return raw
+  const { apiPresetId: _droppedPreset, model, ...rest } = record
+  if (typeof model === 'string' && model.trim() && !('modelHint' in rest)) {
+    rest.modelHint = model
+  }
+  return rest
+}
+
+/**
  * Zod adapter for embedding Agent Definitions in larger strict contracts (for example World Cards).
  * Standalone callers should prefer parseAgentDefinition so they retain structured contract errors.
+ *
+ * A card is an IMPORT boundary, so the imported preset/model is neutralized here (owner policy) before
+ * the strict parse: a card that declares `apiPresetId`/`model` still imports, with the model kept as a
+ * display-only `modelHint` recommendation and the preset dropped, rather than failing the whole card.
  */
 export const AgentDefinitionSchema: z.ZodType<AgentDefinition> = z
   .unknown()
   .transform((raw, context) => {
-    const result = parseAgentDefinition(raw)
+    const result = parseAgentDefinition(neutralizeImportedPreset(raw))
     if (result.ok) return result.value
     for (const error of result.errors) {
       context.addIssue({

@@ -30,6 +30,11 @@ export interface AgentHostSessionPlan {
 
 export type AgentHostSessionToolAuthority = 'completion-capability' | 'sender'
 
+/** The user's profile-local invocation binding for one Agent (the API preset it must run against). */
+export interface AgentInvocationBinding {
+  apiPresetId?: string
+}
+
 export interface AgentHostSessionDependencies {
   scope: AgentHostSessionScope
   senderId: number
@@ -39,6 +44,13 @@ export interface AgentHostSessionDependencies {
   sendTool: CardToolSender
   toolAuthority: AgentHostSessionToolAuthority
   cancelInvocationsOnClose: boolean
+  /**
+   * Resolve the user's per-Agent invocation binding by Agent name, sourced from the SAME catalog the
+   * manual Workspace / trigger paths consult. Card-invoked runs honor this binding (its `apiPresetId`
+   * wins), so the same Agent runs against the user's chosen preset regardless of caller. Optional so
+   * tests can construct a session without a catalog; production always injects it.
+   */
+  resolveInvocationConfig?(agentName: string): AgentInvocationBinding | null | undefined
 }
 
 type PendingInvocation = { kind: 'run' | 'plan'; id: string }
@@ -55,7 +67,11 @@ export class AgentHostSession {
   }
 
   async run(command: AgentHostSessionRun): Promise<Awaited<InvocationPromise>> {
-    const { signal: _signal, ...options } = command.options ?? {}
+    // Strip `signal` (transport-only) and — per owner policy — any card-supplied `apiPresetId`/`model`:
+    // cards may never choose the preset or model. Then let the user's per-Agent binding win.
+    const { signal: _signal, apiPresetId: _apiPresetId, model: _model, ...rest } = (command.options ??
+      {}) as CardAgentRunOptions & { apiPresetId?: unknown; model?: unknown }
+    const options = this.applyBinding(command.name, rest)
     const floor = options.floor ?? this.dependencies.latestFloor()
     if (floor === undefined) throw new Error('No committed Invocation Floor exists')
     const running = this.dependencies.runtime.run({
@@ -74,16 +90,17 @@ export class AgentHostSession {
   }
 
   async runPlan(command: AgentHostSessionPlan): Promise<Awaited<InvocationPlanPromise>> {
+    // Sanitize the plan: strip card-supplied `apiPresetId`/`model` from every step call and merge each
+    // Agent's user binding (binding wins), mirroring the single-run policy across a declarative plan.
+    const plan = this.sanitizePlan(command.plan)
     const planFloor =
-      command.plan && typeof command.plan === 'object'
-        ? (command.plan as { floor?: unknown }).floor
-        : undefined
+      plan && typeof plan === 'object' ? (plan as { floor?: unknown }).floor : undefined
     const floor = typeof planFloor === 'number' ? planFloor : this.dependencies.latestFloor()
     if (floor === undefined) throw new Error('No committed Invocation Floor exists')
     const running = this.dependencies.runtime.runPlan({
       ...this.scope,
       floor,
-      plan: command.plan,
+      plan,
       toolScope: this.scope
     })
     this.pending.set(command.requestId, { kind: 'plan', id: running.planId })
@@ -92,6 +109,44 @@ export class AgentHostSession {
     } finally {
       this.pending.delete(command.requestId)
     }
+  }
+
+  /** Merge the user's per-Agent binding onto sanitized run options — its `apiPresetId` wins. */
+  private applyBinding(
+    agentName: string,
+    options: Omit<CardAgentRunOptions, 'signal'>
+  ): Omit<CardAgentRunOptions, 'signal'> & { apiPresetId?: string } {
+    const apiPresetId = this.dependencies.resolveInvocationConfig?.(agentName)?.apiPresetId
+    return apiPresetId ? { ...options, apiPresetId } : options
+  }
+
+  /** Return a plan copy with each step call's card-supplied preset/model dropped and the user binding merged. */
+  private sanitizePlan(rawPlan: unknown): unknown {
+    if (!rawPlan || typeof rawPlan !== 'object' || Array.isArray(rawPlan)) return rawPlan
+    const source = rawPlan as { steps?: unknown }
+    if (!Array.isArray(source.steps)) return rawPlan
+    const sanitizeCall = (call: unknown): unknown => {
+      if (!call || typeof call !== 'object' || Array.isArray(call)) return call
+      const { apiPresetId: _apiPresetId, model: _model, ...rest } = call as Record<string, unknown>
+      const agentName = typeof rest.agent === 'string' ? rest.agent : undefined
+      const apiPresetId = agentName
+        ? this.dependencies.resolveInvocationConfig?.(agentName)?.apiPresetId
+        : undefined
+      return apiPresetId ? { ...rest, apiPresetId } : rest
+    }
+    const steps = source.steps.map((step) => {
+      if (
+        step &&
+        typeof step === 'object' &&
+        !Array.isArray(step) &&
+        Array.isArray((step as { parallel?: unknown }).parallel)
+      ) {
+        const group = step as { parallel: unknown[] }
+        return { ...(step as object), parallel: group.parallel.map(sanitizeCall) }
+      }
+      return sanitizeCall(step)
+    })
+    return { ...(rawPlan as object), steps }
   }
 
   cancel(requestId: string): boolean {

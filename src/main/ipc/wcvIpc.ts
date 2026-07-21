@@ -29,6 +29,7 @@ import {
   liveCardToolRegistry
 } from '../services/agentRuntime/InvocationRuntimeService'
 import { AgentHostSession, agentToolRequestSender } from '../services/agentRuntime/AgentHostSession'
+import { AgentCatalog } from '../services/agentRuntime/catalog'
 // The Host-member channels are registered THROUGH the shared Channel Spec (ADR 0013): a member-keyed
 // `WcvHostImpls` map, typed against `WcvSpecMember`, drives `registerHostChannels` — so a spec member with
 // no main-side implementation is a COMPILE error, not a runtime gap. The channel strings + call kinds come
@@ -206,20 +207,37 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     return characterId ? { profileId: ctx.profileId, chatId: ctx.chatId, characterId } : null
   }
 
+  const sameScope = (
+    a: AgentHostSession['scope'],
+    b: NonNullable<ReturnType<typeof agentScope>>
+  ): boolean =>
+    a.profileId === b.profileId && a.chatId === b.chatId && a.characterId === b.characterId
+
   const ensureAgentSender = (
     sender: AgentSender,
     scope: NonNullable<ReturnType<typeof agentScope>>
   ) => {
     const current = agentSenders.get(sender.id)
-    if (current) return current
+    if (current) {
+      // A WCV SLOT is reused for a new (profileId, chatId) WITHOUT a navigation event (wcvManager.ensure
+      // rebinds the same webContents; every other WCV channel follows the new ctx per-call). The cached
+      // Agent session must NOT keep operating against the stale scope — if the sender's bound scope has
+      // moved, close the old session and build a fresh one for the new scope (parity with the inline
+      // transport, which keys sessions by senderId+scope).
+      if (sameScope(current.session.scope, scope)) return current
+      current.cleanup()
+    }
     const cleanup = (): void => {
       const state = agentSenders.get(sender.id)
-      if (!state) return
+      if (!state || state.session !== session) return
       agentSenders.delete(sender.id)
       state.session.close()
       sender.removeListener?.('destroyed', cleanup)
       sender.removeListener?.('did-start-navigation', cleanup)
     }
+    // Per-Agent binding source: the SAME catalog the manual Workspace / trigger paths read, so a
+    // card-invoked run honors the user's chosen API preset. Lazy + reused across this session's runs.
+    let catalog: AgentCatalog | null = null
     const session = new AgentHostSession({
       scope,
       senderId: sender.id,
@@ -228,7 +246,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       latestFloor: () => floorService.getAllFloors(scope.profileId, scope.chatId).at(-1)?.floor,
       sendTool: agentToolRequestSender((channel, payload) => sender.send(channel, payload)),
       toolAuthority: 'sender',
-      cancelInvocationsOnClose: true
+      cancelInvocationsOnClose: true,
+      resolveInvocationConfig: (agentName) => {
+        catalog ??= new AgentCatalog(scope.profileId)
+        return catalog.get(agentName)?.invocationConfig
+      }
     })
     const state = { sender, session, cleanup }
     agentSenders.set(sender.id, state)
@@ -465,19 +487,25 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       : String(text ?? '')
   })
 
+  // Accurate error codes for the WCV Agent channels: an unresolvable sender scope is a SCOPE rejection
+  // (nothing to do with tools — the old CARD_TOOL_UNMOUNTED was misleading); a malformed request shape
+  // (bad name/requestId/plan/binding) is an INVALID REQUEST, distinct from a scope rejection. Neither
+  // code needs a renderer i18n string — card-transport errors surface to card JS, not the Agent panels.
+  const scopeRejected = (): Error =>
+    Object.assign(new Error('Agent Run request scope was rejected'), {
+      code: 'AGENT_RUN_SCOPE_REJECTED'
+    })
+  const invalidAgentRequest = (message: string): Error =>
+    Object.assign(new Error(message), { code: 'AGENT_RUN_INVALID_REQUEST' })
+
   ipcMain.handle(WCV_AGENT_CHANNELS.run, async (event, request: unknown) => {
     const scope = agentScope(event.sender.id)
-    if (!scope || !request || typeof request !== 'object') {
-      throw Object.assign(new Error('Card tool implementation is no longer mounted'), {
-        code: 'CARD_TOOL_UNMOUNTED'
-      })
-    }
+    if (!scope) throw scopeRejected()
+    if (!request || typeof request !== 'object') throw invalidAgentRequest('Invalid WCV Agent request')
     const name = (request as { name?: unknown }).name
     const requestId = (request as { requestId?: unknown }).requestId
     if (typeof name !== 'string' || !name || typeof requestId !== 'string' || !requestId) {
-      throw Object.assign(new Error('Invalid WCV Agent request'), {
-        code: 'AGENT_RUN_SCOPE_REJECTED'
-      })
+      throw invalidAgentRequest('Invalid WCV Agent request')
     }
     const session = ensureAgentSender(event.sender, scope).session
     const rawOptions = (request as { options?: CardAgentRunOptions }).options
@@ -486,17 +514,14 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
 
   ipcMain.handle(WCV_AGENT_CHANNELS.runPlan, async (event, request: unknown) => {
     const scope = agentScope(event.sender.id)
-    if (!scope || !request || typeof request !== 'object') {
-      throw Object.assign(new Error('Card tool implementation is no longer mounted'), {
-        code: 'CARD_TOOL_UNMOUNTED'
-      })
+    if (!scope) throw scopeRejected()
+    if (!request || typeof request !== 'object') {
+      throw invalidAgentRequest('Invalid WCV Agent plan request')
     }
     const requestId = (request as { requestId?: unknown }).requestId
     const plan = (request as { plan?: any }).plan
     if (typeof requestId !== 'string' || !requestId || !plan || typeof plan !== 'object') {
-      throw Object.assign(new Error('Invalid WCV Agent plan request'), {
-        code: 'AGENT_RUN_SCOPE_REJECTED'
-      })
+      throw invalidAgentRequest('Invalid WCV Agent plan request')
     }
     return ensureAgentSender(event.sender, scope).session.runPlan({ requestId, plan })
   })
@@ -508,10 +533,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
 
   ipcMain.handle(WCV_AGENT_CHANNELS.registerTool, (event, binding: CardAgentToolBinding) => {
     const scope = agentScope(event.sender.id)
-    if (!scope) {
-      throw Object.assign(new Error('Card tool implementation is no longer mounted'), {
-        code: 'CARD_TOOL_UNMOUNTED'
-      })
+    if (!scope) throw scopeRejected()
+    // Mirror the inline transport's payload validation (agentRunIpc: `!binding || !stringField(name)`):
+    // reject a malformed binding main-side instead of forwarding it unchecked to the registry.
+    if (
+      !binding ||
+      typeof binding !== 'object' ||
+      typeof binding.name !== 'string' ||
+      !binding.name
+    ) {
+      throw invalidAgentRequest('Invalid WCV Agent tool binding')
     }
     return ensureAgentSender(event.sender, scope).session.registerTool(binding)
   })

@@ -1,3 +1,4 @@
+import { ProviderDispatchError } from './errors'
 import { buildGeminiBody } from './shaping'
 import {
   emitRateLimitHeaders,
@@ -39,19 +40,26 @@ export const createGeminiAdapter = (
 
     let rawUsage: Record<string, any> | undefined
     let finishReason: unknown
+    let sawOutput = false
+    let toolCallIndex = 0
+    let frameCount = 0
+    let parsedFrameCount = 0
     await readSse(response, (data) => {
+      frameCount++
       let payload: Record<string, any>
       try {
         payload = jsonRecord(JSON.parse(data))
       } catch {
         return
       }
+      parsedFrameCount++
       const candidate = jsonRecord(payload.candidates?.[0])
       const parts = candidate.content?.parts
       if (Array.isArray(parts)) {
-        parts.forEach((rawPart, index) => {
+        parts.forEach((rawPart) => {
           const part = jsonRecord(rawPart)
           if (typeof part.text === 'string' && part.text) {
+            sawOutput = true
             emit({
               type: part.thought === true ? 'reasoning-delta' : 'text-delta',
               delta: part.text
@@ -59,6 +67,8 @@ export const createGeminiAdapter = (
           }
           if (part.functionCall) {
             const call = jsonRecord(part.functionCall)
+            const index = toolCallIndex++
+            sawOutput = true
             emit({
               type: 'tool-call-delta',
               index,
@@ -75,6 +85,16 @@ export const createGeminiAdapter = (
       if (payload.usageMetadata) rawUsage = jsonRecord(payload.usageMetadata)
       if (candidate.finishReason) finishReason = candidate.finishReason
     })
+    if (!sawOutput && !request.signal?.aborted) {
+      throw new ProviderDispatchError('Provider stream produced no model events', {
+        retryClass: 'transient',
+        diagnostics: {
+          category: 'empty-stream',
+          frameCount,
+          parsedFrameCount
+        }
+      })
+    }
     if (rawUsage) {
       const cached = finiteNumberOrZero(rawUsage.cachedContentTokenCount)
       emit({

@@ -58,6 +58,7 @@ describe('theme.chromeTokensFor — the app chrome surface for an effective sche
       text: THEMES.light.tokens['--rpt-text-primary'],
       border: THEMES.light.tokens['--rpt-border'],
       // App-scoped so a card palette shadowing play-root semantics cannot recolor strip indicators.
+      accent: THEMES.light.tokens['--rpt-accent'],
       danger: THEMES.light.tokens['--rpt-danger'],
       success: THEMES.light.tokens['--rpt-success'],
       warning: THEMES.light.tokens['--rpt-warning'],

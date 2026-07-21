@@ -7,6 +7,7 @@
 // the folder, enable/disable, bind roles). This popup is the editor.
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
+  AgentCatalogSummary,
   AgentDefinition,
   AgentRole,
   AgentRunRecord
@@ -42,6 +43,89 @@ const blankDefinition = (name: string): AgentDefinition => ({
     notification: 'failure'
   }
 })
+
+/**
+ * Per-Agent API-preset binding (`invocationConfig.apiPresetId`). Owner policy: an imported Agent starts
+ * with NO preset selected — the user picks one here, or the Agent runs on the profile's active preset.
+ * The imported model (if the card/file declared one) is shown read-only as a recommendation and is never
+ * applied at runtime. User-authored Agents bind a preset the same way.
+ */
+function AgentPresetBinding({
+  profileId,
+  agent,
+  t
+}: {
+  profileId: string
+  agent: AgentCatalogSummary
+  t: (key: string, vars?: Record<string, string | number>) => string
+}): React.ReactElement {
+  const [presets, setPresets] = useState<{ id: string; name: string }[]>([])
+  const [presetId, setPresetId] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const [cfg, settings] = await Promise.all([
+        window.api.getAgentInvocationConfig(profileId, agent.id),
+        window.api.getSettings(profileId)
+      ])
+      if (cancelled) return
+      setPresetId(typeof cfg?.apiPresetId === 'string' ? cfg.apiPresetId : '')
+      setPresets(
+        ((settings?.api_presets ?? []) as { id: string; name: string }[]).map((preset) => ({
+          id: preset.id,
+          name: preset.name
+        }))
+      )
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [profileId, agent.id])
+
+  const commit = async (next: string): Promise<void> => {
+    setPresetId(next)
+    setBusy(true)
+    try {
+      await window.api.setAgentInvocationConfig(profileId, agent.id, next ? { apiPresetId: next } : {})
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const imported = agent.sourceKind === 'card' || agent.sourceKind === 'user-imported'
+
+  return (
+    <div className="agent-workspace__preset">
+      <label className="agent-field agent-field--inline">
+        <span>{t('agents.apiPreset')}</span>
+        <select
+          value={presetId}
+          disabled={busy}
+          onChange={(event) => void commit(event.target.value)}
+        >
+          <option value="">{t('agents.apiPreset.default')}</option>
+          {presets.map((preset) => (
+            <option key={preset.id} value={preset.id}>
+              {preset.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {agent.recommendedModel ? (
+        <p className="agents-panel__hint">
+          {t('agents.apiPreset.recommendation', { model: agent.recommendedModel })}
+        </p>
+      ) : null}
+      {imported && !presetId ? (
+        <p className="agent-workspace__notice" role="status">
+          {t('agents.apiPreset.notice')}
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
 export function AgentWorkspace({ profileId }: { profileId: string }): React.ReactElement | null {
   const open = useUiStore((s) => s.agentWorkspaceOpen)
@@ -424,6 +508,8 @@ export function AgentWorkspace({ profileId }: { profileId: string }): React.Reac
                     ) : null}
                   </div>
                 ) : null}
+
+                <AgentPresetBinding profileId={profileId} agent={selected} t={t} />
 
                 <footer className="agent-workspace__footer">
                   <label className="agent-field agent-field--inline">

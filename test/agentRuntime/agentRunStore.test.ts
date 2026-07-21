@@ -584,6 +584,48 @@ describe('AgentRunStore', () => {
     expect(events).toContain('finished')
   })
 
+  it('reconciles rows stranded at running after a crash on first access by a new store', () => {
+    // A prior process left an in-flight run (crash: no finalize/shutdown ran).
+    store.create(start('stranded', 5))
+    expect(store.get('c1', 'stranded')?.status).toBe('running')
+
+    // A fresh store over the same DB (a new process) has no live controller for that run, so the
+    // first time it touches the handle it sweeps the stranded row to a terminal, distinguishable state.
+    const revived = createAgentRunStore({
+      getDb: () => db,
+      now: () => '2026-07-19T00:00:00.000Z'
+    })
+    const record = revived.get('c1', 'stranded')!
+    expect(record.status).toBe('cancelled')
+    expect(record.failure).toMatchObject({ code: 'INTERRUPTED' })
+    expect(record.finishedAt).toBe('2026-07-19T00:00:00.000Z')
+  })
+
+  it('leaves a run this process is driving as running while reconciling stranded ones', () => {
+    store.create(start('stranded', 5))
+    const revived = createAgentRunStore({
+      getDb: () => db,
+      now: () => '2026-07-19T00:00:00.000Z'
+    })
+    // Creating a live run triggers reconciliation on first access; the stranded row is swept but the
+    // run this store just started stays running.
+    revived.create(start('live', 6))
+    expect(revived.get('c1', 'stranded')?.status).toBe('cancelled')
+    expect(revived.get('c1', 'live')?.status).toBe('running')
+  })
+
+  it('prunes agent_runs past the rolling retention window, keeping the most recent per chat', () => {
+    let tick = 0
+    const clock = () => `2026-07-18T12:00:${String(tick++).padStart(2, '0')}.000Z`
+    const capped = createAgentRunStore({ getDb: () => db, now: clock, retention: 3 })
+    for (let i = 1; i <= 5; i++) capped.create(start(`run-${i}`, i))
+
+    const kept = capped.list('c1').map((record) => record.invocationId)
+    expect(kept).toEqual(['run-5', 'run-4', 'run-3'])
+    expect(capped.get('c1', 'run-1')).toBeNull()
+    expect(capped.get('c1', 'run-2')).toBeNull()
+  })
+
   it('emits running activity even when notification is none and shutdown finalizes unfinished runs', () => {
     const events: Array<{ type: string; notification?: string }> = []
     store.subscribe((event) =>

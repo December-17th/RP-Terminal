@@ -191,6 +191,7 @@ export function chromeTokensFor(
   bgPrimary: string
   text: string
   border: string
+  accent: string
   danger: string
   success: string
   warning: string
@@ -204,8 +205,9 @@ export function chromeTokensFor(
     bgPrimary: src['--rpt-bg-primary'],
     text: src['--rpt-text-primary'],
     border: src['--rpt-border'],
-    // Chrome-level status tints: play-root semantic colors can be shadowed by a card palette, which
-    // would strand card-colored indicators on the app-colored strip.
+    // Chrome-level accent + status tints: play-root `--rpt-accent`/semantic colors can be shadowed by a
+    // card palette, which would strand card-colored indicators/badges on the app-colored strip.
+    accent: src['--rpt-accent'],
     danger: src['--rpt-danger'],
     success: src['--rpt-success'],
     warning: src['--rpt-warning'],
@@ -226,6 +228,7 @@ export function applyChromeScheme(themeId: string | undefined, scheme: 'light' |
   root.style.setProperty('--rpt-app-bg-primary', c.bgPrimary)
   root.style.setProperty('--rpt-app-text-primary', c.text)
   root.style.setProperty('--rpt-app-border', c.border)
+  root.style.setProperty('--rpt-app-accent', c.accent)
   root.style.setProperty('--rpt-app-danger', c.danger)
   root.style.setProperty('--rpt-app-success', c.success)
   root.style.setProperty('--rpt-app-warning', c.warning)

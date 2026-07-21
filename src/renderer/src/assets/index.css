@@ -27,6 +27,7 @@
   --rpt-app-bg-primary: #121212;
   --rpt-app-text-primary: #e0e0e0;
   --rpt-app-border: #333333;
+  --rpt-app-accent: #5b8def;
   --rpt-app-danger: #e74c3c;
   --rpt-app-success: #4caf72;
   --rpt-app-warning: #e0a23c;
@@ -896,136 +897,59 @@ details[open] > .stat-group-title::before {
   animation: rpt-pulse 1.2s ease-in-out infinite;
 }
 
-.agent-run-activity {
-  margin: 0;
-  padding: 12px;
-  color: var(--rpt-text-secondary);
-  background: var(--rpt-surface-2, rgba(127, 127, 127, 0.08));
-  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.25));
-  border-radius: 8px;
-  font-size: 12px;
-}
-.agent-run-activity__heading,
-.agent-run-row__identity,
-.agent-run-row__details {
-  display: flex;
-  align-items: center;
-}
-.agent-run-activity__heading {
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.agent-run-activity__heading h2 {
-  margin: 0;
-  color: var(--rpt-text-primary);
-  font-size: 12px;
-  font-weight: 600;
-}
-.agent-run-list {
+/* Yuzu full-card takeover surface. The card-code WCV is a native view painted OVER the DOM, so the
+   escape bar is reserved ABOVE the WCV rect (an in-rect overlay would be occluded, including when a
+   declined trust grant serves a raw native error page). App-scoped tokens (`--rpt-app-*`) so a card
+   palette shadowing `.play-root` can't recolor the escape chrome. */
+.yuzu-surface {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
-.agent-run-row {
-  display: grid;
-  grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto;
-  align-items: center;
-  min-height: 32px;
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.18));
-}
-.agent-run-row__identity {
-  min-width: 0;
-  gap: 8px;
-}
-.agent-run-row__identity strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--rpt-text-primary);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.agent-run-row__details {
-  min-width: 0;
-  flex: 1;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  font-variant-numeric: tabular-nums;
-}
-.agent-run-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--rpt-text-primary);
-}
-.agent-run-status__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--rpt-text-secondary);
-}
-.agent-run-row--running .agent-run-status__dot {
-  background: var(--rpt-accent, #5b8def);
-  animation: rpt-pulse 1.2s ease-in-out infinite;
-}
-.agent-run-row--failed .agent-run-status__dot {
-  background: var(--rpt-danger, #d9534f);
-}
-.agent-run-row--degraded .agent-run-status__dot {
-  background: var(--rpt-warning, #e0a23c);
-}
-.agent-run-stop {
+.yuzu-surface__bar {
   flex: 0 0 auto;
-  min-height: 24px;
-  padding: 2px 8px;
-  color: var(--rpt-text-primary);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 3px 6px;
+  background: var(--rpt-app-bg-secondary);
+  border-bottom: 1px solid var(--rpt-app-border);
+}
+.yuzu-surface__exit {
+  padding: 2px 10px;
+  color: var(--rpt-app-text-primary);
   background: transparent;
-  border: 1px solid var(--rpt-border, rgba(127, 127, 127, 0.35));
+  border: 1px solid var(--rpt-app-border);
   border-radius: 5px;
   cursor: pointer;
   font: inherit;
+  font-size: 12px;
 }
-.agent-run-stop:hover:not(:disabled) {
-  background: var(--rpt-surface-3, rgba(127, 127, 127, 0.14));
+.yuzu-surface__exit:hover {
+  background: color-mix(in srgb, var(--rpt-app-text-primary) 10%, transparent);
 }
-.agent-run-stop:focus-visible {
-  outline: 2px solid var(--rpt-accent, #5b8def);
+.yuzu-surface__exit:focus-visible {
+  outline: 2px solid var(--rpt-app-accent);
   outline-offset: 2px;
 }
-.agent-run-stop:disabled {
-  cursor: wait;
-  opacity: 0.55;
+.yuzu-surface__body {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
 }
-.agent-run-activity__empty,
-.agent-run-activity__error {
-  margin: 2px 0 0;
-}
-.agent-run-activity__error {
-  color: var(--rpt-danger, #d9534f);
-}
-@container (max-width: 560px) {
-  .agent-run-row {
-    align-items: flex-start;
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .agent-run-row__identity {
-    min-height: 24px;
-  }
-  .agent-run-row__details {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .agent-run-row--running .agent-run-status__dot {
-    animation: none;
-  }
+.yuzu-surface__fallback {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--rpt-app-text-primary);
+  background: var(--rpt-app-bg-secondary);
 }
 @keyframes rpt-pulse {
   0%,
@@ -2932,7 +2856,7 @@ select {
   justify-content: center;
   border-radius: 999px;
   color: var(--rpt-app-text-primary);
-  background: color-mix(in srgb, var(--rpt-accent) 18%, transparent);
+  background: color-mix(in srgb, var(--rpt-app-accent) 18%, transparent);
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
@@ -2976,7 +2900,7 @@ select {
   background: color-mix(in srgb, var(--rpt-app-text-primary) 45%, transparent);
 }
 .tstrip-agent-status__item--running .tstrip-agent-status__dot {
-  background: var(--rpt-accent);
+  background: var(--rpt-app-accent);
   animation: rpt-pulse 1.2s ease-in-out infinite;
 }
 .tstrip-agent-status__item--succeeded .tstrip-agent-status__dot {
@@ -3006,7 +2930,8 @@ select {
   text-overflow: ellipsis;
 }
 .tstrip-agent-status__floor {
-  color: color-mix(in srgb, var(--rpt-app-text-primary) 55%, transparent);
+  /* 72% mix clears WCAG AA (≥4.5:1) for this 11px text on all themes; 55% failed (~3.8:1) on light. */
+  color: color-mix(in srgb, var(--rpt-app-text-primary) 72%, transparent);
 }
 .tstrip-agent-status__more {
   flex: 0 0 auto;

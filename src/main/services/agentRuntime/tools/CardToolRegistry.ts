@@ -144,6 +144,12 @@ const inputMatches = (
   binding.parallelSafe === definition.parallelSafe &&
   canonicalJson(binding.inputSchema) === canonicalJson(definition.inputSchema)
 
+/** Two Tool Bindings are the SAME implementation contract (name already matched by the scope-map key). */
+const sameBinding = (a: CardToolBindingDeclaration, b: CardToolBindingDeclaration): boolean =>
+  a.transactionMode === b.transactionMode &&
+  a.parallelSafe === b.parallelSafe &&
+  canonicalJson(a.inputSchema) === canonicalJson(b.inputSchema)
+
 const operationsFrom = (value: unknown): StagedToolOperation[] => {
   if (value === undefined) return []
   if (!Array.isArray(value)) {
@@ -291,10 +297,19 @@ export const createCardToolRegistry = ({
     register(registration) {
       const scopeKey = scopeKeyFor(registration.scope)
       const scoped = toolsByScope.get(scopeKey) ?? new Map<string, RegisteredTool>()
-      if (scoped.has(registration.binding.name)) {
+      const existing = scoped.get(registration.binding.name)
+      // A second live mount of the SAME message card in one chat is NORMAL (inline cards render one frame
+      // per floor; WCV can show sibling slots). Both share this (profile, chat, card) scope, so the later
+      // registration of an IDENTICAL binding takes over — last-registration-wins — instead of throwing
+      // CARD_TOOL_DUPLICATE (which the facet parked and then re-threw on every subsequent runAgent). The
+      // prior mount's lease goes inert: its later unregister no longer owns the name, and model tool
+      // requests route to this (current) registration's sender. In-flight callbacks keep their own
+      // senderId snapshot, so completion-ownership (complete) and the capability scheme are unaffected.
+      // A DIFFERENT binding under the same name is a genuine conflict and is still rejected.
+      if (existing && !sameBinding(existing.binding, registration.binding)) {
         throw new CardToolRegistryError(
           'CARD_TOOL_DUPLICATE',
-          `Card tool "${registration.binding.name}" is already registered for this card scope`
+          `Card tool "${registration.binding.name}" is already registered for this card scope with a different definition`
         )
       }
       scoped.set(registration.binding.name, { ...registration, scopeKey })

@@ -86,6 +86,9 @@ import {
 import { withMemoryMaintenanceApply } from '../../src/main/services/agentRuntime/memoryMaintenanceApply'
 import type {
   InvocationOutcome,
+  InvocationPlanOutcome,
+  InvocationPlanPromise,
+  InvocationPlanRequest,
   InvocationPromise,
   InvocationRequest,
   InvocationRuntime
@@ -376,6 +379,71 @@ describe('withMemoryMaintenanceApply — single-owner apply seam (Finding 1)', (
       warn: () => {}
     })
     await runtime.run({ ...memReq, agent: 'Some Other Agent' })
+    await flush()
+    expect(applyResult).not.toHaveBeenCalled()
+  })
+
+  // Finding 3: a card plan step naming the Memory Maintenance Agent reaches the runtime via `runPlan`,
+  // which dispatches through the base runtime's INTERNAL enqueue — never the wrapped `run`. The seam
+  // must therefore wrap `runPlan` too, mapping each ordered outcome back to its Agent so the memory
+  // step's <TableEdit> is applied and other steps are ignored.
+  const fakePlanBase = (outcome: InvocationPlanOutcome): InvocationRuntime =>
+    ({
+      runPlan: () => {
+        const p = Promise.resolve(outcome) as InvocationPlanPromise
+        Object.defineProperty(p, 'planId', { value: outcome.planId })
+        return p
+      }
+    }) as unknown as InvocationRuntime
+  const outcome = (invocationId: string, result: unknown): InvocationOutcome => ({
+    invocationId,
+    status: 'succeeded',
+    result: result as never,
+    sourceRestarts: 0,
+    required: false
+  })
+
+  it('applies the Memory Maintenance step of a plan (the plan path routes through the same seam)', async () => {
+    const applyResult = vi.fn()
+    const runtime = withMemoryMaintenanceApply(
+      fakePlanBase({
+        planId: 'plan-1',
+        status: 'succeeded',
+        outcomes: [outcome('i-other', 'x'), outcome('i-mem', '<TableEdit></TableEdit>')]
+      }),
+      { bridge: () => ({ applyResult }), warn: () => {} }
+    )
+    const request: InvocationPlanRequest = {
+      profileId: 'p',
+      chatId: 'c1',
+      floor: 7,
+      plan: { steps: [{ agent: 'Some Other Agent' }, { agent: 'Memory Maintenance' }] }
+    }
+    await runtime.runPlan(request)
+    await flush()
+    expect(applyResult).toHaveBeenCalledTimes(1)
+    expect(applyResult).toHaveBeenCalledWith(
+      { profileId: 'p', chatId: 'c1', floor: 7 },
+      '<TableEdit></TableEdit>'
+    )
+  })
+
+  it('does not apply when a plan has no Memory Maintenance step', async () => {
+    const applyResult = vi.fn()
+    const runtime = withMemoryMaintenanceApply(
+      fakePlanBase({
+        planId: 'plan-2',
+        status: 'succeeded',
+        outcomes: [outcome('i-other', 'x')]
+      }),
+      { bridge: () => ({ applyResult }), warn: () => {} }
+    )
+    await runtime.runPlan({
+      profileId: 'p',
+      chatId: 'c1',
+      floor: 7,
+      plan: { steps: [{ agent: 'Some Other Agent' }] }
+    })
     await flush()
     expect(applyResult).not.toHaveBeenCalled()
   })

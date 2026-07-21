@@ -104,13 +104,6 @@ describe('Agent-Runtime renderer surfaces mount without crashing', () => {
     expect(container.firstChild).toBeTruthy()
   })
 
-  it('AgentRunActivity mounts standalone with a running row', async () => {
-    const chatId = await seedActiveSession()
-    const { AgentRunActivity } = await import('../../src/renderer/src/components/AgentRunActivity')
-    const { container } = render(<AgentRunActivity profileId="p1" chatId={chatId} />)
-    expect(container).toBeTruthy()
-  })
-
   it('toggles Agent status inside the title-strip spacer without an overlay', async () => {
     await seedActiveSession()
     const { TopStrip } = await import('../../src/renderer/src/components/TopStrip')

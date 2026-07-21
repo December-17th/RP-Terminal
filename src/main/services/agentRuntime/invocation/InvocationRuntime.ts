@@ -687,6 +687,16 @@ export const createInvocationRuntime = ({
     const complete = (outcome: InvocationOutcome): void => {
       finishBarrier(item, barrierMap(item.request.chatId).get(item.invocationId), outcome)
       item.finished = true
+      // Prune the identity/dedupe ledger on EVERY terminal outcome (success AND failure), so
+      // coalescing applies only to IN-FLIGHT work. Leaving completed entries in place made a failed
+      // run permanently un-retryable at its floor (a repeat "Run now" returned the stale resolved
+      // outcome with no new provider call), made a failed cadence fire skip its whole window, and
+      // leaked the maps unboundedly. Per-(chat,agent) lane serialization still prevents concurrent
+      // duplicates; the OLDER_FLOOR and cancelFloors paths already delete these same entries.
+      if (identities.get(item.identity)?.invocationId === item.invocationId) {
+        identities.delete(item.identity)
+      }
+      invocations.delete(item.invocationId)
       item.resolve(outcome)
       queue.shift()
       runningLanes.delete(lane)
@@ -935,8 +945,9 @@ export const createInvocationRuntime = ({
     hasActiveWork() {
       // Union of every live-work container. `lanes` holds the queued + currently-running items per
       // lane (an entry is shifted out and the lane dropped when it completes); `plans` holds plans
-      // still stepping between invocations. `invocations` is NOT pruned on normal completion — it
-      // is the identity/dedupe ledger — so it is scanned by the `finished` flag, never by size.
+      // still stepping between invocations. `invocations` is pruned on every terminal outcome (it is
+      // the in-flight identity/dedupe ledger), so every entry it holds is still live; the `finished`
+      // guard is belt-and-braces for the window before `complete` prunes.
       if (plans.size > 0 || lanes.size > 0) return true
       for (const item of invocations.values()) if (!item.finished) return true
       return false

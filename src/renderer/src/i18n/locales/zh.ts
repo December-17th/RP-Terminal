@@ -327,6 +327,15 @@ const zh: Record<string, string> = {
   'agents.disable': '停用',
   'agents.delete': '删除',
   'agents.roleBoundLocked': '已绑定角色 — 请先解除绑定。',
+  'agents.recommendedModel': '推荐模型 {{model}}',
+  'agents.needsApiPreset': '需选择 API 预设',
+  'agents.importedNeedPreset':
+    '导入的智能体默认不带 API 预设。请在智能体工作区为每个智能体选择一个预设；在此之前，它们将使用配置文件的活动预设运行。',
+  'agents.apiPreset': 'API 预设',
+  'agents.apiPreset.default': '配置文件的活动预设',
+  'agents.apiPreset.recommendation': '推荐模型：{{model}}（仅为推荐——除非你在预设中选用，否则不会应用）',
+  'agents.apiPreset.notice':
+    '此导入的智能体尚未选择 API 预设。请选择一个，否则将使用配置文件的活动预设运行。',
   'settings.assetsTitle': '世界素材',
   'settings.assetsBody':
     '在“素材”视图中管理本世界的头像、立绘、相册、场景图与 CG — 支持拖放导入、重命名与导出。',
@@ -844,6 +853,10 @@ const zh: Record<string, string> = {
   'agentRuns.status.failed': '失败',
   'agentRuns.status.cancelled': '已取消',
   'agentRuns.status.degraded': '已降级',
+  // Yuzu 全屏卡片界面 —— 退出控件与失败兜底。
+  'yuzu.surface.exit': '退出',
+  'yuzu.surface.exitTitle': '退出卡片界面，返回经典工作区',
+  'yuzu.surface.loadError': '无法启动此卡片界面，可能未被信任或加载失败——请点击「退出」返回经典工作区。',
 
   'status.waiting': '等待会话…',
   'status.heading': 'RPG 状态',
