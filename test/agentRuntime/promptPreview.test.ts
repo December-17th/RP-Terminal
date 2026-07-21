@@ -12,19 +12,23 @@ import {
 import { createToolRegistry } from '../../src/main/services/agentRuntime/harness'
 import {
   createAgentRunStore,
-  createHarnessRunAdapter,
-  type HarnessRunRequest
+  createHarnessRunAdapter
 } from '../../src/main/services/agentRuntime/runs'
 import {
   createAgentPromptPlanner,
   type AgentPresetAssembler
 } from '../../src/main/services/agentRuntime/prompt'
-import type { InvocationFloorPort } from '../../src/main/services/agentRuntime/invocation'
+import {
+  createInvocationRuntime,
+  type InvocationFloorPort
+} from '../../src/main/services/agentRuntime/invocation'
 import { createAgentPromptPreview } from '../../src/main/services/agentRuntime/preview/promptPreview'
 import type { CatalogAgent } from '../../src/main/services/agentRuntime/catalog'
 import {
   parseAgentDefinition,
   type AgentDefinition,
+  type JsonObject,
+  type JsonValue,
   type PromptMessage
 } from '../../src/shared/agentRuntime'
 import type { Settings } from '../../src/main/types/models'
@@ -109,14 +113,21 @@ const textAdapter = () =>
     }
   ])
 
-// A pure source: returns clones, never mutates the underlying vars, so side-effect freedom is provable.
-const FLOOR_VARS = { name: 'Ada', place: 'Harbor' }
+// A SHARED-REFERENCE source: the snapshot hands out the live objects themselves — `promptValues` IS
+// `FLOOR_VARS` and `input` IS `FLOOR_INPUT`, not copies. Any in-place write by the preview, the
+// planner/assembler, or the attempt-log builder therefore lands in this module state and trips the
+// "floor vars were never written" assertion. A cloning port could never fail that assertion.
+const FLOOR_VARS: Record<string, JsonValue> = {
+  'variables.name': 'Ada',
+  'variables.place': 'Harbor'
+}
+const FLOOR_INPUT: JsonObject = { q: 'hello' }
 const floorPort = (): Pick<InvocationFloorPort, 'resolveSource'> => ({
   async resolveSource() {
     return {
       token: 'fixed',
-      input: { q: 'hello' },
-      promptValues: { 'variables.name': FLOOR_VARS.name },
+      input: FLOOR_INPUT,
+      promptValues: FLOOR_VARS,
       history: null
     }
   }
@@ -139,41 +150,46 @@ describe('Prompt Preview ≡ run (D4)', () => {
     db = new Adapter(':memory:')
     db.exec(SESSION_SCHEMA)
     runStore = createAgentRunStore({ getDb: () => db, now: () => '2026-07-20T00:00:00.000Z' })
-    FLOOR_VARS.name = 'Ada'
-    FLOOR_VARS.place = 'Harbor'
+    for (const key of Object.keys(FLOOR_VARS)) delete FLOOR_VARS[key]
+    Object.assign(FLOOR_VARS, { 'variables.name': 'Ada', 'variables.place': 'Harbor' })
+    for (const key of Object.keys(FLOOR_INPUT)) delete FLOOR_INPUT[key]
+    Object.assign(FLOOR_INPUT, { q: 'hello' })
   })
 
+  /**
+   * Drives a REAL invocation through the Invocation Runtime's public entry (`runtime.run`, i.e.
+   * `enqueue` → `runQueued`) so the captured prompt comes from the runtime's OWN Harness-request
+   * shaping. Hand-building the `HarnessRunRequest` here would make the byte-equality guard circular:
+   * it would compare the preview against the test's copy of the shaping, not against dispatch.
+   */
   const runAndCapture = async (
     def: AgentDefinition,
     floor: Pick<InvocationFloorPort, 'resolveSource'>,
-    plan: ReturnType<ReturnType<typeof plannerFor>>
+    planner: ReturnType<typeof plannerFor>
   ) => {
-    const adapter = createHarnessRunAdapter({
+    const agent = catalogAgent(def)
+    const harness = createHarnessRunAdapter({
       runStore,
       providerDispatch: dispatchFor(textAdapter()),
       toolRegistry: createToolRegistry()
     })
-    const source = await floor.resolveSource({
-      profileId: 'p',
-      chatId: 'c',
-      floor: 5,
-      agent: catalogAgent(def)
+    const runtime = createInvocationRuntime({
+      catalog: { get: () => agent },
+      harness,
+      floor: {
+        resolveSource: (request) => floor.resolveSource(request),
+        isSourceCurrent: () => true,
+        async incorporate({ commitRun }) {
+          commitRun()
+          return { status: 'committed' }
+        }
+      },
+      promptRenderer: planner,
+      createId: () => 'run-1'
     })
-    const request: HarnessRunRequest = {
-      invocationId: 'run-1',
-      profileId: 'p',
-      chatId: 'c',
-      floor: 5,
-      agent: { definition: def, version: '1', hash: `hash:${def.name}` },
-      input: source.input,
-      ...(source.promptValues ? { promptValues: source.promptValues } : {}),
-      ...(source.history !== undefined ? { history: source.history } : {}),
-      ...(plan?.render ? { render: plan.render } : {}),
-      ...(plan?.prompt ? { prompt: plan.prompt } : {})
-    }
-    const execution = await adapter.execute(request)
-    expect(execution.ok).toBe(true)
-    return runStore.get('c', 'run-1')!.renderedPrompt
+    const outcome = await runtime.run({ profileId: 'p', chatId: 'c', floor: 5, agent: def.name })
+    expect(outcome.status).toBe('succeeded')
+    return runStore.get('c', outcome.invocationId)!.renderedPrompt
   }
 
   it('reproduces a messages Agent prompt byte-for-byte, origins and all', async () => {
@@ -191,8 +207,7 @@ describe('Prompt Preview ≡ run (D4)', () => {
     })
     const floor = floorPort()
     const planner = plannerFor(undefined)
-    const plan = planner({ profileId: 'p', chatId: 'c', floor: 5, agent: def })
-    const recorded = await runAndCapture(def, floor, plan)
+    const recorded = await runAndCapture(def, floor, planner)
 
     const preview = await createAgentPromptPreview({
       floor,
@@ -209,8 +224,10 @@ describe('Prompt Preview ≡ run (D4)', () => {
     expect(preview.attribution.regions.some((region) => region.region === 'harness-policy')).toBe(
       true
     )
-    // Floor vars were never written.
-    expect(FLOOR_VARS).toEqual({ name: 'Ada', place: 'Harbor' })
+    // Floor vars were never written: the port handed out these very objects (not clones), so an
+    // in-place mutation anywhere on the preview path would show up here.
+    expect(FLOOR_VARS).toEqual({ 'variables.name': 'Ada', 'variables.place': 'Harbor' })
+    expect(FLOOR_INPUT).toEqual({ q: 'hello' })
   })
 
   it('reproduces a preset (assembled) Agent prompt byte-for-byte', async () => {
@@ -218,8 +235,7 @@ describe('Prompt Preview ≡ run (D4)', () => {
     const assembler: AgentPresetAssembler = () => [text('ASSEMBLED CONTEXT'), text('Instruction.')]
     const floor = floorPort()
     const planner = plannerFor(assembler)
-    const plan = planner({ profileId: 'p', chatId: 'c', floor: 5, agent: def })
-    const recorded = await runAndCapture(def, floor, plan)
+    const recorded = await runAndCapture(def, floor, planner)
 
     const preview = await createAgentPromptPreview({
       floor,

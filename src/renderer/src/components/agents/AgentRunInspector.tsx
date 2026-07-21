@@ -14,7 +14,7 @@ import type {
 } from '../../../../shared/agentRuntime'
 import type { AgentPromptPreview } from '../../../../shared/agentRuntime'
 import { useT } from '../../i18n'
-import { estimateTokens } from '../../lib/estimateTokens'
+import { estimateTokens } from '../../../../shared/tokenEstimate'
 
 type PreviewOk = Extract<AgentPromptPreview, { ok: true }>
 type Translate = (key: string, vars?: Record<string, string | number>) => string
