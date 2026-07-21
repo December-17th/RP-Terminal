@@ -50,7 +50,7 @@ describe('AgentCatalog', () => {
     expect(catalog.getRoleBindings()).toEqual({})
     expect(catalog.get(MEMORY_RECALL_AGENT_NAME)).toMatchObject({
       source: { kind: 'builtin', key: 'memory-recall' },
-      enabled: false,
+      enabled: true,
       effective: {
         result: { mode: 'text' },
         defaults: { required: false, maxSteps: 1, blocksNextTurn: false }

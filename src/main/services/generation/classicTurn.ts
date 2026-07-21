@@ -17,7 +17,7 @@ import { runMemoryRecallAgent } from '../memoryRecallService'
  *
  * A straight-line orchestration of the Classic turn. The original eight stages remain in order and call
  * the same services pinned by the (deleted-with-the-engine) classicTurnInventory characterization; the
- * opt-in memory-recall module sits between context creation and history compaction. No pipeline, graph,
+ * toggleable memory-recall module sits between context creation and history compaction. No pipeline, graph,
  * hook bus, scheduler, or registry dispatch is involved. As of M5c-1 the RunResult/NodeTrace scaffolding
  * is gone — the
  * turn no longer synthesizes a workflow run for the deleted trace/run-history chain — so this returns the
@@ -63,7 +63,8 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
 
   // ── 2. memory.recall ───────────────────────────────────────────────────────────────────────────
   // Recall reads the untrimmed seed: it needs the most recent transcript and persisted prior plan even
-  // when table progress lets the main assembly discard every processed floor.
+  // when table progress lets the main assembly discard every processed floor. It runs for BOTH Classic
+  // and VN turns by design — VN rides this same direct path and is still a narrator turn.
   const recall = await stage(() => runMemoryRecallAgent(ctx, seed))
   if (recall === ABORTED) return null
 

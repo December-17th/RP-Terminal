@@ -14,20 +14,23 @@ import { MEMORY_MAINTENANCE_AGENT_NAME } from '../memoryMaintenanceSlot'
  */
 
 /**
- * The opt-in Memory Recall Agent. Classic invokes it explicitly and awaits it before narrator prompt
- * assembly; it has no floor-commit trigger. The invocation input carries the pending action, recent
- * transcript, compact table catalogue, notes TOC, and prior plan as inert JSON. Code/note resolution
- * remains deterministic in `memoryRecallService` after this Agent returns its four-tag text result.
+ * The Memory Recall Agent. The direct narrator turn (`runClassicTurnDirect` — BOTH Classic and VN
+ * mode ride it) invokes it explicitly and awaits it before prompt assembly; it has no floor-commit
+ * trigger. The invocation input carries the pending action, recent transcript, compact table
+ * catalogue, notes TOC, and prior plan as inert JSON. Code/note resolution remains deterministic in
+ * `memoryRecallService` after this Agent returns its four-tag text result.
  *
- * Disabled by default because every eligible turn adds a blocking provider call. `required: false` is
- * RPT's explicit fail-open policy (Shujuku's exhausted-retry behavior is not proven by the permitted
- * clean-room sources). `blocksNextTurn` is false because Classic already awaits this CURRENT-turn call.
+ * Seeded ENABLED (toggleable in the Agents workspace): with no eligible corpus it never invokes, and
+ * every eligible call is bounded by `RECALL_DEADLINE_MS` and fail-open. `required: false` is RPT's
+ * explicit fail-open policy (Shujuku's exhausted-retry behavior is not proven by the permitted
+ * clean-room sources). `blocksNextTurn` is false because the turn already awaits this CURRENT-turn
+ * call.
  */
 export const MEMORY_RECALL: AgentDefinition = {
   format: 'rpt-agent',
   formatVersion: 1,
   name: MEMORY_RECALL_AGENT_NAME,
-  description: 'Opt-in pre-turn Agent that selects relevant table memories and narrative notes.',
+  description: 'Pre-turn Agent that selects relevant table memories and narrative notes.',
   prompt: [
     {
       role: 'system',
@@ -123,7 +126,7 @@ export const MEMORY_MAINTENANCE: AgentDefinition = {
 }
 
 export const BUILTIN_AGENTS = [
-  { key: 'memory-recall', definition: MEMORY_RECALL, enabled: false },
+  { key: 'memory-recall', definition: MEMORY_RECALL, enabled: true },
   { key: 'memory-maintenance', definition: MEMORY_MAINTENANCE, enabled: true }
 ] as const
 

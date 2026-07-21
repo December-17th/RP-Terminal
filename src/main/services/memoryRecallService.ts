@@ -39,7 +39,11 @@ export interface MemoryRecallResult {
 
 const DEFAULT_MAX_ROWS = 24
 const DEFAULT_MAX_NOTE_SECTIONS = 6
+const DEFAULT_MAX_NOTE_QUERIES = 8
 const RECALL_LAST_N_FLOORS = 3
+/** Hard wall-clock bound on the whole awaited recall stage (retrieval embeddings + planner call). A
+ * provider that accepts the socket and never responds must not block the narrator turn forever. */
+const RECALL_DEADLINE_MS = 90_000
 
 const hasCatalogueTable = (template: TableTemplate): boolean =>
   template.tables.some(
@@ -103,7 +107,9 @@ const matchingNoteHits = (notes: string, queries: string[]): SectionHit[] => {
   const seen = new Set<string>()
   const hits: SectionHit[] = []
   for (const query of queries) {
-    for (const hit of grepSections(sections, query)) {
+    // `literal` is load-bearing: the queries are model output, so compiling them as live regexes
+    // would let a valid-but-pathological pattern backtrack unboundedly on the main process.
+    for (const hit of grepSections(sections, query, { literal: true })) {
       if (seen.has(hit.section.heading)) continue
       seen.add(hit.section.heading)
       hits.push(hit)
@@ -187,6 +193,7 @@ const resolveRecallResult = (
   const queries = extractTagAll(raw, 'Query')
     .map((query) => query.trim())
     .filter(Boolean)
+    .slice(0, DEFAULT_MAX_NOTE_QUERIES)
   const questPlan = extractTagAll(raw, 'QuestPlan').join('\n').trim()
   const storyEngine = extractTagAll(raw, 'StoryEngine').join('\n').trim()
 
@@ -231,14 +238,44 @@ const resolveRecallResult = (
   }
 }
 
+/** Link the turn's Stop signal with the recall deadline. The composite aborts on EITHER: a user Stop
+ * (forwarding the base reason, so the run record finalizes as an ordinary cancel) or the wall-clock
+ * bound elapsing. `timedOut()` lets callers report the deadline distinctly from a Stop. */
+const withRecallDeadline = (
+  base: AbortSignal | undefined,
+  ms: number
+): { signal: AbortSignal; timedOut: () => boolean; dispose: () => void } => {
+  const controller = new AbortController()
+  let timedOut = false
+  const onAbort = (): void => controller.abort(base?.reason)
+  if (base?.aborted) onAbort()
+  else base?.addEventListener('abort', onAbort, { once: true })
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort(new Error(`recall deadline (${ms}ms) elapsed`))
+  }, ms)
+  return {
+    signal: controller.signal,
+    timedOut: () => timedOut,
+    dispose: (): void => {
+      clearTimeout(timer)
+      base?.removeEventListener('abort', onAbort)
+    }
+  }
+}
+
 /**
- * Run the opt-in Memory Recall Agent immediately before Classic prompt assembly.
+ * Run the Memory Recall Agent (a toggleable builtin, seeded ENABLED) immediately before narrator
+ * prompt assembly. Both Classic and VN turns ride `runClassicTurnDirect`, so recall deliberately
+ * serves both modes — a VN turn is still a narrator turn.
  *
  * The catalog owns enablement, prompt customization, API-preset selection, budgeting, cancellation, and
- * the durable Run Record. Classic deliberately awaits the outcome because its resolved block contributes
- * to this same narrator turn. No eligible corpus means no invocation; every failed/cancelled outcome is
- * fail-open. The candidate catalogue is narrowed by SQL-owned hybrid retrieval when large enough;
- * LLM-selected codes never become SQL and resolve only against that exact candidate snapshot.
+ * the durable Run Record. The turn deliberately awaits the outcome because its resolved block
+ * contributes to this same narrator turn — bounded by `RECALL_DEADLINE_MS`, so a hung provider degrades
+ * to fail-open instead of blocking the reply forever. No eligible corpus means no invocation; every
+ * failed/cancelled/timed-out outcome is fail-open. The candidate catalogue is narrowed by SQL-owned
+ * hybrid retrieval when large enough; LLM-selected codes never become SQL and resolve only against
+ * that exact candidate snapshot.
  */
 export const runMemoryRecallAgent = async (
   ctx: RunContext,
@@ -257,49 +294,67 @@ export const runMemoryRecallAgent = async (
     return null
   }
   if (!agent?.enabled) return null
-  let corpus
-  try {
-    corpus = await prepareRecallCorpus(gen, ctx.modelSignal ?? ctx.signal)
-  } catch (error) {
-    log(
-      'error',
-      `Memory Recall preparation failed open for chat ${gen.chatId}: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    )
-    return null
-  }
-  if (!corpus) return null
-  const sourceFloor = gen.floors[gen.floors.length - 1]?.floor
-  if (sourceFloor == null) return null
 
+  // One deadline spans the whole stage: retrieval (embedding fetches) AND the planner call.
+  const deadline = withRecallDeadline(ctx.modelSignal ?? ctx.signal, RECALL_DEADLINE_MS)
   try {
-    const outcome = await invocationRuntime().run({
-      profileId: gen.profileId,
-      chatId: gen.chatId,
-      floor: sourceFloor,
-      agent: MEMORY_RECALL_AGENT_NAME,
-      options: {
-        input: corpus.input,
-        ...(agent.invocationConfig.apiPresetId
-          ? { apiPresetId: agent.invocationConfig.apiPresetId }
-          : {})
-      },
-      signal: ctx.modelSignal ?? ctx.signal
-    })
-    if (outcome.status !== 'succeeded') {
-      if (outcome.status === 'failed') {
-        log(
-          'error',
-          `Memory Recall Agent failed open for chat ${gen.chatId}: ${outcome.failure.code}: ${outcome.failure.message}`
-        )
-      }
+    let corpus
+    try {
+      corpus = await prepareRecallCorpus(gen, deadline.signal)
+    } catch (error) {
+      log(
+        'error',
+        deadline.timedOut()
+          ? `Memory Recall timed out after ${RECALL_DEADLINE_MS}ms during retrieval; failed open for chat ${gen.chatId}`
+          : `Memory Recall preparation failed open for chat ${gen.chatId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+      )
       return null
     }
-    return resolveRecallResult(gen, corpus, typeof outcome.result === 'string' ? outcome.result : '')
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    log('error', `Memory Recall Agent failed open for chat ${gen.chatId}: ${message}`)
-    return null
+    if (!corpus) return null
+    const sourceFloor = gen.floors[gen.floors.length - 1]?.floor
+    if (sourceFloor == null) return null
+
+    try {
+      const outcome = await invocationRuntime().run({
+        profileId: gen.profileId,
+        chatId: gen.chatId,
+        floor: sourceFloor,
+        agent: MEMORY_RECALL_AGENT_NAME,
+        options: {
+          input: corpus.input,
+          ...(agent.invocationConfig.apiPresetId
+            ? { apiPresetId: agent.invocationConfig.apiPresetId }
+            : {})
+        },
+        signal: deadline.signal
+      })
+      if (outcome.status !== 'succeeded') {
+        if (deadline.timedOut()) {
+          log(
+            'error',
+            `Memory Recall timed out after ${RECALL_DEADLINE_MS}ms; failed open for chat ${gen.chatId}`
+          )
+        } else if (outcome.status === 'failed') {
+          log(
+            'error',
+            `Memory Recall Agent failed open for chat ${gen.chatId}: ${outcome.failure.code}: ${outcome.failure.message}`
+          )
+        }
+        return null
+      }
+      return resolveRecallResult(
+        gen,
+        corpus,
+        typeof outcome.result === 'string' ? outcome.result : ''
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      log('error', `Memory Recall Agent failed open for chat ${gen.chatId}: ${message}`)
+      return null
+    }
+  } finally {
+    deadline.dispose()
   }
 }

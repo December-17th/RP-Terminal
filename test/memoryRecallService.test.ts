@@ -163,7 +163,9 @@ describe('runMemoryRecallAgent', () => {
         chatId: 'c',
         floor: 0,
         agent: 'Memory Recall',
-        signal: ctx.modelSignal,
+        // the deadline wrapper hands the runtime a COMPOSITE signal (Stop ∪ wall-clock bound), so
+        // identity with ctx.modelSignal is deliberately not asserted here — linkage is pinned below.
+        signal: expect.any(AbortSignal),
         options: expect.objectContaining({
           apiPresetId: 'recall-cheap',
           input: expect.objectContaining({
@@ -242,5 +244,80 @@ describe('runMemoryRecallAgent', () => {
       'error',
       expect.stringContaining('planner unavailable')
     )
+  })
+
+  it('fails open when the recall deadline elapses on a hung provider', async () => {
+    vi.useFakeTimers()
+    try {
+      // A hung provider: the run only settles when the harness signal aborts (as the real runtime
+      // does), finalizing as an ordinary cancel.
+      mockRuntime.run.mockImplementation(
+        ({ signal }: { signal: AbortSignal }) =>
+          new Promise((resolve) => {
+            signal.addEventListener('abort', () =>
+              resolve({
+                invocationId: 'recall-1',
+                status: 'cancelled',
+                sourceRestarts: 0,
+                required: false
+              })
+            )
+          })
+      )
+
+      const pending = runMemoryRecallAgent(makeCtx(), makeGen())
+      await vi.advanceTimersByTimeAsync(90_000)
+      await expect(pending).resolves.toBeNull()
+      expect(mockLog.log).toHaveBeenCalledWith(
+        'error',
+        expect.stringContaining('timed out after 90000ms')
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a user Stop cancels the run silently — no timeout error is reported', async () => {
+    const stop = new AbortController()
+    const ctx = { ...makeCtx(), modelSignal: stop.signal }
+    mockRuntime.run.mockImplementation(
+      ({ signal }: { signal: AbortSignal }) =>
+        new Promise((resolve) => {
+          signal.addEventListener('abort', () =>
+            resolve({
+              invocationId: 'recall-1',
+              status: 'cancelled',
+              sourceRestarts: 0,
+              required: false
+            })
+          )
+          stop.abort()
+        })
+    )
+
+    await expect(runMemoryRecallAgent(ctx, makeGen())).resolves.toBeNull()
+    expect(mockLog.log).not.toHaveBeenCalled()
+  })
+
+  it('matches note queries as LITERAL text and caps them at 8 per turn', async () => {
+    const notes = Array.from(
+      { length: 10 },
+      (_, index) => `## Topic ${index}\nBody mentions token${index} here.`
+    ).join('\n\n')
+    mockNotes.readNotes.mockReturnValue(notes)
+    const queries = Array.from({ length: 10 }, (_, index) => `<Query>token${index}</Query>`)
+    // `token0|token1` would match as a regex alternation but not as literal text.
+    mockRuntime.run.mockResolvedValue({
+      invocationId: 'recall-1',
+      status: 'succeeded',
+      result: `<Recall></Recall><Query>token0|token1</Query>${queries.join('')}`,
+      sourceRestarts: 0,
+      required: false
+    })
+
+    const result = await runMemoryRecallAgent(makeCtx(), makeGen())
+
+    // 8-query cap: the alternation query (a literal no-match) consumes one slot, leaving 7 hits.
+    expect(result?.report).toBe('recalled 0 of 0 code(s), 7 note section(s)')
   })
 })

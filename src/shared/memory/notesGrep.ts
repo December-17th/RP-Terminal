@@ -45,6 +45,10 @@ export interface GrepOptions {
   wordBoundary?: boolean
   /** default 2 — lines of context on each side of a body-line hit (`grep -C`). */
   context?: number
+  /** default false — treat `query` as LITERAL text (regex-escaped before compiling). The required
+   * mode for model-authored queries: a valid-but-pathological pattern (e.g. `(x+x+)+y`) compiles
+   * fine and would otherwise backtrack unboundedly on the main process. */
+  literal?: boolean
 }
 
 export interface FormatOptions {
@@ -85,8 +89,12 @@ const compileMatcher = (query: string, opts: GrepOptions): RegExp | null => {
   if (!q) return null
   const flags = (opts.caseSensitive ? '' : 'i') + 'g'
   const hasCjk = CJK_RE.test(q)
-  const wrap = (opts.wordBoundary ?? true) && !hasCjk
-  const pattern = wrap ? `\\b(?:${q})\\b` : q
+  // A literal query edged by non-word chars must not be `\b`-wrapped: `\b` needs a word char on one
+  // side, so wrapping e.g. `"quoted"` or `(note)` would silently never match.
+  const wordEdged = !opts.literal || (/^\w/.test(q) && /\w$/.test(q))
+  const wrap = (opts.wordBoundary ?? true) && !hasCjk && wordEdged
+  const source = opts.literal ? escapeRegExp(q) : q
+  const pattern = wrap ? `\\b(?:${source})\\b` : source
   try {
     return new RegExp(pattern, flags)
   } catch {

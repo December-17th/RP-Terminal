@@ -122,6 +122,55 @@ describe('SQL-owned dense recall cache', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[2][1].body)).input).toEqual(['vehicle'])
   })
 
+  it('budgets new embeddings per turn and fills the cache incrementally across turns', async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const input = (JSON.parse(String(init.body)) as { input: string[] }).input
+      return {
+        ok: true,
+        json: async () => ({
+          data: input.map((_value, index) => ({ index, embedding: [1, 0] }))
+        })
+      } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const options = {
+      profileId: 'profile',
+      chatId: 'chat',
+      documents: Array.from({ length: 300 }, (_, index) =>
+        document(`doc${index}`, `chronicle event number ${index}`, index)
+      ),
+      queryText: 'chronicle event',
+      settings: {
+        enabled: true,
+        embedding_api_preset_id: 'embedding',
+        activation_threshold: 1,
+        recent_fixed_count: 0,
+        candidate_limit: 10
+      },
+      apiPresets: [
+        {
+          id: 'embedding',
+          name: 'Embedding',
+          provider: 'openai',
+          endpoint: 'https://api.example/v1',
+          api_key: 'secret',
+          model: 'embed-model'
+        }
+      ]
+    }
+
+    await retrieveRecallCandidates(options)
+    // First turn: the 256-vector budget, not all 300 — 4 batches of 64 plus the query embed.
+    expect(rows.size).toBe(256)
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+    expect(mockLog.log).toHaveBeenCalledWith('info', expect.stringContaining('256 of 300'))
+
+    await retrieveRecallCandidates(options)
+    // Second turn: the remaining 44 fill from cache misses — one more batch plus the query embed.
+    expect(rows.size).toBe(300)
+    expect(fetchMock).toHaveBeenCalledTimes(7)
+  })
+
   it('fails soft to BM25 when the embedding endpoint is unavailable', async () => {
     vi.stubGlobal(
       'fetch',

@@ -37,7 +37,8 @@ compatibility qualification, packaging/data-recovery checks, and product-scope d
 - Agent Runtime (ADR 0020): a single direct-path Classic Narrator turn, built-in Memory Recall and Memory
   Maintenance Agents, a declarative commit-boundary cadence trigger for unattended runs, a profile-wide
   Agent Catalog, floor-owned immutable Run Records, and a typed Agent Activity read/cancel surface.
-  Classic explicitly invokes and awaits the opt-in recall Agent before prompt assembly; large recall
+  The narrator turn (Classic and VN mode) explicitly invokes and awaits the default-on, deadline-bounded
+  recall Agent before prompt assembly; large recall
   catalogues use recent rows plus CJK-aware BM25 and optional SQLite-cached dense/RRF retrieval, while
   maintenance runs after commits. This replaces the former one-canvas workflow/node-graph engine (packs,
   nodes, canvas, `memory.maintain` node, importable example workflows), which is deleted.

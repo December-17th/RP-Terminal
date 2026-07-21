@@ -12,6 +12,13 @@ const BM25_CANDIDATES = 1000
 const RRF_K = 60
 const MIN_DENSE_SCORE = 0.45
 const EMBEDDING_BATCH_SIZE = 64
+/** Dense retrieval participates over at most this many documents (the newest, by original table/row
+ * order): it bounds the per-turn synchronous cost of parsing + cosine-scoring cached vectors. Older
+ * rows beyond the window still participate via BM25. */
+const DENSE_DOC_LIMIT = 2048
+/** At most this many NEW vectors are fetched per turn. The cache fills incrementally across turns
+ * instead of stalling the first eligible turn behind an unbounded run of /embeddings batches. */
+const EMBED_BUDGET_PER_TURN = 256
 
 export interface RecallCandidateSelection {
   documents: RecallDocument[]
@@ -259,9 +266,13 @@ const denseScores = async (
     vector_json: string
   }>
   const cached = new Map(cachedRows.map((row) => [row.document_id, row]))
+  const denseDocs =
+    options.documents.length > DENSE_DOC_LIMIT
+      ? [...options.documents].sort(originalOrder).slice(-DENSE_DOC_LIMIT)
+      : options.documents
   const vectors = new Map<string, number[]>()
   const missing: RecallDocument[] = []
-  for (const document of options.documents) {
+  for (const document of denseDocs) {
     const row = cached.get(document.id)
     const documentFingerprint = fingerprint(document.searchText)
     if (row?.fingerprint === documentFingerprint && row.model_key === key) {
@@ -289,8 +300,16 @@ const denseScores = async (
        vector_json = excluded.vector_json,
        updated_at = excluded.updated_at`
   )
-  for (let offset = 0; offset < missing.length; offset += EMBEDDING_BATCH_SIZE) {
-    const batch = missing.slice(offset, offset + EMBEDDING_BATCH_SIZE)
+  const toEmbed = missing.slice(0, EMBED_BUDGET_PER_TURN)
+  if (toEmbed.length < missing.length) {
+    log(
+      'info',
+      `Memory retrieval embedded ${toEmbed.length} of ${missing.length} new vectors for chat ` +
+        `${options.chatId}; the rest fill on later turns (BM25 covers them meanwhile)`
+    )
+  }
+  for (let offset = 0; offset < toEmbed.length; offset += EMBEDDING_BATCH_SIZE) {
+    const batch = toEmbed.slice(offset, offset + EMBEDDING_BATCH_SIZE)
     const embedded = await embeddingBatch(
       preset,
       batch.map((document) => document.searchText),

@@ -148,13 +148,15 @@ memory-tail block; `exportConfig` controls entry activation and placement.
   non-default value), so the round-trip test stays honest (`test/chatSheetsParser.test.ts`). It is
   editable via the same `table-template-update` patch (`injectionPolicy?`); the editing **UI is WS6+**.
 
-## Memory Recall Agent — opt-in pre-turn selection
+## Memory Recall Agent — pre-turn selection
 
-Memory Recall is the seeded built-in Agent with `source_key = memory-recall`. It is disabled by default
-because an eligible turn adds one awaited provider call. Its profile-local Agent settings own the enabled
-switch, API preset, and editable prompt. The definition is `required: false`, `maxSteps: 1`, and
-`blocksNextTurn: false`: Classic already awaits this current-turn call instead of scheduling it from a
-floor-commit trigger.
+Memory Recall is the seeded built-in Agent with `source_key = memory-recall`. It seeds enabled; the
+profile-local Agent settings own the enabled switch (toggle it off in the Agents workspace to skip the
+awaited pre-turn call), API preset, and editable prompt. The definition is `required: false`,
+`maxSteps: 1`, and `blocksNextTurn: false`: the narrator turn (Classic and VN mode both ride the direct
+path) already awaits this current-turn call instead of scheduling it from a floor-commit trigger. The
+awaited stage is bounded by a 90-second deadline covering retrieval embeddings and the planner call; a
+hung provider degrades to fail-open instead of blocking the reply.
 
 `services/memoryRecallService.ts` prepares the invocation input and explicitly runs the Agent through the
 shared Invocation Runtime before prompt assembly. That runtime owns the Run Record, endpoint budget,
@@ -167,7 +169,8 @@ On an eligible turn it:
 2. asks for `<Recall>`, `<Query>`, `<QuestPlan>`, and `<StoryEngine>` tags;
 3. resolves `<Recall>` codes by exact key over the same candidate-row snapshot the Agent saw—Agent
    text is never SQL and cannot select a row hidden by retrieval;
-4. greps requested note sections locally with the CJK-safe notes engine;
+4. greps requested note sections locally with the CJK-safe notes engine — `<Query>` text is matched as
+   LITERAL text (never compiled as a regex), and at most 8 queries are honored per turn;
 5. caps resolved rows at 24 and note sections at 6, injects one composed block into `assemblePrompt`'s
    memory tail, and persists the display-only `plot_block` on the resulting floor.
 
@@ -188,7 +191,9 @@ rows. At or above the threshold it mirrors Shujuku's Crossfire shape:
 - older rows are ranked by BM25 (`k1 = 1.5`, `b = 0.75`, at most 1000 sparse candidates) using NFKC,
   lower-cased Latin/code terms and CJK unigrams+bigrams;
 - when an OpenAI-compatible embedding preset is selected, cosine matches at `>= 0.45` join BM25 via
-  reciprocal-rank fusion (`k = 60`); without one, retrieval is BM25-only;
+  reciprocal-rank fusion (`k = 60`); without one, retrieval is BM25-only. Dense scoring is bounded: it
+  covers at most the newest 2048 documents, and at most 256 new vectors are fetched per turn (the cache
+  fills incrementally across turns; unembedded rows still participate via BM25);
 - at most 200 ranked older rows are unioned with the fixed recent rows, de-duplicated, then restored to
   original table/row order before rendering the Agent catalogue.
 
