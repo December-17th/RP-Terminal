@@ -12,10 +12,12 @@ import {
   shouldEmitFrame,
   renderFloorToView,
   toRenderedFloorView,
+  initDisplayBroker,
   type RevisionSnapshot
 } from '../src/renderer/src/display/displayBroker'
 import type { DisplayCtx, FloorLike } from '../src/renderer/src/display/displayPipeline'
 import type { RenderedFloor } from '../src/renderer/src/components/FloorBlock'
+import { useChatStore } from '../src/renderer/src/stores/chatStore'
 
 // --- revision bump matrix (ADR 0023 §3.5) --------------------------------------------------------
 
@@ -176,5 +178,80 @@ describe('renderFloorToView — plot transformed, userText raw, hasReasoning der
       { floorIndex: 0, revision: 2, reasoningTemplate: null, plotHtml: '' }
     )
     expect(on.hasReasoning).toBe(true)
+  })
+})
+
+// --- render-request answerer feeds [RENDER:*] markers into the ctx (verifier fidelity fix) ----------
+
+describe('initDisplayBroker render answer — [RENDER:*] marker wrapping (native parity)', () => {
+  const makeApi = (over: Partial<Record<string, any>> = {}) => {
+    let requestCb: ((req: any) => void) | null = null
+    const responses: Array<{ reqId: number; views: any[] }> = []
+    const api: any = {
+      onDisplayRenderRequest: (cb: (req: any) => void) => {
+        requestCb = cb
+        return () => {}
+      },
+      onDisplayStreamEnabledChats: () => () => {},
+      sendDisplayRenderResponse: (msg: { reqId: number; views: any[] }) => responses.push(msg),
+      sendDisplayRevisionChanged: () => {},
+      getFloors: async () => [],
+      getRenderMarkers: async () => ({ before: ['[[MARK]]'], after: [] }),
+      ...over
+    }
+    ;(globalThis as any).window = { api }
+    return { get requestCb() { return requestCb }, responses, api }
+  }
+
+  it("wraps a floor's html with the fetched render markers (would be omitted with default empty markers)", async () => {
+    const harness = makeApi()
+    // Active chat so resolveFloors reads chatStore floors directly.
+    useChatStore.setState({
+      activeChatId: 'c',
+      floors: [
+        {
+          floor: 0,
+          chat_id: 'c',
+          response: { content: 'the body' },
+          user_message: { content: 'u' },
+          variables: {},
+          swipe_id: 0
+        } as any
+      ]
+    })
+    const dispose = initDisplayBroker()
+    harness.requestCb!({ reqId: 1, profileId: 'p', chatId: 'c', from: 0, to: 0 })
+    await vi.waitFor(() => expect(harness.responses).toHaveLength(1))
+    dispose()
+
+    const view = harness.responses[0].views[0]
+    // The marker template (rendered identity by the mocked engine) precedes the body — proving the
+    // fetched markers reached currentDisplayCtx (the defect: default empty markers dropped this).
+    expect(view.html).toContain('[[MARK]]')
+    expect(view.html).toContain('the body')
+  })
+
+  it('omits marker wrapping when getRenderMarkers yields none', async () => {
+    const harness = makeApi({ getRenderMarkers: async () => ({ before: [], after: [] }) })
+    useChatStore.setState({
+      activeChatId: 'c2',
+      floors: [
+        {
+          floor: 0,
+          chat_id: 'c2',
+          response: { content: 'plain' },
+          user_message: { content: 'u' },
+          variables: {},
+          swipe_id: 0
+        } as any
+      ]
+    })
+    const dispose = initDisplayBroker()
+    harness.requestCb!({ reqId: 2, profileId: 'p', chatId: 'c2', from: 0, to: 0 })
+    await vi.waitFor(() => expect(harness.responses).toHaveLength(1))
+    dispose()
+
+    expect(harness.responses[0].views[0].html).not.toContain('[[MARK]]')
+    expect(harness.responses[0].views[0].html).toContain('plain')
   })
 })

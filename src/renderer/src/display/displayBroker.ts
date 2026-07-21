@@ -28,7 +28,8 @@ import {
   renderFloorView,
   renderStreamingFrame,
   type DisplayCtx,
-  type FloorLike
+  type FloorLike,
+  type RenderMarkers
 } from './displayPipeline'
 import type { RenderedFloor } from '../components/FloorBlock'
 import { broadcastHostEvent } from '../cardBridge/hostBroadcast'
@@ -216,6 +217,26 @@ function reasoningTemplateFor(chatId: string): string | null {
   return (ac?.card?.data?.extensions?.rp_terminal?.reasoning_template as string | undefined) ?? null
 }
 
+/**
+ * The [RENDER:*] marker templates for a chat — the SAME `window.api.getRenderMarkers(profileId, chatId)`
+ * source ChatView reads (ChatView.tsx:104), so a card's floor html gets the identical marker wrapping.
+ * ChatView refetches only on chat/profile change; the broker refetches per render request (a superset of
+ * that) and folds the markers into the LRU key (below) so a marker change never serves stale output.
+ */
+async function fetchRenderMarkers(profileId: string, chatId: string): Promise<RenderMarkers> {
+  try {
+    const m = await window.api.getRenderMarkers(profileId, chatId)
+    return { before: Array.isArray(m?.before) ? m.before : [], after: Array.isArray(m?.after) ? m.after : [] }
+  } catch {
+    return { before: [], after: [] }
+  }
+}
+
+/** A stable fingerprint of the render markers, for the render-cache key. */
+function markersFingerprint(m: RenderMarkers): string {
+  return `${m.before.length}${m.after.length}${m.before.join('')}${m.after.join('')}`
+}
+
 // --- app-start registration ----------------------------------------------------------------------
 
 /**
@@ -238,14 +259,20 @@ export function initDisplayBroker(): () => void {
     scope?: unknown
   }): Promise<RenderedFloorView[]> => {
     try {
-      const floors = await resolveFloors(req)
-      const ctx = currentDisplayCtx()
+      const [floors, markers] = await Promise.all([
+        resolveFloors(req),
+        fetchRenderMarkers(req.profileId, req.chatId)
+      ])
+      // Feed the [RENDER:*] markers into the ctx so a card floor's html gets the SAME marker wrapping the
+      // native ChatView applies (ChatView passes its fetched markers into currentDisplayCtx).
+      const ctx = currentDisplayCtx(markers)
+      const markerFp = markersFingerprint(markers)
       const reasoningTemplate = reasoningTemplateFor(req.chatId)
       const out: RenderedFloorView[] = []
       for (let i = req.from; i <= req.to; i++) {
         const f = floors[i]
         if (!f) continue // missing indices are skipped (design §3.2)
-        const key = `${req.chatId}|${i}|${f.swipe_id ?? 0}|${revision}`
+        const key = `${req.chatId}|${i}|${f.swipe_id ?? 0}|${revision}|${markerFp}`
         const cached = lru.get(key)
         if (cached) {
           out.push(cached)
