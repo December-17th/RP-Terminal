@@ -75,10 +75,11 @@ export function AgentLabTab({
     setBusy(false)
     if (result.ok) {
       onNotice(t('agents.lab.replayed', { status: result.status }))
-      await refresh()
     } else {
       onNotice(agentErrorMessage(t, result.code))
     }
+    // Refresh on the error path too: a mid-run divergence still appended a (failed) run ref.
+    await refresh()
   }
 
   const runLive = async (c: AgentLabCaseSummary): Promise<void> => {

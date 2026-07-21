@@ -1,7 +1,7 @@
 import { type AgentLabCase, type AgentLabRunResult } from '../../../../shared/agentRuntime'
-import { AgentCatalog } from '../catalog'
 import type { InvocationRuntime } from '../invocation'
 import { invocationRuntime } from '../InvocationRuntimeService'
+import { createProfileCatalogCache } from './profileCatalogs'
 
 /**
  * Agent Lab LIVE run (plan §Main process).
@@ -42,7 +42,7 @@ export const createAgentLabLiveRun = (
         profileId: request.profileId,
         chatId: request.chatId,
         floor: request.floor,
-        agent: request.case.agentName,
+        agent: request.case.agentId ?? request.case.agentName,
         options: {
           input: request.case.input,
           ...(apiPresetId ? { apiPresetId } : {})
@@ -62,16 +62,11 @@ export const agentLabLiveRun = (): ((
   request: AgentLabLiveRunRequest
 ) => Promise<AgentLabRunResult>) => {
   if (!production) {
-    const catalogs = new Map<string, AgentCatalog>()
+    const catalogFor = createProfileCatalogCache()
     production = createAgentLabLiveRun({
       runtime: invocationRuntime,
       resolveApiPresetId(profileId, agentId) {
-        let catalog = catalogs.get(profileId)
-        if (!catalog) {
-          catalog = new AgentCatalog(profileId)
-          catalogs.set(profileId, catalog)
-        }
-        return catalog.get(agentId)?.invocationConfig.apiPresetId
+        return catalogFor(profileId).get(agentId)?.invocationConfig.apiPresetId
       }
     })
   }

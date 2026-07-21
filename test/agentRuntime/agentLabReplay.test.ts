@@ -194,7 +194,7 @@ describe('Agent Lab replay', () => {
     expect(runStore.get('c', 'lab-run-1')?.failure?.code).toBe('INVALID_JSON_RESULT')
   })
 
-  it('fails with LAB_TOOL_DIVERGENCE when a requested tool has no recorded result', async () => {
+  it('fails with LAB_TOOL_DIVERGENCE when a requested tool has no recorded result, carrying the run id', async () => {
     const source = record([
       {
         appendOnlyLog: [
@@ -224,7 +224,37 @@ describe('Agent Lab replay', () => {
     const replay = createAgentLabReplay(depsFor(def))
     const result = await replay({ profileId: 'p', chatId: 'c', floor: 1, case: caseFor(source) })
 
+    // Mid-run divergence still produced a real run record: the result carries its invocationId and the
+    // persisted record exists under that id, so the divergent run stays inspectable/diffable.
+    expect(result).toEqual({ ok: false, code: 'LAB_TOOL_DIVERGENCE', invocationId: 'lab-run-1' })
+    expect(runStore.get('c', 'lab-run-1')).not.toBeNull()
+  })
+
+  it('fails with LAB_TOOL_DIVERGENCE before any run when a recorded tool is gone from the definition', async () => {
+    // The capture recorded a successful `lookup` result, but the CURRENT definition no longer exposes
+    // the tool (removed/renamed) -> early drift detection, before the runtime is built.
+    const source = record([
+      {
+        appendOnlyLog: [
+          { role: 'user', content: JSON.stringify(INPUT) },
+          {
+            role: 'assistant',
+            content: '',
+            toolCalls: [{ id: 't1', name: 'lookup', argumentsText: '{}', input: {} }]
+          },
+          { role: 'assistant', content: 'final answer' }
+        ],
+        usage: [{ inputTokens: 1, outputTokens: 1 }],
+        tools: [{ call: { name: 'lookup' }, result: { hit: true }, status: 'success' }]
+      }
+    ])
+    // definition() defaults to tools: [] — the recorded `lookup` is absent from the current surface.
+    const replay = createAgentLabReplay(depsFor(definition()))
+    const result = await replay({ profileId: 'p', chatId: 'c', floor: 1, case: caseFor(source) })
+
     expect(result).toEqual({ ok: false, code: 'LAB_TOOL_DIVERGENCE' })
+    // No run record was persisted: the drift was caught before the runtime ran.
+    expect(runStore.get('c', 'lab-run-1')).toBeNull()
   })
 
   it('refuses to replay a case with no source', async () => {

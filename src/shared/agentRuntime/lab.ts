@@ -72,4 +72,4 @@ export type AgentLabMutationResult =
  *  Lab-level refusal (e.g. `LAB_NO_SOURCE`, `LAB_TOOL_DIVERGENCE`, `AGENT_NOT_FOUND`). */
 export type AgentLabRunResult =
   | { ok: true; invocationId: string; status: string }
-  | { ok: false; code: string }
+  | { ok: false; code: string; invocationId?: string }

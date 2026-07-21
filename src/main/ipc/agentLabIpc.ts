@@ -193,11 +193,20 @@ export const registerAgentLabIpc = (ipcMain: IpcMain): void => {
         const prepared = prepareRun(profileId, chatId, caseId)
         if (!prepared.ok) return prepared
         const result = await agentLabReplay()({ profileId, chatId, floor: prepared.floor, case: prepared.case })
+        // A replay produces a real run record whenever it carries an invocationId — including the
+        // mid-run divergence path, whose record resolves to failed. Append the ref in both cases so the
+        // divergent run is inspectable/diffable; only a pre-run refusal (no invocationId) is skipped.
         if (result.ok) {
           agentLabStore.appendRun(
             profileId,
             caseId,
             runRefFor(chatId, result.invocationId, 'replay', result.status)
+          )
+        } else if (result.invocationId) {
+          agentLabStore.appendRun(
+            profileId,
+            caseId,
+            runRefFor(chatId, result.invocationId, 'replay', 'failed')
           )
         }
         return result

@@ -7,7 +7,7 @@ import {
   type JsonValue,
   type PromptMessage
 } from '../../../../shared/agentRuntime'
-import { AgentCatalog, type CatalogAgent } from '../catalog'
+import { type CatalogAgent } from '../catalog'
 import {
   createInvocationRuntime,
   type InvocationFloorPort,
@@ -23,6 +23,7 @@ import {
 } from '../provider'
 import { createToolRegistry, type ToolBinding } from '../harness'
 import { agentRunStore, createHarnessRunAdapter, type AgentRunStore } from '../runs'
+import { createProfileCatalogCache } from './profileCatalogs'
 
 /**
  * Agent Lab REPLAY (plan §Replay semantics, pinned mode).
@@ -161,6 +162,16 @@ export const createAgentLabReplay = (
     const definition = agent.effective
     const { steps, toolResults } = reconstruct(source)
 
+    // Early drift detection: a tool the capture recorded results for but that the CURRENT definition no
+    // longer exposes (removed or renamed) is a terminal divergence. Detect it BEFORE building the
+    // runtime so no run record is persisted for a case whose tool surface has already drifted.
+    const currentToolNames = new Set(definition.tools.map((tool) => tool.name))
+    for (const recordedToolName of toolResults.keys()) {
+      if (!currentToolNames.has(recordedToolName)) {
+        return { ok: false, code: 'LAB_TOOL_DIVERGENCE' }
+      }
+    }
+
     // Divergence is detected inside a stub tool binding (the harness drives the tool loop). It is a
     // terminal Lab condition regardless of how the underlying run resolves, so it is surfaced from the
     // closure after the run settles. The stub NEVER calls anything real.
@@ -230,7 +241,8 @@ export const createAgentLabReplay = (
       }
     })
 
-    if (divergence) return { ok: false, code: 'LAB_TOOL_DIVERGENCE' }
+    if (divergence)
+      return { ok: false, code: 'LAB_TOOL_DIVERGENCE', invocationId: outcome.invocationId }
     return { ok: true, invocationId: outcome.invocationId, status: outcome.status }
   }
 }
@@ -241,16 +253,11 @@ let production: ((request: AgentLabReplayRequest) => Promise<AgentLabRunResult>)
  *  record lands in the real per-chat run store, and the preset resolves through the real settings. */
 export const agentLabReplay = (): ((request: AgentLabReplayRequest) => Promise<AgentLabRunResult>) => {
   if (!production) {
-    const catalogs = new Map<string, AgentCatalog>()
+    const catalogFor = createProfileCatalogCache()
     production = createAgentLabReplay({
       catalog: {
         get(profileId, name) {
-          let catalog = catalogs.get(profileId)
-          if (!catalog) {
-            catalog = new AgentCatalog(profileId)
-            catalogs.set(profileId, catalog)
-          }
-          return catalog.get(name)
+          return catalogFor(profileId).get(name)
         }
       }
     })
