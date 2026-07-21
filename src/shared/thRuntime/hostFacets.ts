@@ -197,8 +197,10 @@ export interface DisplayHost {
   /** Current display revision (sync). Bumps on regex / settings-flag / character / persona changes —
    *  the card's render-cache key. */
   displayRevision(): number
-  /** Opt in/out of transformed streaming frames (`display_stream_frame`) + display invalidation events
-   *  for this panel. Streaming stays on the native cadence and costs nothing when no panel opted in. */
+  /** Opt this panel in/out of transformed streaming frames (`display_stream_frame`) + display invalidation
+   *  events. The opt-in is tracked per panel, but delivery granularity is per-CHAT: frames and invalidation
+   *  events are broadcast to all panels of the chat while ≥1 panel of the chat is opted in (ADR 0023 §3.4).
+   *  Streaming stays on the native cadence and costs nothing when no panel of the chat opted in. */
   setDisplayStreamEnabled(enabled: boolean): Promise<void>
 }
 

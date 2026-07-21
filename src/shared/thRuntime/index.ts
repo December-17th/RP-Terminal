@@ -661,6 +661,13 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
         variant: arg?.variant != null ? String(arg.variant) : undefined
       }),
     getDuelPreview: () => host.getDuelPreview(),
+    // DisplayHost card-facing entry points (ADR 0023): the app's own view-time display transform, so a card
+    // that owns the chat rect renders beautified floors instead of reimplementing the pipeline. Behavior
+    // lives in the Host; both transports forward. Functional only on the WCV transport — the inline host
+    // carries inert stubs by design (see docs/display-host-design.md). Also surfaced on rptHost per transport.
+    renderFloors: (from: any, to: any) => host.renderFloors(Number(from), Number(to)),
+    displayRevision: () => host.displayRevision(),
+    setDisplayStreamEnabled: (enabled: any) => host.setDisplayStreamEnabled(!!enabled),
     // Full-play-area overlay surfaces (PM-A7): raise / dismiss a surface the active card declares in
     // panel_ui.overlays. Behavior lives here so both transports inherit it; the transport Host just
     // forwards to the app's overlay mechanism (WCV over the grid region). See docs/rpt-api.md.

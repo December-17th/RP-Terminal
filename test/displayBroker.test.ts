@@ -34,6 +34,8 @@ const baseSnap = (): RevisionSnapshot => ({
   liveOn: true,
   rateChars: 2000,
   characterId: 'char-1',
+  charName: 'Aria',
+  reasoningTemplate: '<r>{{thought}}</r>',
   persona: 'Alice'
 })
 
@@ -52,6 +54,20 @@ describe('revisionReason — one reason per change, none for unrelated', () => {
 
   it('a character switch bumps, reason "character"', () => {
     expect(revisionReason(baseSnap(), { ...baseSnap(), characterId: 'char-2' })).toBe('character')
+  })
+
+  it('a same-id active-card rename bumps, reason "character"', () => {
+    expect(revisionReason(baseSnap(), { ...baseSnap(), charName: 'Aria the Bold' })).toBe(
+      'character'
+    )
+  })
+
+  it('a same-id reasoning_template edit bumps, reason "character"', () => {
+    expect(
+      revisionReason(baseSnap(), { ...baseSnap(), reasoningTemplate: '<r2>{{thought}}</r2>' })
+    ).toBe('character')
+    // template cleared (null) also counts as a character-facing change.
+    expect(revisionReason(baseSnap(), { ...baseSnap(), reasoningTemplate: null })).toBe('character')
   })
 
   it('a persona rename bumps, reason "persona"', () => {

@@ -51,6 +51,8 @@ export interface RevisionSnapshot {
   liveOn: boolean
   rateChars: number
   characterId: string | null
+  charName: string
+  reasoningTemplate: string | null
   persona: string
 }
 
@@ -58,6 +60,9 @@ export interface RevisionSnapshot {
  * Why the display revision should bump between two snapshots, or `null` if nothing the pipeline reads
  * changed. Regex identity first, then the settings flags, then character, then persona — so a single
  * store transition maps to exactly ONE reason (and an unrelated change → identical snapshot → null).
+ * The 'character' reason covers an active-card EDIT as well as a switch: the pipeline reads the card's
+ * name for {{char}} and the broker embeds its reasoning_template into cached views, so a same-id change
+ * to either (name / reasoning_template) must bump the revision too, not just a characterId change.
  */
 export function revisionReason(
   prev: RevisionSnapshot,
@@ -77,7 +82,12 @@ export function revisionReason(
     prev.rateChars !== next.rateChars
   )
     return 'settings'
-  if (prev.characterId !== next.characterId) return 'character'
+  if (
+    prev.characterId !== next.characterId ||
+    prev.charName !== next.charName ||
+    prev.reasoningTemplate !== next.reasoningTemplate
+  )
+    return 'character'
   if (prev.persona !== next.persona) return 'persona'
   return null
 }
@@ -162,6 +172,7 @@ function revisionSnapshot(): RevisionSnapshot {
   const settings = useSettingsStore.getState().settings
   const templates = settings?.templates
   const rx = useRegexStore.getState()
+  const activeCharacter = useCharacterStore.getState().activeCharacter
   const templatesOn = templates?.enabled !== false
   const renderEnabled = templates?.render?.enabled !== false
   return {
@@ -173,7 +184,12 @@ function revisionSnapshot(): RevisionSnapshot {
     finalPassOn: templates?.render?.final_pass !== false,
     liveOn: templatesOn && renderEnabled && templates?.render?.live !== false,
     rateChars: Math.max(1, (templates?.render?.rate_tokens || 500) * 4),
-    characterId: useCharacterStore.getState().activeCharacter?.id ?? null,
+    characterId: activeCharacter?.id ?? null,
+    charName: activeCharacter?.card.data.name || 'Character',
+    reasoningTemplate:
+      (activeCharacter?.card?.data?.extensions?.rp_terminal?.reasoning_template as
+        | string
+        | undefined) ?? null,
     persona: settings?.persona?.name || 'User'
   }
 }

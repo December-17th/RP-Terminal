@@ -395,6 +395,15 @@ w.TavernHelper = g.TavernHelper
   tokens: Record<string, string>
   source: 'user' | 'card' | 'runtime'
 } => g.getPlayTheme()
+// DisplayHost (ADR 0023): the documented entry point cartridge panel surfaces use for beautified transcript
+// rendering, alongside the bare `renderFloors`/`displayRevision`/`setDisplayStreamEnabled` globals. Each
+// delegates to the shared-runtime facade so behavior stays in ONE place (shared/thRuntime → the WCV Host →
+// the app display pipeline), never forked per transport.
+;(rptHost as any).renderFloors = (from: number, to: number): Promise<any[]> =>
+  g.renderFloors(from, to)
+;(rptHost as any).displayRevision = (): number => g.displayRevision()
+;(rptHost as any).setDisplayStreamEnabled = (enabled: boolean): Promise<void> =>
+  g.setDisplayStreamEnabled(enabled)
 
 // --- libraries the card bundle externalizes as bare globals (lodash `_`, Zod `z`, jQuery `$`, `toastr`) ---
 // These are transport-level library injection (not part of the TH runtime). The runtime already provides

@@ -277,6 +277,55 @@ and `test/wcvIpcCtxBinding.test.ts` (ADR 0022).
 
 - `getDuelPreview()` → `Promise<DuelPreview | null>` — **read-only host method** (RPT-only; no vanilla-ST equivalent). Returns the engine-computed duel build (deck + combatants + resources/relics) for the active chat, produced by the card's combat ruleset over the active build state. The `DuelPreview` contract is generic (field names are neutral; the card's ruleset supplies values + display strings). Shape: `{ config: {energyPerTurn, handSize}, lead: CombatantPreview, party: CombatantPreview[] }`; each combatant has resources, modifiers, conditions, and a `deck[]` of `CardPreview` (rarity/cost/effects/scaling). See [`preview.ts`](../../src/shared/combat/deckbuilder/preview.ts) for the full type. Designed for the 战斗 tab ([duel-build-preview-tab-design.md](superpowers/specs/2026-06-30-duel-build-preview-tab-design.md) §2) and the poem duel-card authoring guide (now in the `POD-Frontend-For-RPT` repo under `legacy/`). **Consumer (live):** the 命定之诗 status-fork 战斗 tab (`FrontEnd-for-destined-journey-TPR-STS`, on its `main`) — it calls `getDuelPreview()` with a fixture fallback and renders the deck-as-cards. The `DuelPreview` type is **mirrored** in the fork at `src/status/core/types/duel-preview.d.ts`; that copy and [`preview.ts`](../../src/shared/combat/deckbuilder/preview.ts) are the **shared contract** and must be changed together (hand-kept in sync, per the design §7).
 
+### Display / beautified transcript — ✅ (ADR 0023)
+
+The app's own **view-time display transform** (EJS → markers → macros → display regex), handed to a card
+that OWNS the chat rect so it rebuilds the transcript instead of reimplementing the renderer-only pipeline.
+**Trusted WCV cartridge panels only, fail-closed** — inline (non-WCV) cards get **inert stubs by design**
+(a v1 non-goal: an inline card already renders inside the native transcript, `renderFloors→[]` /
+`displayRevision→0` / `setDisplayStreamEnabled→no-op`, `cardBridge/host.ts:505-511`). Returned `html` is
+**RAW beautified HTML** — no sanitization tier, the trusted-panel model. The facet is
+[`DisplayHost`](../src/shared/thRuntime/hostFacets.ts) (`hostFacets.ts:193-203`); wire shapes in
+[`displayView.ts`](../src/shared/thRuntime/displayView.ts). Full design: `docs/display-host-design.md`.
+
+- `renderFloors(from, to)` → `Promise<RenderedFloorView[]>` — **invoke.** Render committed floors
+  `[from..to]` (inclusive, `floors()` indexing — chatScope-consistent, the SAME index the card reads the raw
+  floor at) through the display pipeline. Missing indices are skipped; the **batch is clamped to 32 floors**
+  main-side (`to` → `from + 31`, `displayRenderBroker.ts:30,55`). Main **forwards** the call to the host
+  renderer (the transform is renderer-only), correlates the reply with a **10 s timeout → `[]` fallback**
+  (`displayRenderBroker.ts:28,54,71`), and fail-closes to `[]` when the panel's session doesn't resolve
+  (`wcvIpc.ts:1087-1097`). The renderer keeps an **LRU(64)** render cache keyed by
+  `(chatId, floorIndex, swipeId, revision, marker fingerprint)` (`display/displayBroker.ts:265`).
+  `RenderedFloorView` = `{ floorIndex, revision, userText, html, thinking, hasReasoning, reasoningTemplate,
+  plotHtml, swipeId, swipeCount }` — `userText` is the raw user message (parity with the native view),
+  `html` is the response body after the full transform, `thinking`/`plotHtml` are the reasoning and plot
+  passes (`''` when absent), `reasoningTemplate` is the active card's slot or `null`.
+- `displayRevision()` → `number` — **sync** (answered from a main-cached int, fallback `0`,
+  `wcvChannelSpec.ts:139`, `wcvIpc.ts:1099`). Bumps on **regex / settings-flag / character (id, name,
+  reasoning_template) / persona** changes (`display/displayBroker.ts`); it is the card's render-cache key +
+  invalidation stamp.
+- `setDisplayStreamEnabled(enabled)` → `Promise<void>` — **invoke.** Opt this panel in/out of transformed
+  streaming frames + display-invalidation events. Streaming stays on the native `rateChars` cadence and
+  **costs nothing when no panel opted in** (main computes frames only for watched chats). Main tracks opt-ins
+  **per sender webContents** and relays the deduped enabled-**chat** set to the renderer; a torn-down slot
+  drops its opt-in (`wcvIpc.ts:197-219, 1083-1108`).
+- **Events — no new channels** (they ride the existing generic `wcv-event` transport). Delivery is
+  **per-CHAT**: a chat's opted-in panels (≥1 panel called `setDisplayStreamEnabled(true)`) receive them; the
+  renderer broadcasts to watched chats (`display/displayBroker.ts`).
+  - `display_stream_frame: DisplayStreamFrame` — at the native `rateChars` checkpoint cadence.
+    `DisplayStreamFrame` = `{ chatId, revision, html, atLen, rawTail, reasoning: { text, state } }`: `html` is
+    the beautified head (`''` before the first checkpoint), and `body.slice(atLen)` (carried verbatim as
+    `rawTail`) is the still-raw tail the card types plainly between checkpoints
+    (`displayView.ts:39-53`).
+  - `display_invalidated: { revision, reason }` — `reason ∈ 'regex' | 'settings' | 'character' | 'persona'`
+    (`displayView.ts:11-12`), telling the card to drop its render cache.
+- **Card-facing entry points.** The three members are exposed as **bare card globals** (`window.renderFloors`
+  / `displayRevision` / `setDisplayStreamEnabled`) via the `createThRuntime` facade
+  ([`thRuntime/index.ts`](../src/shared/thRuntime/index.ts)) on both transports, AND mirrored on
+  `rptHost.renderFloors` / `rptHost.displayRevision` / `rptHost.setDisplayStreamEnabled` on WCV panels
+  ([`wcvPreload.ts`](../src/preload/wcvPreload.ts) — same pattern as `rptHost.requestOverlay`). Only the WCV
+  transport is functional; the inline mirror carries the inert stubs above.
+
 ### Overlay surfaces — ✅ (PM-A7)
 
 - `requestOverlay(id)` → `Promise<boolean>` — **RPT-only host method** (no vanilla-ST equivalent). Raise a full-play-area overlay surface the active card declares in [`panel_ui.overlays`](sdk/component-inventory.md) (`{ id, entry, title? }`). The app mounts the named surface as a WebContentsView covering the whole `panel_ui` grid region (above the slots, **not** the titlebar / TopStrip) — the mechanism a card surface needs because WCVs composite above the DOM only *inside* their slot rectangle, so a surface can't otherwise escape its slot (partner sheet, 地图). **One overlay at a time:** requesting another id closes the current one first; requesting the already-open id is a no-op. Resolves `true` when it opened, `false` when the id isn't declared by the active card (rejected + `console.warn` main-side). No params in the API — context travels via chat KV + `broadcastEvent` (keeps it one-string simple). The overlay WCV is transparent; the surface paints its own scrim/sheet, and it freeze-frames under TopStrip dropdowns like any WCV (PM-A4). Also exposed as `window.requestOverlay` and `window.TavernHelper.requestOverlay`; on WCV panel surfaces it is additionally `window.rptHost.requestOverlay` (alongside `rptHost.broadcastEvent`). Both transports route to [`Host.requestOverlay`](../src/shared/thRuntime/types.ts).
@@ -354,9 +403,14 @@ Card → host channels (resolved against the calling view's ctx), in
 `-get-preset-names` / `-get-regexes` / `-format-regex` / `-get-persona-name` / `-get-persona-description`, the regex-full + write channels
 (`-get-regexes-full` / `-replace-regexes` / `-is-char-regex-enabled`), `-get-chat-id-sync`, the script-scope
 KV channels (`-script-vars-get-sync` / `-script-vars-set`), and the chat-write channels
-(`chat-set-messages` / `-delete-messages` / `-save`), and the runtime-theme channels
-(`wcv-host-set-play-theme` + `-reply` / `wcv-get-play-theme-sync` / `set-play-theme-cache`). Host → card: `wcv-vars-changed` (mirror refresh) +
-`wcv-event` (lifecycle/mutation/stream). **Runtime theme (runtime-theme-api-design §5)** — the theme
+(`chat-set-messages` / `-delete-messages` / `-save`), the runtime-theme channels
+(`wcv-host-set-play-theme` + `-reply` / `wcv-get-play-theme-sync` / `set-play-theme-cache`), and the
+DisplayHost channels (ADR 0023 — `wcv-host-render-floors` invoke / `wcv-host-display-revision-sync` sync,
+fallback 0 / `wcv-host-display-stream-enabled` invoke — [`wcvChannelSpec.ts`](../src/shared/thRuntime/wcvChannelSpec.ts)`:138-140`).
+Host → card: `wcv-vars-changed` (mirror refresh) +
+`wcv-event` (lifecycle/mutation/stream — DisplayHost's `display_stream_frame` / `display_invalidated` ride
+this generic transport, no dedicated channel; the render broker uses the non-Host `display-render-request` /
+`-response` + `display-revision-changed` / `display-stream-enabled-chats` relays, `wcvIpc.ts:197-219`). **Runtime theme (runtime-theme-api-design §5)** — the theme
 authority is the **renderer** (only it has the effective base tokens), so unlike other write channels the
 main handler doesn't do the work: `wcv-host-set-play-theme` **relays** the call to the host renderer
 (which derives + AA-checks + applies via [`cardBridge/playTheme.ts`](../src/renderer/src/cardBridge/playTheme.ts))
