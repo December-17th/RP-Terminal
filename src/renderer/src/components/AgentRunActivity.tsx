@@ -128,9 +128,6 @@ export function AgentRunStatusStrip({ chatId }: { chatId: string }): React.React
                 <>
                   <span className="tstrip-agent-status__dot" aria-hidden="true" />
                   <span className="tstrip-agent-status__name">{run.agentName}</span>
-                  <span className="tstrip-agent-status__state">
-                    {t(`agentRuns.status.${run.status}`)}
-                  </span>
                   <span className="tstrip-agent-status__floor">
                     {t('agentRuns.activity.floor', { floor: run.floor })}
                   </span>

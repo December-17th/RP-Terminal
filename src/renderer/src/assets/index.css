@@ -2884,7 +2884,7 @@ select {
 .tstrip-agent-status__items {
   max-width: 100%;
   justify-content: center;
-  gap: 8px;
+  gap: 16px;
   overflow: hidden;
 }
 .tstrip-agent-status__item {
@@ -2934,7 +2934,6 @@ button.tstrip-agent-status__more:hover {
   font-weight: 600;
   text-overflow: ellipsis;
 }
-.tstrip-agent-status__state,
 .tstrip-agent-status__floor,
 .tstrip-agent-status__more,
 .tstrip-agent-status__message,
@@ -2954,11 +2953,6 @@ button.tstrip-agent-status__more:hover {
 }
 @container (max-width: 360px) {
   .tstrip-agent-status__floor {
-    display: none;
-  }
-}
-@container (max-width: 260px) {
-  .tstrip-agent-status__state {
     display: none;
   }
 }
