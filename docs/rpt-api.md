@@ -325,6 +325,26 @@ that OWNS the chat rect so it rebuilds the transcript instead of reimplementing 
   `rptHost.renderFloors` / `rptHost.displayRevision` / `rptHost.setDisplayStreamEnabled` on WCV panels
   ([`wcvPreload.ts`](../src/preload/wcvPreload.ts) — same pattern as `rptHost.requestOverlay`). Only the WCV
   transport is functional; the inline mirror carries the inert stubs above.
+- **Segmentation helpers (ADR 0023 companion).** `renderFloors` returns RAW beautified `html`; a panel that
+  owns the chat rect must route each floor's html exactly as the native transcript does. These three **PURE**
+  helpers expose the app's own block routing so the panel need not reimplement it — they are **transport-**
+  **independent** (no `Host` member, no WCV channel, no IPC): both transports inherit them identically via the
+  `createThRuntime` facade, so behavior is parity-by-construction. Logic + comments live in
+  [`displayBlocks.ts`](../src/shared/displayBlocks.ts); the facade wires them in
+  [`thRuntime/index.ts`](../src/shared/thRuntime/index.ts) and mirrors them on `rptHost` (WCV) in
+  [`wcvPreload.ts`](../src/preload/wcvPreload.ts).
+  - `splitDisplayHtml(html)` → `Segment[]` — **sync, pure.** Split beautified message html into ordered
+    `{ type: 'md' | 'html' | 'inline-html', text, mode? }` segments (the same `splitHtml` the native
+    `MessageContent` uses): `md` renders as GitHub-flavored markdown, `inline-html` as sanitized inline
+    markup, `html` is a full-document / scripted frontend card destined for an isolated frame.
+  - `isInteractiveHtml(html)` → `boolean` — **sync, pure.** True when a block carries a `<script>` — the
+    native transcript hosts these in a sandboxed frame ([`InlineCardFrame`](sdk/component-inventory.md)),
+    never in the app document. Also `window.rptHost.isInteractiveHtml` (WCV).
+  - `applyScriptedHtml(el, html)` → `void` — **sync DOM helper.** `el.innerHTML = html`, then re-create every
+    descendant `<script>` (copying attributes + text) so it actually runs — innerHTML-inserted scripts are
+    inert per the HTML spec. The native transcript does **not** use this (it isolates scripted blocks in a
+    frame); it is a convenience for a panel that has already made its own trust decision and wants scripted
+    blocks live in its own surface. Also `window.rptHost.applyScriptedHtml` (WCV).
 
 ### Overlay surfaces — ✅ (PM-A7)
 

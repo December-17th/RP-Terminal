@@ -14,6 +14,7 @@ import { nativeToThEntry, thToNativeEntry } from './worldbookEntry'
 import { mapPresetToThShape, mergePresetView } from './presetShape'
 import { expandMacros } from '../macros'
 import { runScript, type StCtx } from '../stscript'
+import { splitHtml, isInteractiveHtml, applyScriptedHtml } from '../displayBlocks'
 
 const TAVERN_EVENTS = {
   GENERATION_STARTED: 'generation_started',
@@ -668,6 +669,16 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     renderFloors: (from: any, to: any) => host.renderFloors(Number(from), Number(to)),
     displayRevision: () => host.displayRevision(),
     setDisplayStreamEnabled: (enabled: any) => host.setDisplayStreamEnabled(!!enabled),
+    // DisplayHost segmentation companion (ADR 0023): PURE helpers so a card panel that owns the chat
+    // rect can route beautified `renderFloors` html the SAME way the app's MessageContent does, instead
+    // of reimplementing block detection + scripted-frame routing. No Host member, no WCV_CHANNEL_SPEC
+    // row, no IPC — both transports inherit them identically via this facade (parity by construction).
+    // splitDisplayHtml → the shared splitHtml (markdown / inline-html / scripted-frame segments);
+    // isInteractiveHtml → block carries a <script>; applyScriptedHtml → set innerHTML then re-create
+    // descendant <script>s so they run (innerHTML scripts are inert). See src/shared/displayBlocks.ts.
+    splitDisplayHtml: (html: any) => splitHtml(String(html ?? '')),
+    isInteractiveHtml: (html: any) => isInteractiveHtml(String(html ?? '')),
+    applyScriptedHtml: (el: any, html: any) => applyScriptedHtml(el, String(html ?? '')),
     // Full-play-area overlay surfaces (PM-A7): raise / dismiss a surface the active card declares in
     // panel_ui.overlays. Behavior lives here so both transports inherit it; the transport Host just
     // forwards to the app's overlay mechanism (WCV over the grid region). See docs/rpt-api.md.

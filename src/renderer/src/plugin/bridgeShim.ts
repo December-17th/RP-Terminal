@@ -159,5 +159,8 @@ export const buildMessageHtmlDoc = (
   opts: { allowRemote?: boolean; trusted?: boolean } = {}
 ): string => sandboxHead(!!opts.allowRemote, !!opts.trusted) + extractBody(html) + `</body></html>`
 
-/** True when an html block carries a <script> (→ render as an interactive sandbox, not static). */
-export const isInteractiveHtml = (html: string): boolean => /<script[\s>]/i.test(html)
+// True when an html block carries a <script> (→ render as an interactive sandbox, not static). The
+// implementation moved to the shared runtime (src/shared/displayBlocks.ts) so card panels get it via
+// the createThRuntime facade; re-exported here at its original name so existing importers/tests keep
+// working (ADR 0023 segmentation companion).
+export { isInteractiveHtml } from '../../../shared/displayBlocks'
