@@ -11,6 +11,7 @@ import * as sessionMigrationService from './services/sessionMigrationService'
 import * as templateService from './services/templateService'
 import * as wcvManager from './services/wcvManager'
 import * as worldAssetProtocol from './services/worldAssetProtocol'
+import * as remoteAssetProtocol from './services/remoteAssetProtocol'
 import * as avatarProtocol from './services/avatarProtocol'
 import './services/cardAgentCatalogBridge'
 import './services/agentPresetAssemblyBridge'
@@ -58,6 +59,10 @@ protocol.registerSchemesAsPrivileged([
   },
   {
     scheme: worldAssetProtocol.ASSET_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
+  },
+  {
+    scheme: remoteAssetProtocol.REMOTE_ASSET_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
   },
   {
@@ -198,6 +203,7 @@ app.whenReady().then(() => {
   // Register all IPC handlers, grouped by domain (see src/main/ipc/).
   registerIpc(ipcMain)
   worldAssetProtocol.registerAssetProtocol()
+  remoteAssetProtocol.registerRemoteAssetProtocol()
   avatarProtocol.registerAvatarProtocol()
 
   // Sync the Windows window-control overlay (custom title bar) to the active theme's colors.

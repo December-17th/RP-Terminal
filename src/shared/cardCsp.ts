@@ -11,9 +11,10 @@
 // audio, images) load; the real boundary is process isolation (separate WCV process, nodeIntegration
 // off, no host/Node reach), not this CSP.
 //
-// `rptasset:` is listed explicitly in img-src and media-src: CSP `*` does NOT match custom schemes, so
+// Internal asset schemes are listed explicitly in img-src and media-src: CSP `*` does NOT match custom
+// schemes, so
 // World-Asset portraits (rptasset://) would otherwise be blocked in WCV card surfaces (PARTNER overlay
 // / STAGE). Kept in parity with the main-window img-src (renderer/index.html) + csp.ts.
 export const CARD_CSP =
   "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-  'img-src * data: blob: rptasset:; media-src * data: blob: rptasset:; connect-src * data: blob:'
+  'img-src * data: blob: rptasset: rptremoteasset:; media-src * data: blob: rptasset: rptremoteasset:; connect-src * data: blob:'

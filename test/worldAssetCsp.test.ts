@@ -12,6 +12,11 @@ describe('inline-iframe CSP', () => {
   it('still allows rptasset: when remote is enabled', () => {
     expect(buildCsp(true)).toMatch(/img-src[^;]*\brptasset:/)
   })
+  it('allows on-demand remote images and media without granting direct connect access', () => {
+    const csp = buildCsp(false)
+    expect(csp).toMatch(/img-src[^;]*\brptremoteasset:/)
+    expect(csp).toMatch(/media-src[^;]*\brptremoteasset:/)
+  })
   it('keeps the locked default-src none / connect-src none policy', () => {
     expect(buildCsp(false)).toContain("default-src 'none'")
     expect(buildCsp(false)).toContain("connect-src 'none'")
@@ -31,6 +36,10 @@ describe('main-window CSP (index.html)', () => {
   it('allows rptasset: images (World-Asset portraits in the top frame + inline cards)', () => {
     expect(csp).toMatch(/img-src[^;]*\brptasset:/)
   })
+  it('allows rptremoteasset: for image and video previews', () => {
+    expect(csp).toMatch(/img-src[^;]*\brptremoteasset:/)
+    expect(csp).toMatch(/media-src[^;]*\brptremoteasset:/)
+  })
 })
 
 describe('WCV card-surface CSP (CARD_CSP)', () => {
@@ -44,5 +53,9 @@ describe('WCV card-surface CSP (CARD_CSP)', () => {
   })
   it('allows rptasset: media in media-src (audio/video parity)', () => {
     expect(CARD_CSP).toMatch(/media-src[^;']*\brptasset:/)
+  })
+  it('allows rptremoteasset: in both visual directives', () => {
+    expect(CARD_CSP).toMatch(/img-src[^;']*\brptremoteasset:/)
+    expect(CARD_CSP).toMatch(/media-src[^;']*\brptremoteasset:/)
   })
 })

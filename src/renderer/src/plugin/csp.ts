@@ -10,7 +10,8 @@ export const buildCsp = (allowRemote: boolean): string => {
     "default-src 'none'",
     `script-src 'unsafe-inline' data: blob:${s}`,
     `style-src 'unsafe-inline'${s}`,
-    `img-src data: blob: rptasset:${s}`,
+    `img-src data: blob: rptasset: rptremoteasset:${s}`,
+    `media-src data: blob: rptasset: rptremoteasset:${s}`,
     `font-src data:${s}`,
     `connect-src ${allowRemote ? 'https:' : "'none'"}`,
     "form-action 'none'"

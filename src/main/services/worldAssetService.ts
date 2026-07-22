@@ -20,7 +20,8 @@ import {
   ASSET_CATEGORIES,
   ASSET_EXTS,
   ASSET_TYPES,
-  categoryForType
+  categoryForType,
+  isAssetMediaTypeAllowed
 } from '../../shared/worldAssets/types'
 
 /** `<appDir>/profiles/<profileId>/lorebooks/<lorebookId>.assets` */
@@ -405,6 +406,10 @@ export function importAssetFiles(
     const ext = dot >= 0 ? item.srcPath.slice(dot + 1).toLowerCase() : ''
     if (!(ASSET_EXTS as readonly string[]).includes(ext)) {
       skip(`unsupported extension: ${item.srcPath}`)
+      continue
+    }
+    if (!isAssetMediaTypeAllowed(item.type, ext)) {
+      skip(`unsupported media type: .${ext} for ${item.type}`)
       continue
     }
     const category = categoryForType(item.type)

@@ -5,6 +5,10 @@ import { createHash } from 'crypto'
 import { readFile } from 'fs/promises'
 import { log } from './logService'
 import { serveAssetRequest, ASSET_SCHEME } from './worldAssetProtocol'
+import {
+  REMOTE_ASSET_SCHEME,
+  serveRemoteAssetRequest
+} from './remoteAssetProtocol'
 import { getGrants } from './pluginService'
 import { cardCodeRoot } from './cardCodeService'
 import {
@@ -75,6 +79,7 @@ const ensureSession = (): void => {
     }
   })
   ses.protocol.handle(ASSET_SCHEME, (req) => serveAssetRequest(req))
+  ses.protocol.handle(REMOTE_ASSET_SCHEME, (req) => serveRemoteAssetRequest(req))
   ses.webRequest.onHeadersReceived({ urls: ['https://*.jsdelivr.net/*'] }, (details, cb) => {
     if (!/\.html(\?|$)/i.test(details.url)) return cb({})
     const headers: Record<string, string[]> = { ...details.responseHeaders }

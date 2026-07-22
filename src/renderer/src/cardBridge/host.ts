@@ -13,6 +13,7 @@ import { buildRenderContext } from '../plugin/renderTemplate'
 import { storeRuleToTavernRegex } from '../../../shared/thRuntime/tavernRegex'
 import { categoryForType } from '../../../shared/worldAssets/types'
 import type { AssetType } from '../../../shared/worldAssets/types'
+import { localFirstRemoteAssetUrl } from '../../../shared/worldAssets/remote'
 import type { Host, CardCtx, FloorLike, HostPresetView } from '../../../shared/thRuntime/types'
 import type { VarOp } from '../../../shared/thRuntime/ops'
 import {
@@ -452,7 +453,10 @@ export function createInlineHost(ctx: CardCtx): Host {
         const own = cardCharacterId()
         const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
         const category = categoryForType(type as AssetType)
-        return await window.api.assetUrl(ctx.profileId, ids, category, name, type, mood)
+        const local = await window.api.assetUrl(ctx.profileId, ids, category, name, type, mood)
+        return localFirstRemoteAssetUrl(local, type, () =>
+          window.api.remoteAssetUrl(ctx.profileId, ctx.chatId, name)
+        )
       } catch {
         return null
       }

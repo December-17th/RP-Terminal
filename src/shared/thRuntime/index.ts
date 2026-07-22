@@ -15,6 +15,7 @@ import { mapPresetToThShape, mergePresetView } from './presetShape'
 import { expandMacros } from '../macros'
 import { runScript, type StCtx } from '../stscript'
 import { splitHtml, isInteractiveHtml, applyScriptedHtml } from '../displayBlocks'
+import { DEFAULT_CHARACTER_ASSET_TYPE } from '../worldAssets/types'
 
 const TAVERN_EVENTS = {
   GENERATION_STARTED: 'generation_started',
@@ -647,7 +648,14 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
       return ''
     },
     triggerSlash: (c: any) => runTriggerSlash(String(c ?? '')),
-    assetUrl: (name: string, type: string, mood?: string) => host.assetUrl(name, type, mood),
+    assetUrl: async (name: string, type?: string, mood?: string) => {
+      if (type !== undefined) return host.assetUrl(name, type, mood)
+      return (
+        (await host.assetUrl(name, DEFAULT_CHARACTER_ASSET_TYPE, mood)) ??
+        (await host.assetUrl(name, '立绘bg', mood)) ??
+        (await host.assetUrl(name, '头像', mood))
+      )
+    },
     sceneAssetUrl: (location: string, type: '全景' | '背景') => host.sceneAssetUrl(location, type),
     // Enumerate one entry's variants for the card's world (WA-3) — a bare read global in the same family
     // as assetUrl. Behavior lives in the shared runtime so both transports inherit it; the transport Host

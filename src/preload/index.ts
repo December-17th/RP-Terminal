@@ -747,6 +747,11 @@ const api = {
   // Asset manager surface (WA-2). The `assets` workspace view's read + mutation API.
   assetListIndex: (profileId: string, lorebookIds: string[]) =>
     ipcRenderer.invoke('asset-list-index', profileId, lorebookIds),
+  // Latest-floor `char_info_visuals`: read-only on-demand remote character art.
+  remoteAssetList: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('remote-asset-list', profileId, chatId),
+  remoteAssetUrl: (profileId: string, chatId: string, name: string) =>
+    ipcRenderer.invoke('remote-asset-url', profileId, chatId, name),
   assetImportFiles: (
     profileId: string,
     lorebookId: string,

@@ -62,6 +62,22 @@ describe('importAssetFiles', () => {
     svc.importAssetFiles('p1', 'w1', [{ srcPath: src, name: '薇拉', type: '相册', variant: '01' }])
     expect(fs.existsSync(path.join(catDir('w1', 'character'), '薇拉_相册_01.png'))).toBe(true)
   })
+  it('imports MP4 only for background-bearing types', () => {
+    const src = srcImage('clip.mp4')
+    const accepted = svc.importAssetFiles('p1', 'w1', [
+      { srcPath: src, name: '薇拉', type: '立绘bg' }
+    ])
+    expect(accepted.imported).toBe(1)
+    expect(fs.existsSync(path.join(catDir('w1', 'character'), '薇拉_立绘bg.mp4'))).toBe(true)
+
+    const rejected = svc.importAssetFiles('p1', 'w1', [
+      { srcPath: src, name: '薇拉', type: '立绘' },
+      { srcPath: src, name: '薇拉', type: '头像' },
+      { srcPath: src, name: '薇拉', type: '相册' }
+    ])
+    expect(rejected.imported).toBe(0)
+    expect(rejected.skipped).toBe(3)
+  })
   it('skips an unknown type', () => {
     const src = srcImage('pic.png')
     const res = svc.importAssetFiles('p1', 'w1', [
@@ -155,15 +171,16 @@ describe('exportAssetsZip round-trip', () => {
   it('writes a <category>/<file> zip that re-imports cleanly via importAssetsZip', () => {
     writeFile('w1', 'character', '薇拉_头像.png', 'A')
     writeFile('w1', 'character', '薇拉_相册_01.png', 'B')
+    writeFile('w1', 'character', '薇拉_立绘bg.mp4', 'V')
     writeFile('w1', 'location', '雾港_全景.png', 'C')
     const zipPath = path.join(tmp, 'out.zip')
     const exp = svc.exportAssetsZip('p1', 'w1', zipPath)
-    expect(exp).toEqual({ ok: true, entries: 3 })
+    expect(exp).toEqual({ ok: true, entries: 4 })
     expect(fs.existsSync(zipPath)).toBe(true)
 
     // Import into a fresh world and compare the merged indexes.
     const imp = svc.importAssetsZip('p1', 'w2', zipPath)
-    expect(imp.imported).toBe(3)
+    expect(imp.imported).toBe(4)
     const a = svc.getMergedIndex('p1', ['w1'])
     const b = svc.getMergedIndex('p1', ['w2'])
     expect(b).toEqual(a)

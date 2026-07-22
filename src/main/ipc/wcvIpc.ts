@@ -15,6 +15,8 @@ import * as pluginService from '../services/pluginService'
 import * as settingsService from '../services/settingsService'
 import * as extensionSettingsService from '../services/extensionSettingsService'
 import * as worldAssetService from '../services/worldAssetService'
+import * as remoteAssetService from '../services/remoteAssetService'
+import { localFirstRemoteAssetUrl } from '../../shared/worldAssets/remote'
 import * as characterService from '../services/characterService'
 import * as presetService from '../services/presetService'
 import { getActivePresetId } from '../services/presetService'
@@ -1004,7 +1006,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       const ids =
         chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
         (ctx.characterId ? [ctx.characterId] : [])
-      return worldAssetService.assetUrlForWorld(ctx.profileId, ids, String(name ?? ''), type, mood)
+      const local = worldAssetService.assetUrlForWorld(
+        ctx.profileId,
+        ids,
+        String(name ?? ''),
+        type,
+        mood
+      )
+      return localFirstRemoteAssetUrl(local, String(type ?? ''), () =>
+        remoteAssetService.resolveRemoteAssetUrl(ctx.profileId, ctx.chatId, String(name ?? ''))
+      )
     },
     sceneAssetUrl: (e, location, type) => {
       const ctx = wcvManager.contextFor(e.sender.id)
