@@ -52,13 +52,13 @@ describe('Yuzu full-card surface MVP', () => {
           profileId: 'p1',
           chatId: 'c1',
           entry: 'card-code:yuzu/index.html',
-          enableVnMode,
-          onExit: () => {}
+          enableVnMode
         })
       )
     })
 
     expect(container?.querySelector('[data-testid="wcv"]')).toBeNull()
+    expect(container?.querySelector('.yuzu-surface__bar')).toBeNull()
     expect(setVnMode).toHaveBeenCalledWith('p1', 'c1', enableVnMode)
 
     await act(async () => resolveVnMode?.())
