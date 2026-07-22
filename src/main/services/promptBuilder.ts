@@ -354,6 +354,12 @@ export const buildPromptDetailed = (args: BuildPromptArgs): BuildPromptResult =>
     original,
     vars: vars ?? args.template?.vars,
     globals: globals ?? args.template?.globals,
+    // Build-time setvar capture: the macro dialect's `{{setvar}}`/`{{addvar}}` report through the SAME
+    // recorder as the EJS engine (assemble.ts `createTemplateWriteRecorder`). Observation-only — it
+    // fires after the write and its result is discarded. The recorder filters by STORE IDENTITY, which
+    // is why the hook is forwarded unconditionally: a frozen-frontier call passes `frozenVars` as
+    // `vars`, so those writes are reported but land on a store the recorder ignores.
+    onVarWrite: args.template?.onVarWrite,
     // SPreset MacroNest (issue 16): undefined = RPT's default nesting; 1 = single non-nesting pass.
     maxPasses: args.macroMaxPasses
   })

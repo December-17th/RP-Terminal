@@ -5,10 +5,11 @@
 // and an edit of an earlier floor then replayed the floor with whatever it inherited instead of the
 // value live assembly forced. That is precisely the case the journal exists for.
 //
-// These pin the fix: the engine reports every write through `onVarWrite`, and capture journals the FINAL
-// value at each recorded path. The diff stays on as a SECOND PATH SOURCE (never a second value source):
-// the `{{setvar}}` / `{{addvar}}` MACROS in shared/macros.ts write the same store without ever entering
-// the template engine.
+// These pin the fix: BOTH build-time dialects — the EJS engine and the `{{setvar}}` / `{{addvar}}`
+// MACROS in shared/macros.ts, which never enter the engine — report every write through the SAME
+// `onVarWrite` contract into ONE recorder, and capture journals the FINAL value at each recorded path.
+// The diff stays on as a SECOND PATH SOURCE (never a second value source) for the one writer no hook can
+// describe: the engine's keyless wholesale `setvar(null, {…})`, which has no path to report.
 import { describe, it, expect, beforeAll, vi } from 'vitest'
 
 vi.mock('better-sqlite3', () => import('../mocks/betterSqlite3Node'))
@@ -27,6 +28,7 @@ import {
   evalTemplate,
   buildTemplateContext
 } from '../../src/main/services/templateService'
+import { expandMacros } from '../../src/shared/macros'
 
 describe('the EJS engine write hook (VarWriteHook)', () => {
   beforeAll(async () => {
@@ -113,6 +115,136 @@ describe('the EJS engine write hook (VarWriteHook)', () => {
   })
 })
 
+describe('the MACRO dialect write hook (shared/macros.ts)', () => {
+  /** Expand macros with a recording hook; returns the output plus one row per reported write. */
+  const run = (
+    source: string,
+    vars: Record<string, unknown> = {},
+    globals: Record<string, unknown> = {}
+  ): {
+    output: string
+    writes: Array<{ path: string; kind: string; onFloorStore: boolean }>
+    vars: Record<string, unknown>
+    globals: Record<string, unknown>
+  } => {
+    const writes: Array<{ path: string; kind: string; onFloorStore: boolean }> = []
+    const output = expandMacros(source, {
+      vars,
+      globals,
+      onVarWrite: (path, kind, store) => writes.push({ path, kind, onFloorStore: store === vars })
+    })
+    return { output, writes, vars, globals }
+  }
+
+  it('reports a {{setvar}} against the floor store', () => {
+    const { writes, vars } = run('{{setvar::flag::ready}}')
+    expect(writes).toEqual([{ path: 'flag', kind: 'set', onFloorStore: true }])
+    expect(vars.flag).toBe('ready')
+  })
+
+  it('reports the same-valued write a diff cannot see', () => {
+    const { writes } = run('{{setvar::flag::ready}}', { flag: 'ready' })
+    expect(writes).toEqual([{ path: 'flag', kind: 'set', onFloorStore: true }])
+  })
+
+  it('reports {{addvar}} as a set', () => {
+    const { writes, vars } = run('{{addvar::n::2}}', { n: 5 })
+    expect(writes).toEqual([{ path: 'n', kind: 'set', onFloorStore: true }])
+    expect(vars.n).toBe(7)
+  })
+
+  it('reports a nested/dotted path exactly as the macro wrote it', () => {
+    const { writes, vars } = run('{{setvar::quest.step::3}}')
+    expect(writes).toEqual([{ path: 'quest.step', kind: 'set', onFloorStore: true }])
+    expect(vars).toEqual({ quest: { step: '3' } })
+  })
+
+  it('has NO variable-writing scope — the global bag is read-only to this dialect', () => {
+    // {{getglobalvar}}/{{get_global_variable}} READ ctx.globals; there is no {{setglobalvar}} — an
+    // unknown macro passes through verbatim, so nothing is written and nothing is reported.
+    const { output, writes, globals, vars } = run(
+      '{{getglobalvar::g}}|{{setglobalvar::g::9}}|{{set_global_variable::g::9}}',
+      {},
+      { g: 'seed' }
+    )
+    expect(output).toBe('seed|{{setglobalvar::g::9}}|{{set_global_variable::g::9}}')
+    expect(writes).toEqual([])
+    expect(globals).toEqual({ g: 'seed' })
+    expect(vars).toEqual({})
+  })
+
+  it('is purely observational — same output, hook or no hook', () => {
+    const source = '[{{setvar::x::1}}][{{addvar::n::2}}][{{getvar::x}}]'
+    const hooked = run(source, { n: 1 })
+    const plain = expandMacros(source, { vars: { n: 1 } })
+    expect(hooked.output).toBe(plain)
+    expect(hooked.output).toBe('[][][1]')
+  })
+
+  it('swallows a throwing hook without touching the write or the output', () => {
+    const vars: Record<string, unknown> = {}
+    const output = expandMacros('{{setvar::flag::ready}}done', {
+      vars,
+      onVarWrite: () => {
+        throw new Error('recorder blew up')
+      }
+    })
+    expect(output).toBe('done')
+    expect(vars.flag).toBe('ready')
+  })
+})
+
+describe('ONE recorder for BOTH dialects', () => {
+  beforeAll(async () => {
+    await initTemplates()
+  })
+
+  it('journals a macro {{setvar}} that wrote a value already present (the diff sees nothing)', () => {
+    const vars: Record<string, unknown> = { difficulty: 'hard' }
+    const recorder = createTemplateWriteRecorder(vars)
+    const before = snapshotTemplateVars(vars)
+
+    expandMacros('{{setvar::difficulty::hard}}', { vars, onVarWrite: recorder.onVarWrite })
+
+    expect(recorder.paths()).toEqual(['difficulty'])
+    expect(captureTemplateWrites(before, vars)).toEqual([])
+    expect(captureTemplateWrites(before, vars, recorder.paths())).toEqual([
+      { kind: 'set', path: 'variables.difficulty', value: 'hard' }
+    ])
+  })
+
+  it('journals ONE operation with the final value when a macro and the engine write the same path', () => {
+    const vars: Record<string, unknown> = { turn: 1 }
+    const recorder = createTemplateWriteRecorder(vars)
+    const before = snapshotTemplateVars(vars)
+
+    expandMacros('{{setvar::turn::2}}', { vars, onVarWrite: recorder.onVarWrite })
+    evalTemplate(
+      "<% setvar('turn', 3) %>",
+      buildTemplateContext(vars, { onVarWrite: recorder.onVarWrite })
+    )
+
+    expect(recorder.paths()).toEqual(['turn'])
+    expect(captureTemplateWrites(before, vars, recorder.paths())).toEqual([
+      { kind: 'set', path: 'variables.turn', value: 3 }
+    ])
+  })
+
+  it('drops a macro write that landed on the L1 frozen snapshot instead of the floor store', () => {
+    // promptBuilder renders the frozen frontier with `vars` swapped for `frozenVars` and forwards the
+    // SAME hook — store identity is what keeps that phantom write out of the journal.
+    const floorStore: Record<string, unknown> = {}
+    const frozen: Record<string, unknown> = {}
+    const recorder = createTemplateWriteRecorder(floorStore)
+
+    expandMacros('{{setvar::stale::1}}', { vars: frozen, onVarWrite: recorder.onVarWrite })
+    expandMacros('{{setvar::live::1}}', { vars: floorStore, onVarWrite: recorder.onVarWrite })
+
+    expect(recorder.paths()).toEqual(['live'])
+    expect(frozen).toEqual({ stale: '1' })
+  })
+})
+
 describe('createTemplateWriteRecorder', () => {
   it('records only the writes that landed on the floor store, deduplicated in first-write order', () => {
     const floorStore: Record<string, unknown> = {}
@@ -179,11 +311,16 @@ describe('captureTemplateWrites', () => {
     ])
   })
 
-  it('still journals the macro dialect, which never reaches the engine hook', () => {
-    // shared/macros.ts `{{setvar}}` writes the same store without entering the template engine, so the
-    // snapshot/diff remains its only capture path.
+  it('still journals a changed value with no recorded path — the diff source stays load-bearing', () => {
+    // Why the diff survives: the engine's KEYLESS wholesale replace `setvar(null, {…})`
+    // (templateEngine.ts:334-345) clears the store and Object.assigns a new one. There is no path to
+    // report, so the hook is silent and only a snapshot/diff can see the result.
     expect(captureTemplateWrites({ mood: 'calm' }, { mood: 'tense' })).toEqual([
       { kind: 'set', path: 'variables.mood', value: 'tense' }
+    ])
+    expect(captureTemplateWrites({ mood: 'calm' }, { replaced: true })).toEqual([
+      { kind: 'set', path: 'variables.replaced', value: true },
+      { kind: 'delete', path: 'variables.mood' }
     ])
   })
 
@@ -250,6 +387,22 @@ describe('a same-valued build-time setvar survives an earlier-floor edit', () =>
       'template',
       captureTemplateWrites({ difficulty: 'hard' }, { difficulty: 'hard' }, ['difficulty'])
     )
+
+    state.append('chat', 0, 'user', [{ kind: 'set', path: 'variables.difficulty', value: 'easy' }])
+
+    expect(variablesAt(db, 0).difficulty).toBe('easy')
+    expect(variablesAt(db, 1).difficulty).toBe('hard')
+  })
+
+  it('keeps the forced value when the same-valued write came from the MACRO dialect', () => {
+    const { db, state } = seedChat()
+    // Floor 1's assembly ran `{{setvar::difficulty::hard}}` against a store that ALREADY held 'hard' —
+    // the same hole as the engine's, one dialect over, now closed by the same recorder.
+    const vars: Record<string, unknown> = { stat_data: { hp: 10 }, difficulty: 'hard' }
+    const recorder = createTemplateWriteRecorder(vars)
+    const before = snapshotTemplateVars(vars)
+    expandMacros('{{setvar::difficulty::hard}}', { vars, onVarWrite: recorder.onVarWrite })
+    state.journal('chat', 1, 'template', captureTemplateWrites(before, vars, recorder.paths()))
 
     state.append('chat', 0, 'user', [{ kind: 'set', path: 'variables.difficulty', value: 'easy' }])
 

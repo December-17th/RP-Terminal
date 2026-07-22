@@ -20,6 +20,12 @@
  *    override exposes the replaced content as `{{original}}` during substitution).
  */
 
+// Type-only: the macro dialect and the EJS engine report their variable writes through the SAME hook
+// contract, so one recorder can receive both (build-time setvar capture — see
+// main/services/generation/assemble.ts). Erased at compile time; no runtime edge is added to this
+// module, which stays pure.
+import type { VarWriteHook } from './templateEngine'
+
 export interface MacroContext {
   user?: string
   char?: string
@@ -64,6 +70,24 @@ export interface MacroContext {
    * nesting cap. Clamped to ≥1.
    */
   maxPasses?: number
+  /**
+   * OBSERVATION-ONLY notification that a variable-writing macro (`{{setvar}}` / `{{addvar}}` — the only
+   * two in this dialect) just wrote `ctx.vars`. The SAME `VarWriteHook` contract the EJS engine uses,
+   * so ONE host recorder receives both dialects and they can never end up with disagreeing value rules
+   * (build-time setvar capture — main/services/generation/assemble.ts).
+   *
+   * Purely additive: it fires AFTER the mutation, its return value is discarded and a throw is
+   * swallowed — it can change neither the expanded output nor a macro's result. Absent → one null
+   * check per write.
+   *
+   * `path` is the key as the macro wrote it (this dialect's plain dot form — `setPath` below); `store`
+   * is the object the write LANDED ON, always `ctx.vars`, because the macro dialect has NO
+   * variable-WRITING scope: only the READS (`{{getglobalvar}}`, `{{get_global_variable}}`) ever reach
+   * `ctx.globals`. Reporting the store still matters — one assembly hands this engine DIFFERENT `vars`
+   * objects (promptBuilder renders the L1 frozen frontier against `frozenVars`), and only the host can
+   * tell the floor's store from a derived snapshot.
+   */
+  onVarWrite?: VarWriteHook
 }
 
 const path = (obj: Record<string, unknown> | undefined, key: string): unknown => {
@@ -85,6 +109,27 @@ const setPath = (obj: Record<string, unknown>, key: string, val: unknown): void 
     cur = cur[k] as Record<string, unknown>
   }
   cur[parts[parts.length - 1]] = val
+}
+
+/**
+ * Report ONE completed macro write to `ctx.onVarWrite`. Called AFTER the store mutation and its result
+ * is discarded, so macro evaluation order, the macro's own expansion and the returned text are all
+ * untouched; a throwing hook is swallowed so a recorder bug can never change what a macro produces.
+ * No hook installed → a single null check. Mirrors the engine's `noteWrite` (templateEngine.ts:293).
+ */
+const noteVarWrite = (
+  ctx: MacroContext,
+  store: Record<string, unknown>,
+  key: string,
+  kind: 'set' | 'delete'
+): void => {
+  const hook = ctx.onVarWrite
+  if (!hook || !key) return
+  try {
+    hook(key, kind, store)
+  } catch {
+    /* observation must never fail an expansion */
+  }
 }
 
 // Dice roll, matching ST's new-engine `{{roll}}` (core-macros.js:303-337) which delegates to the
@@ -301,9 +346,16 @@ export const expandMacros = (text: string, ctx: MacroContext = {}): string => {
         case 'getglobalvar':
           res = String(path(ctx.globals, a.trim()) ?? '')
           break
+        // The dialect's ONLY two variable writers; both land on `ctx.vars` (there is no `{{delvar}}` /
+        // `{{incvar}}` / `{{setglobalvar}}` here). Each reports the completed write to `ctx.onVarWrite`
+        // — additive and after the fact, so the expansion is byte-identical either way.
         case 'setvar': {
           const [k, ...rest] = a.split('::')
-          if (k && ctx.vars) setPath(ctx.vars, k.trim(), rest.join('::'))
+          if (k && ctx.vars) {
+            const key = k.trim()
+            setPath(ctx.vars, key, rest.join('::'))
+            noteVarWrite(ctx, ctx.vars, key, 'set')
+          }
           res = ''
           break
         }
@@ -313,6 +365,7 @@ export const expandMacros = (text: string, ctx: MacroContext = {}): string => {
             const key = k.trim()
             const cur = Number(path(ctx.vars, key)) || 0
             setPath(ctx.vars, key, cur + (Number(n) || 0))
+            noteVarWrite(ctx, ctx.vars, key, 'set')
           }
           res = ''
           break
