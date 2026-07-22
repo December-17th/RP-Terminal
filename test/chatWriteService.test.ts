@@ -238,7 +238,7 @@ describe('afterChatMutation', () => {
         { message_id: 2, message: "<UpdateVariable>\n_.set('hp', 0, 42);\n</UpdateVariable>" }
       ])
     ).toBe(1)
-    const latest = afterChatMutation('p', 'c', 1)
+    const latest = afterChatMutation('p', 'c')
     expect(latest?.floor).toBe(1)
     expect((latest?.variables as any).stat_data).toEqual({ hp: 42 })
   })

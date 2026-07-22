@@ -873,7 +873,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       if (r.changedFrom !== null) {
         pushVars(
           ctx.chatId,
-          chatWriteService.afterChatMutation(ctx.profileId, ctx.chatId, r.changedFrom),
+          chatWriteService.afterChatMutation(ctx.profileId, ctx.chatId),
           e.sender.id
         )
         log('info', 'wcv saveChat', `assistant msgs 鈫?floors + reevaluated from ${r.changedFrom}`)

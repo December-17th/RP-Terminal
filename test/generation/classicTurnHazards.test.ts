@@ -4,7 +4,7 @@
 // the real direct-path entry (`runClassicTurnDirect`), with the same leaf mocks classicDirectGenerate
 // uses. It spies (real passthrough) on `assemblePrompt` only to capture the ONE shared `gen` object, so
 // the identity assertions genuinely fail if classicTurn ever clones/spreads it.
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { getDefaultSettings } from '../../src/main/services/settingsService'
 import { getDefaultPreset } from '../../src/main/types/preset'
 import type { FloorFile } from '../../src/main/types/chat'
@@ -59,8 +59,9 @@ vi.mock('../../src/main/services/settingsService', async (orig) => ({
   getSettings: () => settings
 }))
 
-// A test can plant a real `{{setvar}}` macro in the preset's main block, so a BUILD-TIME variable
-// mutation genuinely fires during assembly against the shared gen.workingVars (by reference).
+// A test can plant a real `{{setvar}}` macro — or an EJS `<% setvar() %>` tag — in the preset's main
+// block, so a BUILD-TIME variable mutation genuinely fires during assembly against the shared
+// gen.workingVars (by reference). Both dialects write the SAME store by different routes.
 const presetState = vi.hoisted(() => ({ macro: '' }))
 vi.mock('../../src/main/services/presetService', () => ({
   getActivePreset: () => {
@@ -142,6 +143,7 @@ vi.mock('../../src/main/services/generation/assemble', async (orig) => {
 })
 
 import { runClassicTurnDirect } from '../../src/main/services/generation/classicTurn'
+import { initTemplates } from '../../src/main/services/templateService'
 
 const capturedGen = (): GenContext => assembleSpy.fn.mock.calls[0][0] as GenContext
 
@@ -159,10 +161,16 @@ const turnCtx = (): RunContext => ({
   setNodeState: () => {}
 })
 
+// The EJS dialect needs a live sandbox — without it evalTemplate STRIPS `<% … %>` instead of running it.
+beforeAll(async () => {
+  await initTemplates()
+})
+
 beforeEach(() => {
   appended.length = 0
   chatState.floorCount = 1
   presetState.macro = ''
+  priorFloors[0].variables = { stat_data: { hp: 10 } }
   vi.clearAllMocks()
   streamProviderMock.mockImplementation(
     async (_s: unknown, _m: unknown, _p: unknown, onDelta: (d: string) => void): Promise<string> => {
@@ -203,6 +211,31 @@ describe('classicTurn off-port gen side channels (Finding 4)', () => {
     expect(operations).toEqual([
       { kind: 'set', path: 'variables.probeVar', value: 'planted-at-build' }
     ])
+  })
+
+  // The write a DIFF cannot see: assembly forces `probeVar` to the value it ALREADY inherited. Nothing
+  // changed, so nothing is journaled unless the WRITE ITSELF was recorded — and a later edit of an
+  // earlier floor would then replay this floor without the value assembly demanded.
+  it('(a2) a build-time setvar of an ALREADY-EQUAL value is journaled all the same', async () => {
+    priorFloors[0].variables = { stat_data: { hp: 10 }, probeVar: 'planted-at-build' }
+    presetState.macro = "<% setvar('probeVar', 'planted-at-build') %>"
+
+    await runClassicTurnDirect(turnCtx())
+
+    expect(appended[0].variables.probeVar).toBe('planted-at-build')
+    expect(mockFloorState.journal).toHaveBeenCalledTimes(1)
+    expect(mockFloorState.journal.mock.calls[0][3]).toEqual([
+      { kind: 'set', path: 'variables.probeVar', value: 'planted-at-build' }
+    ])
+  })
+
+  it('(a2) a build-time setvar into GLOBAL scope is not journaled onto the floor', async () => {
+    presetState.macro = "<% setGlobalVar('probeVar', 'globals-only') %>"
+
+    await runClassicTurnDirect(turnCtx())
+
+    expect(appended[0].variables.probeVar).toBeUndefined()
+    expect(mockFloorState.journal).not.toHaveBeenCalled()
   })
 
   it('(a2) a turn with no build-time variable write journals nothing', async () => {

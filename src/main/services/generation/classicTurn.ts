@@ -84,12 +84,13 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
   if (exported === ABORTED) return null
 
   // ── 5. prompt.assemble ─────────────────────────────────────────────────────────────────────────
-  // Bracket assembly with a snapshot/diff of `gen.workingVars`: build-time `{{setvar}}` mutates that
-  // object IN PLACE while the prompt is built (the by-reference channel in this file's header), and
-  // those writes are NOT re-derivable from the response — so unless they are journaled, Forward
-  // Replay drops them. Diffing here (rather than instrumenting the clean-room template engine) keeps
-  // the engine untouched and catches every dialect that writes through the same store. The capture
-  // is inert until `persistFloor` journals it against the committed floor.
+  // Bracket assembly with a snapshot of `gen.workingVars`: build-time `{{setvar}}` mutates that object
+  // IN PLACE while the prompt is built (the by-reference channel in this file's header), and those
+  // writes are NOT re-derivable from the response — so unless they are journaled, Forward Replay drops
+  // them. Capture takes candidate paths from BOTH the engine's write recorder (`assembled.varWrites`,
+  // which sees a write that changed nothing) and the snapshot/diff (which sees the macro dialect), then
+  // journals the post-assembly value at each. Inert until `persistFloor` journals it against the
+  // committed floor.
   const varsBeforeAssembly = snapshotTemplateVars(gen.workingVars)
   const assembled = await stage(() => {
     const matched = matchWorldInfo(gen)
@@ -105,7 +106,11 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
   })
   if (assembled === ABORTED) return null
   const { sendMessages, params } = assembled
-  const templateWrites = captureTemplateWrites(varsBeforeAssembly, gen.workingVars)
+  const templateWrites = captureTemplateWrites(
+    varsBeforeAssembly,
+    gen.workingVars,
+    assembled.varWrites
+  )
 
   // ── 6. llm.sample — the main provider call, through the Milestone 1 Harness seam ───────────────
   const sampled = await stage(() =>

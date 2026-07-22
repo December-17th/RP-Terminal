@@ -133,14 +133,10 @@ export function saveChat(profileId: string, chatId: string, chat: unknown): Save
 /**
  * Read back the latest floor after a card mutation, so the caller can push its variables to whatever UI
  * it owns (WCV panels / the renderer store). The re-fold itself already happened INSIDE the mutation:
- * every write above goes through FloorState, which republishes the affected suffix atomically. The
- * `_fromFloor` argument is retained for the callers that still bound their own suffix reasoning on it
- * (chatIpc `chat-save`, wcvIpc), but the replay window is no longer chosen here.
+ * every write above goes through FloorState, which republishes the affected suffix atomically — so
+ * there is no replay window to choose here, and no floor argument to take. Callers that still need the
+ * earliest changed floor read it from `SaveChatResult.changedFrom` (to skip a no-op echo, and to log).
  */
-export function afterChatMutation(
-  profileId: string,
-  chatId: string,
-  _fromFloor = 0
-): FloorFile | null {
+export function afterChatMutation(profileId: string, chatId: string): FloorFile | null {
   return floorService.getAllFloors(profileId, chatId).at(-1) ?? null
 }
