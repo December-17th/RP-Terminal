@@ -144,6 +144,19 @@ export function renderFloorToView(
   return toRenderedFloorView(rendered, { floorIndex, revision, reasoningTemplate, plotHtml })
 }
 
+/**
+ * A cheap 32-bit djb2 hash (hex) over a floor's content-bearing fields — response body, MVU variables,
+ * and plot_block. Folded into the render-cache key so an edited message, a deleted floor (index shift),
+ * or a variables write can never serve stale rendered html: the swipe_id + revision alone don't move when
+ * only floor CONTENT changes. Pure + exported so it unit-tests directly.
+ */
+export function floorContentStamp(f: FloorLike): string {
+  const s = `${f.response.content} ${JSON.stringify(f.variables ?? {})} ${f.plot_block ?? ''}`
+  let h = 5381
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
+  return (h >>> 0).toString(16)
+}
+
 /** A tiny insertion-ordered LRU (get promotes; set evicts the oldest past `cap`). */
 class Lru<V> {
   private readonly m = new Map<string, V>()
@@ -288,7 +301,7 @@ export function initDisplayBroker(): () => void {
       for (let i = req.from; i <= req.to; i++) {
         const f = floors[i]
         if (!f) continue // missing indices are skipped (design §3.2)
-        const key = `${req.chatId}|${i}|${f.swipe_id ?? 0}|${revision}|${markerFp}`
+        const key = `${req.chatId}|${i}|${f.swipe_id ?? 0}|${revision}|${markerFp}|${floorContentStamp(f)}`
         const cached = lru.get(key)
         if (cached) {
           out.push(cached)
@@ -330,6 +343,13 @@ export function initDisplayBroker(): () => void {
     enabledChats = new Set(chatIds)
   })
 
+  // Renderer-reload handshake: a fresh main-window renderer restarts `revision` at 0 and `enabledChats`
+  // empty; main re-seeds both once we signal readiness (below). Take the MAX so a seed never rewinds a
+  // bump that already landed between registration and the seed arriving.
+  const unsubRevisionSeed = window.api.onDisplayRevisionSeed((seed) => {
+    revision = Math.max(revision, Number(seed) || 0)
+  })
+
   // (c) Streaming feed: emit a transformed frame at each rateChars checkpoint, for watched chats only.
   const unsubStream = useChatStore.subscribe((state, prev) => {
     const chatId = state.activeChatId
@@ -358,12 +378,17 @@ export function initDisplayBroker(): () => void {
     broadcastHostEvent(chatId, 'display_stream_frame', frame)
   })
 
+  // All listeners are attached — tell main we're ready so it re-seeds the revision + enabled-chat set
+  // (covers a main-window reload, where the new renderer would otherwise start from a blank slate).
+  window.api.sendDisplayBrokerReady()
+
   return () => {
     unsubRender()
     unsubRegex()
     unsubSettings()
     unsubCharacter()
     unsubEnabled()
+    unsubRevisionSeed()
     unsubStream()
   }
 }

@@ -666,7 +666,7 @@ const RemoteAssetGrid: React.FC<{
   if (loading && assets.length === 0) {
     return <div className="rpt-assets-empty">{t('assets.remoteLoading')}</div>
   }
-  if (error) {
+  if (error && assets.length === 0) {
     return <div className="rpt-assets-empty">{t('assets.remoteError')}</div>
   }
   if (visible.length === 0) {

@@ -153,6 +153,15 @@ const api = {
     ipcRenderer.on('display-stream-enabled-chats', l)
     return () => ipcRenderer.removeListener('display-stream-enabled-chats', l)
   },
+  // Renderer-reload handshake: signal readiness once the broker's listeners are attached; main replies
+  // by re-seeding the display revision (and re-relaying the enabled-chat set) so a reloaded renderer
+  // doesn't start from revision 0 / an empty watched-chat set.
+  sendDisplayBrokerReady: () => ipcRenderer.send('display-broker-ready'),
+  onDisplayRevisionSeed: (cb: (revision: number) => void) => {
+    const l = (_e: unknown, revision: number): void => cb(Number(revision) || 0)
+    ipcRenderer.on('display-revision-seed', l)
+    return () => ipcRenderer.removeListener('display-revision-seed', l)
+  },
   generate: (profileId: string, chatId: string, userAction: string, source?: 'player' | 'script') =>
     ipcRenderer.invoke('generate', profileId, chatId, userAction, source),
   regenerate: (profileId: string, chatId: string) =>

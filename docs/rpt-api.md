@@ -268,7 +268,7 @@ and `test/wcvIpcCtxBinding.test.ts` (ADR 0022).
 
 ### World Assets — ✅
 
-- `assetUrl(name, type = '立绘', mood?)` → `Promise<string | null>` — resolve an asset (variant-aware) from the active world's asset layer. Files follow `<name>_<type>[_<变体>].<ext>`; supported extensions are `.png`, `.jpg`, `.jpeg`, `.jpe`, `.webp`, `.gif`, and `.mp4`. `立绘` means compositable character art without a background; `立绘bg` means full-frame character art with a background. MP4 is accepted only for background-bearing types (`立绘bg`, `背景`, `全景`, `CG`); GIF remains an image and may use either standee type. A requested variant falls back to the base file. **The category is inferred from `type`** via [`categoryForType`](../src/shared/worldAssets/types.ts): `头像`/`立绘`/`立绘bg`/`相册` → `character`, `背景`/`全景` → `location`, and `CG` → `cg`. Returns an `rptasset://` URL loadable in both card transports. Also exposed as `window.assetUrl` and `window.TavernHelper.assetUrl`.
+- `assetUrl(name, type?, mood?)` → `Promise<string | null>` — resolve an asset (variant-aware) from the active world's asset layer. **When `type` is omitted**, the card-facing facade resolves through a chain — `立绘` → `立绘bg` → `头像`, first non-null wins (`thRuntime/index.ts:651-657`); an **explicit** `type` stays strict (single lookup, no fallback). Files follow `<name>_<type>[_<变体>].<ext>`; supported extensions are `.png`, `.jpg`, `.jpeg`, `.jpe`, `.webp`, `.gif`, and `.mp4`. `立绘` means compositable character art without a background; `立绘bg` means full-frame character art with a background. MP4 is accepted only for background-bearing types (`立绘bg`, `背景`, `全景`, `CG`); GIF remains an image and may use either standee type. A requested variant falls back to the base file. **The category is inferred from `type`** via [`categoryForType`](../src/shared/worldAssets/types.ts): `头像`/`立绘`/`立绘bg`/`相册` → `character`, `背景`/`全景` → `location`, and `CG` → `cg`. Returns an `rptasset://` URL loadable in both card transports. Also exposed as `window.assetUrl` and `window.TavernHelper.assetUrl`.
 - **Poem-of-Destiny remote character art compatibility.** After prompt construction has persisted
   `variables.char_info_visuals[name].url`, a missing local `立绘bg` lookup falls back to that HTTPS URL.
   The legacy field is classified as `立绘bg` because its images include their backgrounds; an explicit
@@ -305,7 +305,10 @@ that OWNS the chat rect so it rebuilds the transcript instead of reimplementing 
   renderer (the transform is renderer-only), correlates the reply with a **10 s timeout → `[]` fallback**
   (`displayRenderBroker.ts:28,54,71`), and fail-closes to `[]` when the panel's session doesn't resolve
   (`wcvIpc.ts:1087-1097`). The renderer keeps an **LRU(64)** render cache keyed by
-  `(chatId, floorIndex, swipeId, revision, marker fingerprint)` (`display/displayBroker.ts:265`).
+  `(chatId, floorIndex, swipeId, revision, marker fingerprint, content stamp)`
+  (`display/displayBroker.ts:153,304`). The **content stamp** hashes the floor's `response.content` +
+  `variables` + `plot_block`, so a message edit, a floor deletion (index shift), or an MVU variable write
+  invalidates the cached view.
   `RenderedFloorView` = `{ floorIndex, revision, userText, html, thinking, hasReasoning, reasoningTemplate,
   plotHtml, swipeId, swipeCount }` — `userText` is the raw user message (parity with the native view),
   `html` is the response body after the full transform, `thinking`/`plotHtml` are the reasoning and plot
@@ -318,7 +321,7 @@ that OWNS the chat rect so it rebuilds the transcript instead of reimplementing 
   streaming frames + display-invalidation events. Streaming stays on the native `rateChars` cadence and
   **costs nothing when no panel opted in** (main computes frames only for watched chats). Main tracks opt-ins
   **per sender webContents** and relays the deduped enabled-**chat** set to the renderer; a torn-down slot
-  drops its opt-in (`wcvIpc.ts:197-219, 1083-1108`).
+  drops its opt-in (`wcvIpc.ts:208-227, 1120-1126`).
 - **Events — no new channels** (they ride the existing generic `wcv-event` transport). Delivery is
   **per-CHAT**: a chat's opted-in panels (≥1 panel called `setDisplayStreamEnabled(true)`) receive them; the
   renderer broadcasts to watched chats (`display/displayBroker.ts`).
@@ -440,7 +443,10 @@ fallback 0 / `wcv-host-display-stream-enabled` invoke — [`wcvChannelSpec.ts`](
 Host → card: `wcv-vars-changed` (mirror refresh) +
 `wcv-event` (lifecycle/mutation/stream — DisplayHost's `display_stream_frame` / `display_invalidated` ride
 this generic transport, no dedicated channel; the render broker uses the non-Host `display-render-request` /
-`-response` + `display-revision-changed` / `display-stream-enabled-chats` relays, `wcvIpc.ts:197-219`). **Runtime theme (runtime-theme-api-design §5)** — the theme
+`-response` + `display-revision-changed` / `display-stream-enabled-chats` relays; on renderer startup
+`initDisplayBroker` sends `display-broker-ready`, and main answers by re-relaying `display-stream-enabled-chats`
++ sending `display-revision-seed` (the renderer takes `max(revision, seed)`), so a main-window reload never
+loses stream opt-ins or lets `displayRevision()` rewind, `wcvIpc.ts:209-224`). **Runtime theme (runtime-theme-api-design §5)** — the theme
 authority is the **renderer** (only it has the effective base tokens), so unlike other write channels the
 main handler doesn't do the work: `wcv-host-set-play-theme` **relays** the call to the host renderer
 (which derives + AA-checks + applies via [`cardBridge/playTheme.ts`](../src/renderer/src/cardBridge/playTheme.ts))

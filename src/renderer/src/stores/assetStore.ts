@@ -131,6 +131,7 @@ interface AssetState {
 
 export const useAssetStore = create<AssetState>((set) => {
   let remoteLoadSeq = 0
+  let remoteChatKey: string | null = null
   const reload = async (
     profileId: string,
     lorebookIds: string[],
@@ -167,10 +168,19 @@ export const useAssetStore = create<AssetState>((set) => {
     loadRemote: async (profileId, chatId) => {
       const request = ++remoteLoadSeq
       if (!chatId) {
+        remoteChatKey = null
         set({ remoteAssets: [], remoteLoading: false, remoteError: false })
         return
       }
-      set({ remoteAssets: [], remoteLoading: true, remoteError: false })
+      const key = profileId + ' ' + chatId
+      if (key !== remoteChatKey) {
+        // Chat/profile switch: drop the stale list right away.
+        remoteChatKey = key
+        set({ remoteAssets: [], remoteLoading: true, remoteError: false })
+      } else {
+        // Same chat refresh: keep the current list visible until the fetch resolves.
+        set({ remoteLoading: true, remoteError: false })
+      }
       try {
         const remoteAssets = (await window.api.remoteAssetList(
           profileId,
@@ -180,7 +190,8 @@ export const useAssetStore = create<AssetState>((set) => {
         set({ remoteAssets: remoteAssets ?? [], remoteLoading: false, remoteError: false })
       } catch {
         if (request !== remoteLoadSeq) return
-        set({ remoteAssets: [], remoteLoading: false, remoteError: true })
+        // Keep whatever list is currently shown; only flag the error.
+        set({ remoteLoading: false, remoteError: true })
       }
     },
     refresh: async (profileId, lorebookIds, roster) => {

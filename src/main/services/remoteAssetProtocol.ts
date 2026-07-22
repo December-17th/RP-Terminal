@@ -16,6 +16,7 @@ const IMAGE_MIME_TYPES = new Set([
 const VIDEO_MIME_TYPES = new Set(['video/mp4'])
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024
 const MAX_VIDEO_BYTES = 256 * 1024 * 1024
+const UPSTREAM_FETCH_TIMEOUT_MS = 15_000
 
 export interface RemoteAssetAddress {
   profileId: string
@@ -102,7 +103,8 @@ export async function serveRemoteAssetRequest(req: {
       method,
       headers,
       redirect: 'follow',
-      credentials: 'omit'
+      credentials: 'omit',
+      signal: AbortSignal.timeout(UPSTREAM_FETCH_TIMEOUT_MS)
     })
     if (upstream.url && new URL(upstream.url).protocol !== 'https:') {
       return new Response('Bad Gateway', { status: 502 })
@@ -134,6 +136,10 @@ export async function serveRemoteAssetRequest(req: {
       headers: copyResponseHeaders(upstream)
     })
   } catch (error) {
+    const name = error instanceof Error ? error.name : ''
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      return new Response('Gateway Timeout', { status: 504 })
+    }
     log('error', '[remote-assets] protocol error', error)
     return new Response('Bad Gateway', { status: 502 })
   }

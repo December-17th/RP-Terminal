@@ -12,6 +12,7 @@ import {
   shouldEmitFrame,
   renderFloorToView,
   toRenderedFloorView,
+  floorContentStamp,
   initDisplayBroker,
   type RevisionSnapshot
 } from '../src/renderer/src/display/displayBroker'
@@ -202,6 +203,8 @@ describe('renderFloorToView — plot transformed, userText raw, hasReasoning der
 describe('initDisplayBroker render answer — [RENDER:*] marker wrapping (native parity)', () => {
   const makeApi = (over: Partial<Record<string, any>> = {}) => {
     let requestCb: ((req: any) => void) | null = null
+    let revisionSeedCb: ((seed: number) => void) | null = null
+    let readyCalls = 0
     const responses: Array<{ reqId: number; views: any[] }> = []
     const api: any = {
       onDisplayRenderRequest: (cb: (req: any) => void) => {
@@ -209,6 +212,13 @@ describe('initDisplayBroker render answer — [RENDER:*] marker wrapping (native
         return () => {}
       },
       onDisplayStreamEnabledChats: () => () => {},
+      onDisplayRevisionSeed: (cb: (seed: number) => void) => {
+        revisionSeedCb = cb
+        return () => {}
+      },
+      sendDisplayBrokerReady: () => {
+        readyCalls++
+      },
       sendDisplayRenderResponse: (msg: { reqId: number; views: any[] }) => responses.push(msg),
       sendDisplayRevisionChanged: () => {},
       getFloors: async () => [],
@@ -216,7 +226,19 @@ describe('initDisplayBroker render answer — [RENDER:*] marker wrapping (native
       ...over
     }
     ;(globalThis as any).window = { api }
-    return { get requestCb() { return requestCb }, responses, api }
+    return {
+      get requestCb() {
+        return requestCb
+      },
+      get revisionSeedCb() {
+        return revisionSeedCb
+      },
+      get readyCalls() {
+        return readyCalls
+      },
+      responses,
+      api
+    }
   }
 
   it("wraps a floor's html with the fetched render markers (would be omitted with default empty markers)", async () => {
@@ -269,5 +291,108 @@ describe('initDisplayBroker render answer — [RENDER:*] marker wrapping (native
 
     expect(harness.responses[0].views[0].html).not.toContain('[[MARK]]')
     expect(harness.responses[0].views[0].html).toContain('plain')
+  })
+
+  it('re-renders (does not serve stale html) when a floor’s content changed under the same key (Task 1)', async () => {
+    const harness = makeApi({ getRenderMarkers: async () => ({ before: [], after: [] }) })
+    useChatStore.setState({
+      activeChatId: 'cs',
+      floors: [
+        {
+          floor: 0,
+          chat_id: 'cs',
+          response: { content: 'original body' },
+          user_message: { content: 'u' },
+          variables: {},
+          swipe_id: 0
+        } as any
+      ]
+    })
+    const dispose = initDisplayBroker()
+    harness.requestCb!({ reqId: 1, profileId: 'p', chatId: 'cs', from: 0, to: 0 })
+    await vi.waitFor(() => expect(harness.responses).toHaveLength(1))
+    expect(harness.responses[0].views[0].html).toContain('original body')
+
+    // Edit floor 0 in place — same index + same swipe_id + same revision + same markers, only content
+    // differs. Without the content stamp in the cache key the second answer would be served stale.
+    useChatStore.setState({
+      floors: [
+        {
+          floor: 0,
+          chat_id: 'cs',
+          response: { content: 'edited body' },
+          user_message: { content: 'u' },
+          variables: {},
+          swipe_id: 0
+        } as any
+      ]
+    })
+    harness.requestCb!({ reqId: 2, profileId: 'p', chatId: 'cs', from: 0, to: 0 })
+    await vi.waitFor(() => expect(harness.responses).toHaveLength(2))
+    dispose()
+
+    expect(harness.responses[1].views[0].html).toContain('edited body')
+    expect(harness.responses[1].views[0].html).not.toContain('original body')
+  })
+
+  it('a revision seed raises the answered view revision after a reload (Task 2)', async () => {
+    const harness = makeApi({ getRenderMarkers: async () => ({ before: [], after: [] }) })
+    useChatStore.setState({
+      activeChatId: 'cseed',
+      floors: [
+        {
+          floor: 0,
+          chat_id: 'cseed',
+          response: { content: 'b' },
+          user_message: { content: 'u' },
+          variables: {},
+          swipe_id: 0
+        } as any
+      ]
+    })
+    const dispose = initDisplayBroker()
+    harness.revisionSeedCb!(42)
+    harness.requestCb!({ reqId: 1, profileId: 'p', chatId: 'cseed', from: 0, to: 0 })
+    await vi.waitFor(() => expect(harness.responses).toHaveLength(1))
+    dispose()
+
+    expect(harness.responses[0].views[0].revision).toBe(42)
+  })
+
+  it('signals broker readiness exactly once at registration (Task 2)', () => {
+    const harness = makeApi()
+    const dispose = initDisplayBroker()
+    expect(harness.readyCalls).toBe(1)
+    dispose()
+  })
+})
+
+// --- floor content stamp (render-cache key defence, Task 1) ---------------------------------------
+
+describe('floorContentStamp — moves with content, stable for identical floors', () => {
+  const floor = (over: Partial<FloorLike> = {}): FloorLike => ({
+    floor: 0,
+    response: { content: 'body' },
+    user_message: { content: 'u' },
+    variables: { hp: 1 },
+    ...over
+  })
+
+  it('differs when only variables change', () => {
+    expect(floorContentStamp(floor())).not.toBe(floorContentStamp(floor({ variables: { hp: 2 } })))
+  })
+
+  it('differs when only response content changes', () => {
+    expect(floorContentStamp(floor())).not.toBe(
+      floorContentStamp(floor({ response: { content: 'body2' } }))
+    )
+  })
+
+  it('differs when only plot_block changes', () => {
+    expect(floorContentStamp(floor())).not.toBe(floorContentStamp(floor({ plot_block: 'p' })))
+  })
+
+  it('is stable for two floors with identical content', () => {
+    expect(floorContentStamp(floor())).toBe(floorContentStamp(floor()))
   })
 })

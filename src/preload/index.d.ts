@@ -30,6 +30,24 @@ declare global {
       presetSetHighTrust: (profileId: string, presetId: string, on: boolean) => Promise<number>
       backfillUsageMetrics: (profileId: string, chatId: string) => Promise<unknown[]>
       setVnMode: (profileId: string, chatId: string, on: boolean) => Promise<void>
+      // DisplayHost render broker (ADR 0023). Non-Host relay channels between main and THIS renderer:
+      // main forwards a WCV card's renderFloors here, the renderer renders + replies, and it pushes
+      // revision bumps back. The ready/seed pair re-syncs the revision + enabled-chat set after a reload.
+      onDisplayRenderRequest: (
+        cb: (req: {
+          reqId: number
+          profileId: string
+          chatId: string
+          from: number
+          to: number
+          scope?: unknown
+        }) => void
+      ) => () => void
+      sendDisplayRenderResponse: (msg: { reqId: number; views: unknown }) => void
+      sendDisplayRevisionChanged: (revision: number) => void
+      onDisplayStreamEnabledChats: (cb: (chatIds: string[]) => void) => () => void
+      sendDisplayBrokerReady: () => void
+      onDisplayRevisionSeed: (cb: (revision: number) => void) => () => void
       remoteAssetList: (
         profileId: string,
         chatId: string

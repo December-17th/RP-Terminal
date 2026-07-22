@@ -15,6 +15,7 @@ vi.mock('../src/main/services/floorService', () => ({
 }))
 
 import {
+  clearRemoteAssetSourceCache,
   listRemoteAssets,
   resolveRemoteAssetSource,
   resolveRemoteAssetUrl
@@ -22,6 +23,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  clearRemoteAssetSourceCache()
   mocks.getChatRow.mockReturnValue({ present: 1 })
   mocks.getFloorCount.mockReturnValue(2)
   mocks.getFloor.mockReturnValue({
@@ -56,5 +58,46 @@ describe('latest-floor remote asset resolution', () => {
     mocks.getChatRow.mockReturnValue(undefined)
     expect(listRemoteAssets('other-profile', 'c1')).toEqual([])
     expect(mocks.getFloorCount).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolveRemoteAssetSource TTL micro-cache', () => {
+  it('serves a repeated key from cache, reading the floor once', () => {
+    expect(resolveRemoteAssetSource('p1', 'c1', '傲雪')).toBe(
+      'https://files.catbox.moe/dvlb7l.png'
+    )
+    expect(resolveRemoteAssetSource('p1', 'c1', '傲雪')).toBe(
+      'https://files.catbox.moe/dvlb7l.png'
+    )
+    expect(mocks.getFloor).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-reads after the cache is cleared', () => {
+    resolveRemoteAssetSource('p1', 'c1', '傲雪')
+    clearRemoteAssetSourceCache()
+    resolveRemoteAssetSource('p1', 'c1', '傲雪')
+    expect(mocks.getFloor).toHaveBeenCalledTimes(2)
+  })
+
+  it('re-reads once the TTL elapses', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(0)
+      resolveRemoteAssetSource('p1', 'c1', '傲雪')
+      vi.setSystemTime(2999)
+      resolveRemoteAssetSource('p1', 'c1', '傲雪')
+      expect(mocks.getFloor).toHaveBeenCalledTimes(1)
+      vi.setSystemTime(3001)
+      resolveRemoteAssetSource('p1', 'c1', '傲雪')
+      expect(mocks.getFloor).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('caches a null resolution', () => {
+    expect(resolveRemoteAssetSource('p1', 'c1', 'missing')).toBeNull()
+    expect(resolveRemoteAssetSource('p1', 'c1', 'missing')).toBeNull()
+    expect(mocks.getFloor).toHaveBeenCalledTimes(1)
   })
 })

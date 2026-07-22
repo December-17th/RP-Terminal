@@ -215,6 +215,13 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('display-revision-changed', (_e, rev) => {
     if (typeof rev === 'number' && Number.isFinite(rev)) displayRevisionCache = rev
   })
+  // Renderer-reload handshake: a reloaded main-window renderer restarts with revision 0 + no watched
+  // chats. When its broker signals readiness, re-relay the enabled-chat set and seed the cached revision
+  // so its counter resumes from where main left off (never rewinds).
+  ipcMain.on('display-broker-ready', () => {
+    relayEnabledChats()
+    wcvManager.sendToMain('display-revision-seed', displayRevisionCache)
+  })
   // A watched panel's slot was torn down → drop its opt-in and re-relay the enabled set.
   wcvManager.onSlotDestroyed((webContentsId) => {
     if (streamOptIns.delete(webContentsId)) relayEnabledChats()

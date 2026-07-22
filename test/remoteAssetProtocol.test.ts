@@ -112,4 +112,16 @@ describe('remote asset streaming', () => {
     expect(response.status).toBe(416)
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
+
+  it('passes an abort signal and maps an upstream timeout to 504', async () => {
+    const timeout = Object.assign(new Error('timed out'), { name: 'TimeoutError' })
+    mocks.fetch.mockRejectedValueOnce(timeout)
+
+    const response = await serveRemoteAssetRequest({
+      url: 'rptremoteasset://asset/p/c/name'
+    })
+    expect(response.status).toBe(504)
+    const call = mocks.fetch.mock.calls[0]
+    expect(call[1].signal).toBeInstanceOf(AbortSignal)
+  })
 })

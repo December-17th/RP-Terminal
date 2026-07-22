@@ -39,13 +39,39 @@ export function listRemoteAssets(profileId: string, chatId: string): RemoteAsset
   }))
 }
 
+const SOURCE_CACHE_TTL_MS = 3000
+const SOURCE_CACHE_MAX_ENTRIES = 128
+const sourceCache = new Map<string, { url: string | null; at: number }>()
+
+/** Clear the resolveRemoteAssetSource TTL micro-cache. Test-only seam. */
+export function clearRemoteAssetSourceCache(): void {
+  sourceCache.clear()
+}
+
 export function resolveRemoteAssetSource(
   profileId: string,
   chatId: string,
   name: string
 ): string | null {
+  // A single MP4 playback issues many byte-range protocol requests; this micro-cache spares SQLite the
+  // repeated chat-row + latest-floor reads. A staleness window of up to SOURCE_CACHE_TTL_MS against the
+  // newest floor is accepted.
+  const key = `${profileId} ${chatId} ${name}`
+  const now = Date.now()
+  const cached = sourceCache.get(key)
+  if (cached && now - cached.at < SOURCE_CACHE_TTL_MS) return cached.url
+
   const variables = latestVariables(profileId, chatId)
-  return variables ? remoteAssetFromVariables(variables, name)?.sourceUrl ?? null : null
+  const url = variables ? remoteAssetFromVariables(variables, name)?.sourceUrl ?? null : null
+
+  sourceCache.delete(key)
+  sourceCache.set(key, { url, at: now })
+  while (sourceCache.size > SOURCE_CACHE_MAX_ENTRIES) {
+    const oldest = sourceCache.keys().next().value
+    if (oldest === undefined) break
+    sourceCache.delete(oldest)
+  }
+  return url
 }
 
 export function resolveRemoteAssetUrl(
