@@ -142,6 +142,27 @@ function mockHost(over: Partial<Host> = {}): { host: Host; calls: any } {
 }
 
 describe('createThRuntime', () => {
+  it('resolves an omitted assetUrl type through the default character-art chain', async () => {
+    const seen: unknown[][] = []
+    const { host } = mockHost({
+      assetUrl: async (...args) => {
+        seen.push(args)
+        return args[1] === '立绘bg' ? 'rptremoteasset://standee-bg' : null
+      }
+    })
+    const runtime = createThRuntime(host)
+
+    await expect(runtime.assetUrl('薇拉')).resolves.toBe('rptremoteasset://standee-bg')
+    expect(seen).toEqual([
+      ['薇拉', '立绘', undefined],
+      ['薇拉', '立绘bg', undefined]
+    ])
+
+    seen.length = 0
+    await expect(runtime.assetUrl('薇拉', '立绘')).resolves.toBeNull()
+    expect(seen).toEqual([['薇拉', '立绘', undefined]])
+  })
+
   it('exposes the surface (bare + namespaced)', () => {
     const { host } = mockHost()
     const g = createThRuntime(host)

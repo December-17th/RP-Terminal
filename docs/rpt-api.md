@@ -268,14 +268,96 @@ and `test/wcvIpcCtxBinding.test.ts` (ADR 0022).
 
 ### World Assets — ✅
 
-- `assetUrl(name, type, mood?)` → `Promise<string | null>` — resolve an asset (variant-aware) from the active world's asset layer. Files follow `<name>_<type>[_<变体>].<ext>`; supported extensions are `.png`, `.jpg`, `.jpeg`, `.jpe`, `.webp`, and `.gif`. A requested variant automatically falls back to the base file when absent. For example, `assetUrl('薇拉', '立绘', '舞台')` prefers `薇拉_立绘_舞台.<ext>` and falls back to `薇拉_立绘.<ext>`. **The category is inferred from `type`** via [`categoryForType`](../src/shared/worldAssets/types.ts) (a real lookup over `TYPES_BY_CATEGORY`): character portraits/gallery `头像`/`立绘`/`相册` → `character`, location art `背景`/`全景` → `location`, cutscene art `CG` → `cg` (any UNKNOWN string → `character`). So a card can request location art, e.g. `assetUrl('雾港', '全景')`, a character gallery slot `assetUrl('薇拉', '相册', '02')` (base = cover; `薇拉_相册_02.png`), or a scene CG `assetUrl('初遇', 'CG', '雨夜')` (`初遇_CG_雨夜.png`) — not just character portraits. Returns an `rptasset://` URL that loads inside card pages (both transports: inline iframes and WCV panels — each fills the inferred category in, so they stay at parity). Prerequisite: the World Assets layer ([world-assets-plan.md](world-assets-plan.md)). Also exposed as `window.assetUrl` and `window.TavernHelper.assetUrl` on card pages.
+- `assetUrl(name, type?, mood?)` → `Promise<string | null>` — resolve an asset (variant-aware) from the active world's asset layer. **When `type` is omitted**, the card-facing facade resolves through a chain — `立绘` → `立绘bg` → `头像`, first non-null wins (`thRuntime/index.ts:651-657`); an **explicit** `type` stays strict (single lookup, no fallback). Files follow `<name>_<type>[_<变体>].<ext>`; supported extensions are `.png`, `.jpg`, `.jpeg`, `.jpe`, `.webp`, `.gif`, and `.mp4`. `立绘` means compositable character art without a background; `立绘bg` means full-frame character art with a background. MP4 is accepted only for background-bearing types (`立绘bg`, `背景`, `全景`, `CG`); GIF remains an image and may use either standee type. A requested variant falls back to the base file. **The category is inferred from `type`** via [`categoryForType`](../src/shared/worldAssets/types.ts): `头像`/`立绘`/`立绘bg`/`相册` → `character`, `背景`/`全景` → `location`, and `CG` → `cg`. Returns an `rptasset://` URL loadable in both card transports. Also exposed as `window.assetUrl` and `window.TavernHelper.assetUrl`.
+- **Poem-of-Destiny remote character art compatibility.** After prompt construction has persisted
+  `variables.char_info_visuals[name].url`, a missing local `立绘bg` lookup falls back to that HTTPS URL.
+  The legacy field is classified as `立绘bg` because its images include their backgrounds; an explicit
+  `立绘` lookup stays strict and never returns it. RPT exposes the source through an on-demand
+  `rptremoteasset://` proxy in both card transports, accepting supported images/GIF and MP4 without
+  downloading to the world's asset folder. Local assets always win. Verified in
+  [`remote.ts`](../src/shared/worldAssets/remote.ts),
+  [`remoteAssetProtocol.ts`](../src/main/services/remoteAssetProtocol.ts),
+  [`cardBridge/host.ts`](../src/renderer/src/cardBridge/host.ts), and
+  [`wcvIpc.ts`](../src/main/ipc/wcvIpc.ts).
 - `sceneAssetUrl(location, type)` → `Promise<string | null>` — 按层级地点解析`全景`或`背景`。文件名可以只写当前地点，也可选择性写入按原顺序出现的上级地点；如果当前地点无素材，解析器会使用最接近的可用上级地点背景。同分候选会安全失败，不会任意选择。该方法同时暴露为 `window.sceneAssetUrl` 和 `window.TavernHelper.sceneAssetUrl`。（`Host.sceneAssetUrl` 现为必需成员，由两个 transport 各自实现，运行时不再回退到 `assetUrl`。）
 - `assetList(name, type)` → `Promise<Array<{ variant: string | null; url: string }>>` (WA-3) — **enumerate** one entry's files (all variants of a single `name`+`type`), for building a gallery (相册) or a CG shelf. Same category inference and lorebook-id precedence as `assetUrl`: the **first** world lorebook that carries the entry wins (entries are not merged across worlds). Order: the **base** file first (`variant: null`, e.g. the 相册 cover), then variant/slot tokens **naturally sorted** (numeric-aware `localeCompare(…, 'zh', {numeric:true})`, so `2` precedes `10`). Empty array on any miss (unknown name/type, empty name, or a type outside `ASSET_TYPES`). Each `url` is a ready-to-load `rptasset://` URL. Also `window.assetList` / `window.TavernHelper.assetList`. Standalone-preview guard: `typeof assetList === 'function'` before calling (it's undefined outside RPT). Backed by [`Host.assetList`](../src/shared/thRuntime/types.ts) — both transports (WCV: `worldAssetService.assetListForWorld`; inline: `cardBridge/host.ts`) at parity.
-- `rptHost.requestAssetImport({ name, type, variant? })` → `Promise<string | null>` (WA-3) — **host-privilege write** (RPT-only; like `requestOverlay` it lives on `rptHost`, not as a bare read global). Main opens the OS image file-picker (**user-mediated** — consistent with the deferred-security stance; the card never reads file bytes), copies the chosen image into the calling card's **primary** world under `<name>_<type>[_<variant>].<ext>`, invalidates the asset index, and resolves the new `rptasset://` URL — or `null` on cancel, a bad arg (`type` outside `ASSET_TYPES`, empty `name`, an unsupported extension), or no world for the card. **Overwrite = replace** (no shadow default — design §2). File type must be one of png/jpg/jpeg/jpe/webp/gif. The poem partner sheet's edit mode wires 更换头像 / 添加相册 to this. Exposed as `window.rptHost.requestAssetImport` on both transports (inline cardBridge + WCV); also `window.requestAssetImport` / `window.TavernHelper.requestAssetImport`. Standalone-preview guard: `typeof rptHost?.requestAssetImport === 'function'`. Backed by [`Host.requestAssetImport`](../src/shared/thRuntime/types.ts) (WCV + inline route to the shared `pickAndImportAssetForCard` in `worldAssetIpc.ts`).
+- `rptHost.requestAssetImport({ name, type, variant? })` → `Promise<string | null>` (WA-3) — **host-privilege write** (RPT-only). Main opens the user-mediated image/video picker, copies the chosen file into the calling card's primary world under `<name>_<type>[_<variant>].<ext>`, invalidates the asset index, and returns its `rptasset://` URL. Supported extensions are png/jpg/jpeg/jpe/webp/gif/mp4, subject to the MP4 type restriction above. Cancelled or invalid requests return `null`; overwrite means replace. Exposed on both transports via `window.rptHost.requestAssetImport` (plus the compatibility aliases).
 
 ### Duel / deckbuilder — ✅
 
 - `getDuelPreview()` → `Promise<DuelPreview | null>` — **read-only host method** (RPT-only; no vanilla-ST equivalent). Returns the engine-computed duel build (deck + combatants + resources/relics) for the active chat, produced by the card's combat ruleset over the active build state. The `DuelPreview` contract is generic (field names are neutral; the card's ruleset supplies values + display strings). Shape: `{ config: {energyPerTurn, handSize}, lead: CombatantPreview, party: CombatantPreview[] }`; each combatant has resources, modifiers, conditions, and a `deck[]` of `CardPreview` (rarity/cost/effects/scaling). See [`preview.ts`](../../src/shared/combat/deckbuilder/preview.ts) for the full type. Designed for the 战斗 tab ([duel-build-preview-tab-design.md](superpowers/specs/2026-06-30-duel-build-preview-tab-design.md) §2) and the poem duel-card authoring guide (now in the `POD-Frontend-For-RPT` repo under `legacy/`). **Consumer (live):** the 命定之诗 status-fork 战斗 tab (`FrontEnd-for-destined-journey-TPR-STS`, on its `main`) — it calls `getDuelPreview()` with a fixture fallback and renders the deck-as-cards. The `DuelPreview` type is **mirrored** in the fork at `src/status/core/types/duel-preview.d.ts`; that copy and [`preview.ts`](../../src/shared/combat/deckbuilder/preview.ts) are the **shared contract** and must be changed together (hand-kept in sync, per the design §7).
+
+### Display / beautified transcript — ✅ (ADR 0023)
+
+The app's own **view-time display transform** (EJS → markers → macros → display regex), handed to a card
+that OWNS the chat rect so it rebuilds the transcript instead of reimplementing the renderer-only pipeline.
+**Trusted WCV cartridge panels only, fail-closed** — inline (non-WCV) cards get **inert stubs by design**
+(a v1 non-goal: an inline card already renders inside the native transcript, `renderFloors→[]` /
+`displayRevision→0` / `setDisplayStreamEnabled→no-op`, `cardBridge/host.ts:505-511`). Returned `html` is
+**RAW beautified HTML** — no sanitization tier, the trusted-panel model. The facet is
+[`DisplayHost`](../src/shared/thRuntime/hostFacets.ts) (`hostFacets.ts:193-203`); wire shapes in
+[`displayView.ts`](../src/shared/thRuntime/displayView.ts). Full design: `docs/display-host-design.md`.
+
+- `renderFloors(from, to)` → `Promise<RenderedFloorView[]>` — **invoke.** Render committed floors
+  `[from..to]` (inclusive, `floors()` indexing — chatScope-consistent, the SAME index the card reads the raw
+  floor at) through the display pipeline. Missing indices are skipped; the **batch is clamped to 32 floors**
+  main-side (`to` → `from + 31`, `displayRenderBroker.ts:30,55`). Main **forwards** the call to the host
+  renderer (the transform is renderer-only), correlates the reply with a **10 s timeout → `[]` fallback**
+  (`displayRenderBroker.ts:28,54,71`), and fail-closes to `[]` when the panel's session doesn't resolve
+  (`wcvIpc.ts:1087-1097`). The renderer keeps an **LRU(64)** render cache keyed by
+  `(chatId, floorIndex, swipeId, revision, marker fingerprint, content stamp)`
+  (`display/displayBroker.ts:153,304`). The **content stamp** hashes the floor's `response.content` +
+  `variables` + `plot_block`, so a message edit, a floor deletion (index shift), or an MVU variable write
+  invalidates the cached view.
+  `RenderedFloorView` = `{ floorIndex, revision, userText, html, thinking, hasReasoning, reasoningTemplate,
+  plotHtml, swipeId, swipeCount }` — `userText` is the raw user message (parity with the native view),
+  `html` is the response body after the full transform, `thinking`/`plotHtml` are the reasoning and plot
+  passes (`''` when absent), `reasoningTemplate` is the active card's slot or `null`.
+- `displayRevision()` → `number` — **sync** (answered from a main-cached int, fallback `0`,
+  `wcvChannelSpec.ts:139`, `wcvIpc.ts:1099`). Bumps on **regex / settings-flag / character (id, name,
+  reasoning_template) / persona** changes (`display/displayBroker.ts`); it is the card's render-cache key +
+  invalidation stamp.
+- `setDisplayStreamEnabled(enabled)` → `Promise<void>` — **invoke.** Opt this panel in/out of transformed
+  streaming frames + display-invalidation events. Streaming stays on the native `rateChars` cadence and
+  **costs nothing when no panel opted in** (main computes frames only for watched chats). Main tracks opt-ins
+  **per sender webContents** and relays the deduped enabled-**chat** set to the renderer; a torn-down slot
+  drops its opt-in (`wcvIpc.ts:208-227, 1120-1126`).
+- **Events — no new channels** (they ride the existing generic `wcv-event` transport). Delivery is
+  **per-CHAT**: a chat's opted-in panels (≥1 panel called `setDisplayStreamEnabled(true)`) receive them; the
+  renderer broadcasts to watched chats (`display/displayBroker.ts`).
+  - `display_stream_frame: DisplayStreamFrame` — at the native `rateChars` checkpoint cadence.
+    `DisplayStreamFrame` = `{ chatId, revision, html, atLen, rawTail, reasoning: { text, state } }`: `html` is
+    the beautified head (`''` before the first checkpoint), and `body.slice(atLen)` (carried verbatim as
+    `rawTail`) is the still-raw tail the card types plainly between checkpoints
+    (`displayView.ts:39-53`).
+  - `display_invalidated: { revision, reason }` — `reason ∈ 'regex' | 'settings' | 'character' | 'persona'`
+    (`displayView.ts:11-12`), telling the card to drop its render cache.
+- **Card-facing entry points.** The three members are exposed as **bare card globals** (`window.renderFloors`
+  / `displayRevision` / `setDisplayStreamEnabled`) via the `createThRuntime` facade
+  ([`thRuntime/index.ts`](../src/shared/thRuntime/index.ts)) on both transports, AND mirrored on
+  `rptHost.renderFloors` / `rptHost.displayRevision` / `rptHost.setDisplayStreamEnabled` on WCV panels
+  ([`wcvPreload.ts`](../src/preload/wcvPreload.ts) — same pattern as `rptHost.requestOverlay`). Only the WCV
+  transport is functional; the inline mirror carries the inert stubs above.
+- **Segmentation helpers (ADR 0023 companion).** `renderFloors` returns RAW beautified `html`; a panel that
+  owns the chat rect must route each floor's html exactly as the native transcript does. These three **PURE**
+  helpers expose the app's own block routing so the panel need not reimplement it — they are **transport-**
+  **independent** (no `Host` member, no WCV channel, no IPC): both transports inherit them identically via the
+  `createThRuntime` facade, so behavior is parity-by-construction. Logic + comments live in
+  [`displayBlocks.ts`](../src/shared/displayBlocks.ts); the facade wires them in
+  [`thRuntime/index.ts`](../src/shared/thRuntime/index.ts) and mirrors them on `rptHost` (WCV) in
+  [`wcvPreload.ts`](../src/preload/wcvPreload.ts).
+  - `splitDisplayHtml(html)` → `Segment[]` — **sync, pure.** Split beautified message html into ordered
+    `{ type: 'md' | 'html' | 'inline-html', text, mode? }` segments (the same `splitHtml` the native
+    `MessageContent` uses): `md` renders as GitHub-flavored markdown, `inline-html` as sanitized inline
+    markup, `html` is a full-document / scripted frontend card destined for an isolated frame.
+  - `isInteractiveHtml(html)` → `boolean` — **sync, pure.** True when a block carries a `<script>` — the
+    native transcript hosts these in a sandboxed frame ([`InlineCardFrame`](sdk/component-inventory.md)),
+    never in the app document. Also `window.rptHost.isInteractiveHtml` (WCV).
+  - `applyScriptedHtml(el, html)` → `void` — **sync DOM helper.** `el.innerHTML = html`, then re-create every
+    descendant `<script>` (copying attributes + text) so it actually runs — innerHTML-inserted scripts are
+    inert per the HTML spec. The native transcript does **not** use this (it isolates scripted blocks in a
+    frame); it is a convenience for a panel that has already made its own trust decision and wants scripted
+    blocks live in its own surface. Also `window.rptHost.applyScriptedHtml` (WCV).
 
 ### Overlay surfaces — ✅ (PM-A7)
 
@@ -354,9 +436,17 @@ Card → host channels (resolved against the calling view's ctx), in
 `-get-preset-names` / `-get-regexes` / `-format-regex` / `-get-persona-name` / `-get-persona-description`, the regex-full + write channels
 (`-get-regexes-full` / `-replace-regexes` / `-is-char-regex-enabled`), `-get-chat-id-sync`, the script-scope
 KV channels (`-script-vars-get-sync` / `-script-vars-set`), and the chat-write channels
-(`chat-set-messages` / `-delete-messages` / `-save`), and the runtime-theme channels
-(`wcv-host-set-play-theme` + `-reply` / `wcv-get-play-theme-sync` / `set-play-theme-cache`). Host → card: `wcv-vars-changed` (mirror refresh) +
-`wcv-event` (lifecycle/mutation/stream). **Runtime theme (runtime-theme-api-design §5)** — the theme
+(`chat-set-messages` / `-delete-messages` / `-save`), the runtime-theme channels
+(`wcv-host-set-play-theme` + `-reply` / `wcv-get-play-theme-sync` / `set-play-theme-cache`), and the
+DisplayHost channels (ADR 0023 — `wcv-host-render-floors` invoke / `wcv-host-display-revision-sync` sync,
+fallback 0 / `wcv-host-display-stream-enabled` invoke — [`wcvChannelSpec.ts`](../src/shared/thRuntime/wcvChannelSpec.ts)`:138-140`).
+Host → card: `wcv-vars-changed` (mirror refresh) +
+`wcv-event` (lifecycle/mutation/stream — DisplayHost's `display_stream_frame` / `display_invalidated` ride
+this generic transport, no dedicated channel; the render broker uses the non-Host `display-render-request` /
+`-response` + `display-revision-changed` / `display-stream-enabled-chats` relays; on renderer startup
+`initDisplayBroker` sends `display-broker-ready`, and main answers by re-relaying `display-stream-enabled-chats`
++ sending `display-revision-seed` (the renderer takes `max(revision, seed)`), so a main-window reload never
+loses stream opt-ins or lets `displayRevision()` rewind, `wcvIpc.ts:209-224`). **Runtime theme (runtime-theme-api-design §5)** — the theme
 authority is the **renderer** (only it has the effective base tokens), so unlike other write channels the
 main handler doesn't do the work: `wcv-host-set-play-theme` **relays** the call to the host renderer
 (which derives + AA-checks + applies via [`cardBridge/playTheme.ts`](../src/renderer/src/cardBridge/playTheme.ts))

@@ -7,6 +7,7 @@
 // one concern at a time. Every member's doc comment travels with it.
 import type { VarOp } from './ops'
 import type { TavernRegex } from './tavernRegex'
+import type { RenderedFloorView } from './displayView'
 import type {
   FloorLike,
   GenCfgNormalized,
@@ -184,6 +185,23 @@ export interface EngineHost {
   evalTemplateError(tmpl: string, data?: any): string | null
   prepareContext(data?: any): any
   onHostEvent(cb: (name: string, payload?: any) => void): () => void
+}
+
+/** Beautified transcript rendering (ADR 0023). WCV cartridge panels only (trusted, fail-closed). A
+ *  card that owns the chat rect gets the app's own view-time display transform instead of
+ *  reimplementing it; see docs/display-host-design.md §3.2. */
+export interface DisplayHost {
+  /** Render committed floors [from..to] (inclusive, `floors()` indexing, chatScope-consistent) through
+   *  the app display pipeline. Missing indices are skipped; the broker clamps the batch to 32 floors. */
+  renderFloors(from: number, to: number): Promise<RenderedFloorView[]>
+  /** Current display revision (sync). Bumps on regex / settings-flag / character / persona changes —
+   *  the card's render-cache key. */
+  displayRevision(): number
+  /** Opt this panel in/out of transformed streaming frames (`display_stream_frame`) + display invalidation
+   *  events. The opt-in is tracked per panel, but delivery granularity is per-CHAT: frames and invalidation
+   *  events are broadcast to all panels of the chat while ≥1 panel of the chat is opted in (ADR 0023 §3.4).
+   *  Streaming stays on the native cadence and costs nothing when no panel of the chat opted in. */
+  setDisplayStreamEnabled(enabled: boolean): Promise<void>
 }
 
 /** Agent invocation, live card Tool implementations, and causative floor commits. */

@@ -10,6 +10,7 @@ import { registerPluginIpc } from './pluginIpc'
 import { registerLogIpc } from './logIpc'
 import { registerWcvIpc } from './wcvIpc'
 import { registerWorldAssetIpc } from './worldAssetIpc'
+import { registerRemoteAssetIpc } from './remoteAssetIpc'
 import { registerStorageIpc } from './storageIpc'
 import { registerCombatIpc } from './combatIpc'
 import { registerChatCardVarsIpc } from './chatCardVarsIpc'
@@ -36,6 +37,7 @@ export const registerIpc = (ipcMain: IpcMain): void => {
   registerLogIpc(ipcMain)
   registerWcvIpc(ipcMain)
   registerWorldAssetIpc(ipcMain)
+  registerRemoteAssetIpc(ipcMain)
   registerStorageIpc(ipcMain)
   registerCombatIpc(ipcMain)
   registerChatCardVarsIpc()

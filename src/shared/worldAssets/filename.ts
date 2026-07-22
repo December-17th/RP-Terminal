@@ -1,4 +1,11 @@
-import { ASSET_TYPES, ASSET_EXTS, AssetExt, AssetType, ParsedAssetName } from './types'
+import {
+  ASSET_TYPES,
+  ASSET_EXTS,
+  AssetExt,
+  AssetType,
+  ParsedAssetName,
+  isAssetMediaTypeAllowed
+} from './types'
 
 /** Parse `<name>_<type>[_<mood>].<ext>`. Anchors on the known type token so names may
  *  themselves contain underscores. Returns null if no type token or unknown extension. */
@@ -28,6 +35,7 @@ export function parseAssetFilename(filename: string): ParsedAssetName | null {
     }
   }
   if (typeIdx <= 0 || !type) return null // need at least one name segment before the type
+  if (!isAssetMediaTypeAllowed(type, ext)) return null
 
   const name = segments.slice(0, typeIdx).join('_')
   const moodSegs = segments.slice(typeIdx + 1)
@@ -37,6 +45,9 @@ export function parseAssetFilename(filename: string): ParsedAssetName | null {
 
 /** Inverse of parseAssetFilename (used by tests + future tooling). */
 export function buildAssetFilename(p: ParsedAssetName): string {
+  if (!isAssetMediaTypeAllowed(p.type, p.ext)) {
+    throw new TypeError(`.${p.ext} is not supported for ${p.type}`)
+  }
   const core = p.mood ? `${p.name}_${p.type}_${p.mood}` : `${p.name}_${p.type}`
   return `${core}.${p.ext}`
 }

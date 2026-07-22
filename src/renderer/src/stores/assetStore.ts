@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import type { CharacterCoverage } from '../../../shared/worldAssets/coverage'
+import type { RemoteAssetListItem } from '../../../shared/worldAssets/remote'
 import type { AssetIndex, AssetType } from '../../../shared/worldAssets/types'
-import { ASSET_EXTS } from '../../../shared/worldAssets/types'
+import { ASSET_EXTS, isAssetMediaTypeAllowed } from '../../../shared/worldAssets/types'
 import { buildAssetFilename, parseAssetFilename } from '../../../shared/worldAssets/filename'
 
 /** The active world's lorebook ids: the chat's session ids, else the character's own book. */
@@ -37,13 +38,14 @@ export function baseName(p: string): string {
 }
 
 /** Per-row validity for the wizard: name must be non-empty, extension must be supported. */
-export function validateWizardRow(row: {
-  name: string
-  ext: string
-}): { valid: boolean; error?: 'name' | 'ext' } {
+export function validateWizardRow(row: { name: string; type: AssetType; ext: string }): {
+  valid: boolean
+  error?: 'name' | 'ext' | 'type'
+} {
   if (!row.name.trim()) return { valid: false, error: 'name' }
   if (!(ASSET_EXTS as readonly string[]).includes(row.ext.toLowerCase()))
     return { valid: false, error: 'ext' }
+  if (!isAssetMediaTypeAllowed(row.type, row.ext)) return { valid: false, error: 'type' }
   return { valid: true }
 }
 
@@ -83,13 +85,20 @@ interface ImportResult {
   skippedReasons?: string[]
 }
 
+export type RemoteAssetEntry = RemoteAssetListItem
+
 interface AssetState {
   /** Merged AssetIndex across the world's lorebook ids (all categories) — the grid's data source. */
   index: AssetIndex
   /** Character-category coverage rows (roster union): the 人物 grid + the coverage meter. */
   coverage: CharacterCoverage[]
+  /** Legacy char_info_visuals entries for the active chat. Read-only and fetched on demand. */
+  remoteAssets: RemoteAssetEntry[]
   loading: boolean
+  remoteLoading: boolean
+  remoteError: boolean
   load: (profileId: string, lorebookIds: string[], roster: string[]) => Promise<void>
+  loadRemote: (profileId: string, chatId: string | null) => Promise<void>
   refresh: (profileId: string, lorebookIds: string[], roster: string[]) => Promise<void>
   importFiles: (
     profileId: string,
@@ -121,6 +130,8 @@ interface AssetState {
 }
 
 export const useAssetStore = create<AssetState>((set) => {
+  let remoteLoadSeq = 0
+  let remoteChatKey: string | null = null
   const reload = async (
     profileId: string,
     lorebookIds: string[],
@@ -146,10 +157,42 @@ export const useAssetStore = create<AssetState>((set) => {
   return {
     index: {},
     coverage: [],
+    remoteAssets: [],
     loading: false,
+    remoteLoading: false,
+    remoteError: false,
     load: async (profileId, lorebookIds, roster) => {
       set({ loading: true })
       await reload(profileId, lorebookIds, roster)
+    },
+    loadRemote: async (profileId, chatId) => {
+      const request = ++remoteLoadSeq
+      if (!chatId) {
+        remoteChatKey = null
+        set({ remoteAssets: [], remoteLoading: false, remoteError: false })
+        return
+      }
+      const key = profileId + ' ' + chatId
+      if (key !== remoteChatKey) {
+        // Chat/profile switch: drop the stale list right away.
+        remoteChatKey = key
+        set({ remoteAssets: [], remoteLoading: true, remoteError: false })
+      } else {
+        // Same chat refresh: keep the current list visible until the fetch resolves.
+        set({ remoteLoading: true, remoteError: false })
+      }
+      try {
+        const remoteAssets = (await window.api.remoteAssetList(
+          profileId,
+          chatId
+        )) as RemoteAssetEntry[]
+        if (request !== remoteLoadSeq) return
+        set({ remoteAssets: remoteAssets ?? [], remoteLoading: false, remoteError: false })
+      } catch {
+        if (request !== remoteLoadSeq) return
+        // Keep whatever list is currently shown; only flag the error.
+        set({ remoteLoading: false, remoteError: true })
+      }
     },
     refresh: async (profileId, lorebookIds, roster) => {
       await window.api.assetRefresh(profileId, lorebookIds)

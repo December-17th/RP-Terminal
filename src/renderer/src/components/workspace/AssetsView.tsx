@@ -10,23 +10,30 @@ import {
   classifyDropped,
   filenamePreview,
   validateWizardRow,
-  type WizardRow
+  type WizardRow,
+  type RemoteAssetEntry
 } from '../../stores/assetStore'
 import { rosterFromStatData, nameRows } from '../../../../shared/worldAssets/coverage'
 import {
   TYPES_BY_CATEGORY,
+  DEFAULT_CHARACTER_ASSET_TYPE,
   categoryForType,
   type AssetCategory,
   type AssetType
 } from '../../../../shared/worldAssets/types'
 import { useT } from '../../i18n'
 import { useToastStore } from '../../stores/toastStore'
+import { mediaKindForUrl, resolveCharacterPreview } from './assetMedia'
 
-const CATS: AssetCategory[] = ['character', 'location', 'cg']
-const CAT_LABEL: Record<AssetCategory, string> = {
+type AssetViewCategory = AssetCategory | 'remote'
+
+const CATS: AssetViewCategory[] = ['character', 'location', 'cg', 'remote']
+const LOCAL_CATS: AssetCategory[] = ['character', 'location', 'cg']
+const CAT_LABEL: Record<AssetViewCategory, string> = {
   character: 'assets.catCharacter',
   location: 'assets.catLocation',
-  cg: 'assets.catCg'
+  cg: 'assets.catCg',
+  remote: 'assets.catRemote'
 }
 
 type Api = {
@@ -43,7 +50,66 @@ type Api = {
 }
 const api = (): Api => (window as unknown as { api: Api }).api
 
-/** Resolve + render one asset thumbnail (rptasset://). Falls back to an initial glyph. */
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = React.useState(
+    () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  )
+  React.useEffect(() => {
+    const query = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+    if (!query) return
+    const update = (): void => setReduced(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return reduced
+}
+
+const MediaThumb: React.FC<{
+  url: string | null
+  mediaKind?: 'image' | 'video'
+  name: string
+  className?: string
+}> = ({ url, mediaKind, name, className }) => {
+  const reducedMotion = useReducedMotion()
+  const [failedUrl, setFailedUrl] = React.useState<string | null>(null)
+  const failed = failedUrl === url
+
+  if (!url || failed) {
+    return (
+      <div className={`${className ?? ''} rpt-assets-thumb-fallback`} aria-hidden>
+        {name.slice(0, 1) || '?'}
+      </div>
+    )
+  }
+  if ((mediaKind ?? mediaKindForUrl(url)) === 'video') {
+    return (
+      <video
+        className={className}
+        src={url}
+        aria-label={name}
+        autoPlay={!reducedMotion}
+        controls={reducedMotion}
+        muted
+        loop={!reducedMotion}
+        playsInline
+        preload="metadata"
+        onError={() => setFailedUrl(url)}
+      />
+    )
+  }
+  return (
+    <img
+      className={className}
+      src={url}
+      alt={name}
+      loading="lazy"
+      onError={() => setFailedUrl(url)}
+    />
+  )
+}
+
+/** Resolve + render one local asset thumbnail. Character defaults use standee-first resolution. */
 const AssetThumb: React.FC<{
   profileId: string
   lorebookIds: string[]
@@ -52,25 +118,29 @@ const AssetThumb: React.FC<{
   type: AssetType
   variant?: string
   className?: string
-}> = ({ profileId, lorebookIds, category, name, type, variant, className }) => {
-  const [url, setUrl] = React.useState<string | null>(null)
+  characterDefault?: boolean
+  remote?: RemoteAssetEntry | null
+}> = ({ profileId, lorebookIds, category, name, type, variant, className, characterDefault, remote }) => {
+  const [media, setMedia] = React.useState<{ url: string; mediaKind: 'image' | 'video' } | null>(null)
+  const idsKey = JSON.stringify(lorebookIds)
+  const remoteUrl = remote?.url ?? null
+  const remoteKind = remote?.mediaKind ?? 'image'
   React.useEffect(() => {
     let live = true
-    void api()
-      .assetUrl(profileId, lorebookIds, category, name, type, variant || undefined)
-      .then((u) => {
-        if (live) setUrl(u)
-      })
+    const ids = JSON.parse(idsKey) as string[]
+    const resolveLocal = (assetType: AssetType): Promise<string | null> =>
+      api().assetUrl(profileId, ids, category, name, assetType, variant || undefined)
+    const pending = characterDefault
+      ? resolveCharacterPreview(resolveLocal, remoteUrl ? { url: remoteUrl, mediaKind: remoteKind } : null)
+      : resolveLocal(type).then((url) => url ? { url, mediaKind: mediaKindForUrl(url) } : null)
+    void pending.then((next) => {
+      if (live) setMedia(next)
+    })
     return () => {
       live = false
     }
-  }, [profileId, lorebookIds.join(','), category, name, type, variant])
-  if (url) return <img className={className} src={url} alt={name} loading="lazy" />
-  return (
-    <div className={`${className ?? ''} rpt-assets-thumb-fallback`} aria-hidden>
-      {name.slice(0, 1) || '?'}
-    </div>
-  )
+  }, [profileId, idsKey, category, name, type, variant, characterDefault, remoteUrl, remoteKind])
+  return <MediaThumb url={media?.url ?? null} mediaKind={media?.mediaKind} name={name} className={className} />
 }
 
 let rowSeq = 0
@@ -81,9 +151,14 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
   const activeCharacter = useCharacterStore((s) => s.activeCharacter)
   const sessionIds = useLorebookStore((s) => s.sessionIds)
   const floors = useChatStore((s) => s.floors)
+  const activeChatId = useChatStore((s) => s.activeChatId)
   const index = useAssetStore((s) => s.index)
   const coverage = useAssetStore((s) => s.coverage)
+  const remoteAssets = useAssetStore((s) => s.remoteAssets)
+  const remoteLoading = useAssetStore((s) => s.remoteLoading)
+  const remoteError = useAssetStore((s) => s.remoteError)
   const load = useAssetStore((s) => s.load)
+  const loadRemote = useAssetStore((s) => s.loadRemote)
   const refresh = useAssetStore((s) => s.refresh)
   const importFiles = useAssetStore((s) => s.importFiles)
   const deleteFile = useAssetStore((s) => s.deleteFile)
@@ -92,10 +167,11 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
 
   const lorebookIds = lorebookIdsForWorld(activeCharacter?.id ?? null, sessionIds)
   const primaryId = lorebookIds[0]
-  const statData = floors.length ? floors[floors.length - 1]?.variables?.stat_data : undefined
+  const latestVariables = floors.length ? floors[floors.length - 1]?.variables : undefined
+  const statData = latestVariables?.stat_data
   const roster = React.useMemo(() => rosterFromStatData(statData), [statData])
 
-  const [category, setCategory] = React.useState<AssetCategory>('character')
+  const [category, setCategory] = React.useState<AssetViewCategory>('character')
   const [search, setSearch] = React.useState('')
   const [selected, setSelected] = React.useState<string | null>(null)
   const [wizard, setWizard] = React.useState<WizardRow[] | null>(null)
@@ -108,6 +184,10 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
     void load(profileId, lorebookIds, roster)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId, idsKey, roster.join(',')])
+
+  React.useEffect(() => {
+    void loadRemote(profileId, activeChatId)
+  }, [profileId, activeChatId, latestVariables, loadRemote])
 
   // Esc closes the drawer first (before any parent handler).
   React.useEffect(() => {
@@ -128,7 +208,7 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
   // Existing names across the merged index (all categories) — wizard name autocomplete.
   const existingNames = React.useMemo(() => {
     const s = new Set<string>()
-    for (const cat of CATS) for (const n of Object.keys(index[cat] ?? {})) s.add(n)
+    for (const cat of LOCAL_CATS) for (const n of Object.keys(index[cat] ?? {})) s.add(n)
     return [...s]
   }, [index])
   const nameSuggestions = React.useMemo(
@@ -136,12 +216,19 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
     [roster, existingNames]
   )
 
-  const counts: Record<AssetCategory, number> = {
+  const counts: Record<AssetViewCategory, number> = {
     character: coverage.length,
     location: Object.keys(index.location ?? {}).length,
-    cg: Object.keys(index.cg ?? {}).length
+    cg: Object.keys(index.cg ?? {}).length,
+    remote: remoteAssets.length
   }
-  const rosterWithArt = coverage.filter((r) => r.inRoster && (r.hasAvatar || r.hasStandee)).length
+  const remoteNames = React.useMemo(
+    () => new Set(remoteAssets.map((asset) => asset.name)),
+    [remoteAssets]
+  )
+  const rosterWithArt = coverage.filter(
+    (r) => r.inRoster && (r.hasAvatar || r.hasStandee || r.hasStandeeBg || remoteNames.has(r.name))
+  ).length
   const rosterTotal = roster.length
 
   const doImport = async (
@@ -154,6 +241,7 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
 
   // Turn dropped/picked source paths into either direct imports or wizard rows.
   const intake = (paths: string[], bind?: { name?: string; type?: AssetType }): void => {
+    if (category === 'remote') return
     const direct: { srcPath: string; name: string; type: AssetType; variant?: string }[] = []
     const rows: WizardRow[] = []
     for (const srcPath of paths) {
@@ -179,7 +267,12 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
         id: nextRowId(),
         srcPath,
         name: bind?.name ?? hit?.name ?? stem,
-        type: boundType ?? hit?.type ?? TYPES_BY_CATEGORY[category][0],
+        type:
+          boundType ??
+          hit?.type ??
+          (category === 'character'
+            ? DEFAULT_CHARACTER_ASSET_TYPE
+            : TYPES_BY_CATEGORY[category][0]),
         variant: hit?.variant ?? '',
         ext
       })
@@ -190,6 +283,7 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
 
   const onDrop = (e: React.DragEvent): void => {
     e.preventDefault()
+    if (category === 'remote') return
     setDragOver(false)
     const paths = Array.from(e.dataTransfer.files)
       .map((f) => (window as any).api.pathForFile(f) as string)
@@ -198,6 +292,7 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
   }
 
   const pickImport = async (): Promise<void> => {
+    if (category === 'remote') return
     const paths = await api().assetPickImages(true)
     if (paths.length) intake(paths)
   }
@@ -211,9 +306,10 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
 
   return (
     <div
-      className={`rpt-assets ${dragOver ? 'is-dragover' : ''}`}
+      className={`rpt-assets ${dragOver && category !== 'remote' ? 'is-dragover' : ''}`}
       onDragOver={(e) => {
         e.preventDefault()
+        if (category === 'remote') return
         setDragOver(true)
       }}
       onDragLeave={(e) => {
@@ -236,28 +332,32 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
         <div className="rpt-assets-actions">
           <button
             className="rpt-assets-btn"
-            onClick={() => void refresh(profileId, lorebookIds, roster)}
+            onClick={() => void (category === 'remote'
+              ? loadRemote(profileId, activeChatId)
+              : refresh(profileId, lorebookIds, roster))}
           >
             {t('assets.refresh')}
           </button>
-          <button className="rpt-assets-btn" onClick={() => void pickImport()}>
-            {t('assets.import')}
-          </button>
-          <button
-            className="rpt-assets-btn"
-            onClick={async () => {
-              const res = await exportZip(profileId, primaryId)
-              if (res) toast(t('assets.exportResult', { entries: res.entries }))
-            }}
-          >
-            {t('assets.export')}
-          </button>
-          <button
-            className="rpt-assets-btn"
-            onClick={() => void api().assetOpenFolder(profileId, primaryId, category)}
-          >
-            {t('assets.openFolder')}
-          </button>
+          {category !== 'remote' && <>
+            <button className="rpt-assets-btn" onClick={() => void pickImport()}>
+              {t('assets.import')}
+            </button>
+            <button
+              className="rpt-assets-btn"
+              onClick={async () => {
+                const res = await exportZip(profileId, primaryId)
+                if (res) toast(t('assets.exportResult', { entries: res.entries }))
+              }}
+            >
+              {t('assets.export')}
+            </button>
+            <button
+              className="rpt-assets-btn"
+              onClick={() => void api().assetOpenFolder(profileId, primaryId, category)}
+            >
+              {t('assets.openFolder')}
+            </button>
+          </>}
         </div>
       </div>
 
@@ -272,6 +372,7 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
               onClick={() => {
                 setCategory(c)
                 setSelected(null)
+                setDragOver(false)
               }}
             >
               <span>{t(CAT_LABEL[c])}</span>
@@ -299,7 +400,7 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
         </div>
 
         <div
-          className="rpt-assets-grid"
+          className={`rpt-assets-grid ${category === 'remote' ? 'remote' : ''}`}
           ref={gridRef}
           onKeyDown={(e) => {
             const cards = Array.from(
@@ -316,21 +417,32 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
             }
           }}
         >
-          <CategoryGrid
-            category={category}
-            coverage={coverage}
-            index={index}
-            profileId={profileId}
-            lorebookIds={lorebookIds}
-            t={t}
-            matchName={matchName}
-            selected={selected}
-            onSelect={setSelected}
-            onAdd={() => void pickAddNew()}
-          />
+          {category === 'remote' ? (
+            <RemoteAssetGrid
+              assets={remoteAssets}
+              loading={remoteLoading}
+              error={remoteError}
+              t={t}
+              matchName={matchName}
+            />
+          ) : (
+            <CategoryGrid
+              category={category}
+              coverage={coverage}
+              index={index}
+              profileId={profileId}
+              lorebookIds={lorebookIds}
+              remoteAssets={remoteAssets}
+              t={t}
+              matchName={matchName}
+              selected={selected}
+              onSelect={setSelected}
+              onAdd={() => void pickAddNew()}
+            />
+          )}
         </div>
 
-        {selected && (
+        {selected && category !== 'remote' && (
           <DetailDrawer
             ref={drawerRef}
             category={category}
@@ -370,7 +482,7 @@ export const AssetsView: React.FC<{ profileId: string }> = ({ profileId }) => {
         )}
       </div>
 
-      {wizard && (
+      {wizard && category !== 'remote' && (
         <ImportWizard
           rows={wizard}
           category={category}
@@ -427,19 +539,23 @@ const CategoryGrid: React.FC<{
   index: ReturnType<typeof useAssetStore.getState>['index']
   profileId: string
   lorebookIds: string[]
+  remoteAssets: RemoteAssetEntry[]
   t: ReturnType<typeof useT>
   matchName: (n: string) => boolean
   selected: string | null
   onSelect: (n: string) => void
   onAdd: () => void
-}> = ({ category, coverage, index, profileId, lorebookIds, t, matchName, selected, onSelect, onAdd }) => {
+}> = ({ category, coverage, index, profileId, lorebookIds, remoteAssets, t, matchName, selected, onSelect, onAdd }) => {
   const primaryType: AssetType = category === 'character' ? '头像' : category === 'location' ? '全景' : 'CG'
 
   const cards: React.ReactNode[] =
     category === 'character'
       ? coverage
           .filter((r) => matchName(r.name))
-          .map((r) => (
+          .map((r) => {
+            const remote = remoteAssets.find((asset) => asset.name === r.name) ?? null
+            const hasStandeeBg = r.hasStandeeBg || Boolean(remote)
+            return (
             <button
               key={r.name}
               data-card
@@ -451,7 +567,9 @@ const CategoryGrid: React.FC<{
                 lorebookIds={lorebookIds}
                 category="character"
                 name={r.name}
-                type="头像"
+                type="立绘"
+                characterDefault
+                remote={remote}
                 className="rpt-assets-card-thumb portrait"
               />
               <div className="rpt-assets-card-name">{r.name}</div>
@@ -464,18 +582,23 @@ const CategoryGrid: React.FC<{
                   {t('assets.standee')}
                   {r.hasStandee ? ' ✓' : ''}
                 </span>
+                <span className={`rpt-assets-chip ${hasStandeeBg ? 'on' : ''}`}>
+                  {t('assets.standeeBg')}
+                  {hasStandeeBg ? ' ✓' : ''}
+                </span>
                 {r.galleryCount > 0 && (
                   <span className="rpt-assets-chip on">
                     {t('assets.gallery')} {r.galleryCount}
                   </span>
                 )}
               </div>
-              {r.inRoster && !r.hasAvatar && !r.hasStandee && (
+              {r.inRoster && !r.hasAvatar && !r.hasStandee && !hasStandeeBg && (
                 <span className="rpt-assets-badge-missing">{t('assets.missing')}</span>
               )}
               {!r.inRoster && <span className="rpt-assets-badge-extra">{t('assets.notInWorld')}</span>}
             </button>
-          ))
+            )
+          })
       : nameRows(index[category])
           .filter((r) => matchName(r.name))
           .map((r) => {
@@ -528,6 +651,49 @@ const CategoryGrid: React.FC<{
         </span>
         <div className="rpt-assets-card-name">{t('assets.addNew')}</div>
       </button>
+    </>
+  )
+}
+
+const RemoteAssetGrid: React.FC<{
+  assets: RemoteAssetEntry[]
+  loading: boolean
+  error: boolean
+  t: ReturnType<typeof useT>
+  matchName: (n: string) => boolean
+}> = ({ assets, loading, error, t, matchName }) => {
+  const visible = assets.filter((asset) => matchName(asset.name))
+  if (loading && assets.length === 0) {
+    return <div className="rpt-assets-empty">{t('assets.remoteLoading')}</div>
+  }
+  if (error && assets.length === 0) {
+    return <div className="rpt-assets-empty">{t('assets.remoteError')}</div>
+  }
+  if (visible.length === 0) {
+    return <div className="rpt-assets-empty">{t('assets.empty.remote')}</div>
+  }
+  return (
+    <>
+      {visible.map((asset) => (
+        <article key={asset.name} className="rpt-assets-remote-row">
+          <MediaThumb
+            url={asset.url}
+            mediaKind={asset.mediaKind}
+            name={asset.name}
+            className="rpt-assets-remote-thumb"
+          />
+          <div className="rpt-assets-remote-body">
+            <div className="rpt-assets-card-name">{asset.name}</div>
+            <div className="rpt-assets-remote-host" title={asset.sourceUrl}>
+              {asset.hostname}
+            </div>
+            <div className="rpt-assets-chips">
+              <span className="rpt-assets-chip on">{t('assets.standeeBg')}</span>
+              <span className="rpt-assets-chip">{t('assets.remote')}</span>
+            </div>
+          </div>
+        </article>
+      ))}
     </>
   )
 }

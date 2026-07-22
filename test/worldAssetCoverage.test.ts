@@ -23,6 +23,7 @@ describe('computeCoverage', () => {
     爱莎: {
       头像: { base: 'a.jpg', moods: { 愤怒: 'x.png', 微笑: 'y.png' } },
       立绘: { moods: {} },
+      立绘bg: { base: 'bg.mp4', moods: { 战斗: 'battle.mp4' } },
       相册: { base: 'cover.png', moods: { '01': 's1.png', '02': 's2.png' } }
     }
   }
@@ -33,9 +34,10 @@ describe('computeCoverage', () => {
       name: '爱莎',
       hasAvatar: true,
       hasStandee: false,
+      hasStandeeBg: true,
       hasGallery: true,
       galleryCount: 3, // cover base + 2 slots
-      moodVariants: 2, // 头像 + 立绘 only — 相册 slots don't count as moods
+      moodVariants: 3, // 头像 + 立绘 + 立绘bg; 相册 slots don't count as moods
       inRoster: true
     })
     // A roster character with no art still appears, flagged as missing.
@@ -44,6 +46,7 @@ describe('computeCoverage', () => {
       name: '旅人',
       hasAvatar: false,
       hasStandee: false,
+      hasStandeeBg: false,
       hasGallery: false,
       galleryCount: 0,
       moodVariants: 0,

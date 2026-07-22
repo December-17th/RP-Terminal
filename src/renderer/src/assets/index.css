@@ -3809,6 +3809,7 @@ button.tstrip-agent-status__more:hover {
 .rpt-assets-grid { flex:1; min-width:0; overflow-y:auto; padding:12px;
   display:grid; grid-template-columns:repeat(auto-fill, minmax(132px, 1fr)); gap:12px;
   align-content:start; }
+.rpt-assets-grid.remote { grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); }
 .rpt-assets-card { position:relative; display:flex; flex-direction:column; gap:6px; padding:8px;
   border-radius:12px; cursor:pointer; text-align:left; background:var(--rpt-bg-secondary);
   border:1px solid var(--rpt-border); color:var(--rpt-text-primary); }
@@ -3838,6 +3839,15 @@ button.tstrip-agent-status__more:hover {
 .rpt-assets-add-glyph { font-size:26px; color:var(--rpt-accent); }
 .rpt-assets-empty { grid-column:1/-1; padding:22px; border:1px dashed var(--rpt-border);
   border-radius:12px; color:var(--rpt-text-secondary); font-size:12px; line-height:1.6; }
+
+.rpt-assets-remote-row { min-width:0; display:grid; grid-template-columns:112px minmax(0, 1fr);
+  gap:12px; align-items:center; padding:8px; border-radius:12px;
+  background:var(--rpt-bg-secondary); border:1px solid var(--rpt-border); }
+.rpt-assets-remote-thumb { width:112px; aspect-ratio:3/4; border-radius:8px; object-fit:cover;
+  background:var(--rpt-bg-tertiary); display:block; }
+.rpt-assets-remote-body { min-width:0; display:flex; flex-direction:column; gap:6px; }
+.rpt-assets-remote-host { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color:var(--rpt-text-secondary); font-size:11px; font-family:var(--rpt-font-mono); }
 
 /* Detail drawer — 360px slide-in from the right. */
 .rpt-assets-drawer { width:360px; flex:0 0 auto; display:flex; flex-direction:column;
@@ -3906,6 +3916,13 @@ button.tstrip-agent-status__more:hover {
   .rpt-assets-drawer { animation:none; }
   .rpt-assets-meter > span { transition:none; }
   .rpt-assets-tile-actions { transition:none; }
+}
+
+@media (max-width: 620px) {
+  .rpt-assets-rail { width:136px; }
+  .rpt-assets-grid.remote { grid-template-columns:1fr; }
+  .rpt-assets-remote-row { grid-template-columns:88px minmax(0, 1fr); }
+  .rpt-assets-remote-thumb { width:88px; }
 }
 
 /* ---- Agent Workspace (Settings → Agents) ------------------------------------------------- */

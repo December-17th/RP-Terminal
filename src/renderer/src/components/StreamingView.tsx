@@ -4,8 +4,7 @@ import { useCharacterStore } from '../stores/characterStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useRegexStore } from '../stores/regexStore'
 import { splitReasoning, cleanForDisplay, type ReasoningSplit } from '../../../shared/responseView'
-import { renderTemplate } from '../plugin/renderTemplate'
-import { buildStreamingHead } from './streamingDisplay'
+import { currentDisplayCtx, renderStreamingFrame } from '../display/displayPipeline'
 import { ReasoningPanel } from './ReasoningPanel'
 import { MessageContent } from './MessageContent'
 import {
@@ -93,16 +92,13 @@ export function StreamingView({ pendingUserMsg }: { pendingUserMsg: string }): R
   const rendered = useMemo(() => {
     // Pre-turn state: the in-flight floor isn't committed yet, so use the latest committed vars.
     const vars = useChatStore.getState().floors.slice(-1)[0]?.variables || {}
-    return buildStreamingHead(
-      body,
-      { rateChars, liveOn, vars, user: personaName, char: charName },
-      {
-        renderLive: (text, v) => renderTemplate(text, v, 'live'),
-        applyRegex: (text, ctx) => useRegexStore.getState().apply(text, ctx)
-      }
-    )
+    // Same transform as the settled floor, via the headless pipeline: currentDisplayCtx snapshots the
+    // live stores (liveOn/rateChars/regex apply/renderTemplate/persona+char) the old inline call read.
+    return renderStreamingFrame(body, vars, currentDisplayCtx())
     // regexRules is a deliberate store-read dep: applyRegex reads useRegexStore.getState().rules, so a
     // rule change must re-run the transform though it isn't referenced directly (mirrors ChatView's memo).
+    // liveOn/rateChars/personaName/charName are read via getState() inside currentDisplayCtx but kept as
+    // deps so the rate-limited memo re-runs on the same boundaries as before.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rate-limited: re-run only on a new checkpoint
   }, [checkpoint, liveOn, rateChars, personaName, charName, regexRules])
   // Rendered head (up to the last checkpoint) + the still-raw tail, so the text keeps flowing.

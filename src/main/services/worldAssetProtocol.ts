@@ -24,13 +24,27 @@ export function parseAssetUrl(
 
 /** Resolve + stream an rptasset request, or a 4xx/5xx Response. Read-only; traversal rejected in
  *  resolveProtocolPath. Used by BOTH the default-session and WCV-session registrations. */
-export function serveAssetRequest(req: { url: string }): Response | Promise<Response> {
+export function serveAssetRequest(req: {
+  url: string
+  method?: string
+  headers?: Headers
+}): Response | Promise<Response> {
   try {
     const parsed = parseAssetUrl(req.url)
     if (!parsed) return new Response('Bad Request', { status: 400 })
-    const abs = resolveProtocolPath(parsed.profileId, parsed.lorebookId, parsed.category, parsed.file)
+    const abs = resolveProtocolPath(
+      parsed.profileId,
+      parsed.lorebookId,
+      parsed.category,
+      parsed.file
+    )
     if (!abs) return new Response('Not Found', { status: 404 })
-    return net.fetch(pathToFileURL(abs).toString())
+    // Preserve Range for MP4 seeking/loop restart. Electron's file fetch produces the corresponding
+    // 206/Content-Range response without buffering the whole asset in this handler.
+    return net.fetch(pathToFileURL(abs).toString(), {
+      method: req.method ?? 'GET',
+      headers: req.headers
+    })
   } catch (e) {
     log('error', '[world-assets] protocol error', e)
     return new Response('Error', { status: 500 })

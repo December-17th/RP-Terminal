@@ -36,7 +36,7 @@ export async function pickAndImportAssetForCard(
     console.warn('[world-assets] requestAssetImport: no world for the calling card — ignored')
     return null
   }
-  const filters = [{ name: 'Images', extensions: [...ASSET_EXTS] }]
+  const filters = [{ name: 'Images and video', extensions: [...ASSET_EXTS] }]
   const pick = win
     ? await dialog.showOpenDialog(win, { properties: ['openFile'], filters })
     : await dialog.showOpenDialog({ properties: ['openFile'], filters })
@@ -178,7 +178,7 @@ export const registerWorldAssetIpc = (ipcMain: IpcMain): void => {
     const win = BrowserWindow.fromWebContents(event.sender)!
     const pick = await dialog.showOpenDialog(win, {
       properties: multi ? ['openFile', 'multiSelections'] : ['openFile'],
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }]
+      filters: [{ name: 'Images and video', extensions: [...ASSET_EXTS] }]
     })
     if (pick.canceled) return []
     return pick.filePaths

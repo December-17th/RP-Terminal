@@ -15,6 +15,8 @@ import * as pluginService from '../services/pluginService'
 import * as settingsService from '../services/settingsService'
 import * as extensionSettingsService from '../services/extensionSettingsService'
 import * as worldAssetService from '../services/worldAssetService'
+import * as remoteAssetService from '../services/remoteAssetService'
+import { localFirstRemoteAssetUrl } from '../../shared/worldAssets/remote'
 import * as characterService from '../services/characterService'
 import * as presetService from '../services/presetService'
 import { getActivePresetId } from '../services/presetService'
@@ -30,6 +32,7 @@ import {
 } from '../services/agentRuntime/InvocationRuntimeService'
 import { AgentHostSession, agentToolRequestSender } from '../services/agentRuntime/AgentHostSession'
 import { AgentCatalog } from '../services/agentRuntime/catalog'
+import { DisplayRenderBroker } from './displayRenderBroker'
 // The Host-member channels are registered THROUGH the shared Channel Spec (ADR 0013): a member-keyed
 // `WcvHostImpls` map, typed against `WcvSpecMember`, drives `registerHostChannels` — so a spec member with
 // no main-side implementation is a COMPILE error, not a runtime gap. The channel strings + call kinds come
@@ -192,6 +195,37 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   // the bound profile stay allowed (no capability gating here).
   const slotCtxIf = (senderId: number): ReturnType<typeof wcvManager.contextFor> =>
     wcvManager.contextFor(senderId)
+
+  // --- DisplayHost render broker (ADR 0023) ---
+  // `renderFloors` is forwarded to the main renderer (the transform is renderer-only); the broker
+  // correlates the reply. `displayRevision()` answers from a main-cached int the renderer pushes on
+  // every bump. `setDisplayStreamEnabled` tracks per-sender opt-ins and relays the enabled-chat SET to
+  // the renderer so it only computes streaming frames for chats a panel actually watches.
+  const renderBroker = new DisplayRenderBroker({
+    send: (channel, payload) => wcvManager.sendToMain(channel, payload)
+  })
+  let displayRevisionCache = 0
+  const streamOptIns = new Map<number, string>() // senderWebContentsId → chatId
+  const relayEnabledChats = (): void =>
+    wcvManager.sendToMain('display-stream-enabled-chats', [...new Set(streamOptIns.values())])
+  // The renderer's render reply + its revision pushes (non-Host channels — no spec row).
+  ipcMain.on('display-render-response', (_e, msg) =>
+    renderBroker.resolve((msg as any)?.reqId, (msg as any)?.views)
+  )
+  ipcMain.on('display-revision-changed', (_e, rev) => {
+    if (typeof rev === 'number' && Number.isFinite(rev)) displayRevisionCache = rev
+  })
+  // Renderer-reload handshake: a reloaded main-window renderer restarts with revision 0 + no watched
+  // chats. When its broker signals readiness, re-relay the enabled-chat set and seed the cached revision
+  // so its counter resumes from where main left off (never rewinds).
+  ipcMain.on('display-broker-ready', () => {
+    relayEnabledChats()
+    wcvManager.sendToMain('display-revision-seed', displayRevisionCache)
+  })
+  // A watched panel's slot was torn down → drop its opt-in and re-relay the enabled set.
+  wcvManager.onSlotDestroyed((webContentsId) => {
+    if (streamOptIns.delete(webContentsId)) relayEnabledChats()
+  })
 
   type AgentSender = IpcMainInvokeEvent['sender']
   const agentSenders = new Map<
@@ -979,7 +1013,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       const ids =
         chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
         (ctx.characterId ? [ctx.characterId] : [])
-      return worldAssetService.assetUrlForWorld(ctx.profileId, ids, String(name ?? ''), type, mood)
+      const local = worldAssetService.assetUrlForWorld(
+        ctx.profileId,
+        ids,
+        String(name ?? ''),
+        type,
+        mood
+      )
+      return localFirstRemoteAssetUrl(local, String(type ?? ''), () =>
+        remoteAssetService.resolveRemoteAssetUrl(ctx.profileId, ctx.chatId, String(name ?? ''))
+      )
     },
     sceneAssetUrl: (e, location, type) => {
       const ctx = wcvManager.contextFor(e.sender.id)
@@ -1053,6 +1096,33 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       const ctx = wcvManager.contextFor(e.sender.id)
       if (!ctx) return null
       return computeDuelPreview(ctx.profileId, ctx.chatId, ctx.characterId)
+    },
+
+    // --- DisplayHost (ADR 0023) ---
+    // Beautified floor rendering: resolve the calling panel's session (fail-closed → []), forward the
+    // clamped window to the renderer via the broker with the panel's chatScope so it indexes floors
+    // exactly like the panel's floors() view.
+    renderFloors: (e, from, to) => {
+      const ctx = wcvManager.contextFor(e.sender.id)
+      if (!ctx) return Promise.resolve([])
+      return renderBroker.request({
+        profileId: ctx.profileId,
+        chatId: ctx.chatId,
+        from: Number(from),
+        to: Number(to),
+        scope: wcvManager.chatScopeFor(e.sender.id) ?? undefined
+      })
+    },
+    // Current display revision — answered from the main-cached int the renderer pushes on every bump.
+    displayRevision: () => displayRevisionCache,
+    // Opt this panel in/out of transformed streaming frames + invalidation events. Track by sender so a
+    // slot destroy (onSlotDestroyed, above) cleans it up; relay the enabled-chat set to the renderer.
+    setDisplayStreamEnabled: (e, enabled) => {
+      const ctx = wcvManager.contextFor(e.sender.id)
+      if (!ctx) return
+      if (enabled) streamOptIns.set(e.sender.id, ctx.chatId)
+      else streamOptIns.delete(e.sender.id)
+      relayEnabledChats()
     }
   }
 

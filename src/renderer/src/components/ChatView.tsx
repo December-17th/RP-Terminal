@@ -11,9 +11,7 @@ import { ScriptActionsBar } from './ScriptActionsBar'
 import { Composer } from './Composer'
 import { ContextMenu } from './ContextMenu'
 import { FloorManagerModal } from './FloorManagerModal'
-import { expandMacros } from '../../../shared/macros'
-import { stripRptEvents, stripThinking, extractThinking } from '../../../shared/responseView'
-import { renderTemplate } from '../plugin/renderTemplate'
+import { currentDisplayCtx, renderFloorView } from '../display/displayPipeline'
 import { useUiStore } from '../stores/uiStore'
 import {
   useAgentActivityStore,
@@ -150,56 +148,17 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   // finding 05). No object-identity deps except the floor itself, the loaded rule set, and the
   // (bail-out-guarded) renderMarkers.
   const currentFloor = useMemo<RenderedFloor | undefined>(() => {
-    const f = visibleFloor
-    if (!f) return undefined
-    // Stored content is the FULL raw response. Strip our own state tags; the <thinking> block is
-    // kept here only so renderTemplate/macros see the same text — it's removed before the display
-    // regex (below) and routed to the ReasoningPanel, so a card regex can NEVER rewrite reasoning
-    // into inline UI. The regex still folds the card's <UpdateVariable> blocks in the body, and
-    // nothing is ever truncated in storage.
-    const evaled = renderTemplate(stripRptEvents(f.response.content), f.variables, 'final')
-    // [RENDER:*]: wrap with the active render-marker templates (each evaled with this floor's vars).
-    const wrap = (tmpls: string[]): string =>
-      templatesOn && renderEnabled
-        ? tmpls
-            .map((t) => renderTemplate(t, f.variables, 'final'))
-            .filter(Boolean)
-            .join('\n\n')
-        : ''
-    const body = [wrap(renderMarkers.before), evaled, wrap(renderMarkers.after)]
-      .filter(Boolean)
-      .join('\n\n')
-    const withMacros = expandMacros(body, {
-      user: personaName,
-      char: charName,
-      vars: f.variables
-    })
-    // The display regex applies to the BODY ONLY — reasoning (<thinking>) is owned by the
-    // ReasoningPanel and must never be rewritten into inline UI by a card regex. So strip the
-    // reasoning out before the regex runs and route it to the panel via `thinking`.
-    const applyRegex = (t: string): string =>
-      useRegexStore.getState().apply(t, { user: personaName, char: charName })
-    return {
-      floor: f.floor,
-      user: f.user_message.content,
-      rawResponse: f.response.content,
-      html: applyRegex(stripThinking(withMacros)),
-      // Reasoning display regex (ST placement 6) transforms the <think> text for the ReasoningPanel.
-      thinking: useRegexStore
-        .getState()
-        .applyReasoning(extractThinking(f.response.content), {
-          user: personaName,
-          char: charName
-        }),
-      // Plot-recall: pass the STORED plot_block through verbatim (display-only; PlotPanel applies the
-      // placement-1 beautification regex + routes the html itself). Not derived from response.content.
-      plotBlock: f.plot_block,
-      swipeId: f.swipe_id ?? 0,
-      swipeCount: f.swipes?.length ?? 1
-    }
-    // `regexRules` and `finalPassOn` are deliberate "extra" deps: the memo body reads the rules
-    // via useRegexStore.getState() and renderTemplate('final') reads final_pass from the settings
-    // store, so a change in either must re-run the transform though neither is referenced directly.
+    if (!visibleFloor) return undefined
+    // The transform now lives in the headless displayPipeline (so a card that owns the chat slot can
+    // drive it without ChatView mounted). `currentDisplayCtx` snapshots the SAME store reads the old
+    // memo did inline (regex apply/applyReasoning, renderTemplate, persona/char names, template flags);
+    // the [RENDER:*] markers are ChatView-local session state, so they're passed in.
+    return renderFloorView(visibleFloor, currentDisplayCtx(renderMarkers))
+    // `regexRules` and `finalPassOn` are deliberate "extra" deps: the ctx reads the rules via
+    // useRegexStore.getState() and renderTemplate('final') reads final_pass from the settings store,
+    // so a change in either must re-run the transform though neither is referenced directly. The
+    // persona/char/template-flag values are read via getState() inside currentDisplayCtx but kept as
+    // deps here so the memo re-runs when they change (identical invalidation to the old inline memo).
     // eslint-disable-next-line react-hooks/exhaustive-deps -- store-read inputs, see comment above
   }, [
     visibleFloor,

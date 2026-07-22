@@ -4,9 +4,10 @@ export interface CharacterCoverage {
   name: string
   hasAvatar: boolean // 头像 base present
   hasStandee: boolean // 立绘 base present
+  hasStandeeBg: boolean // 立绘bg base present
   hasGallery: boolean // 相册 base or any slot present
   galleryCount: number // 相册 files = base (0/1) + slot variants
-  moodVariants: number // total mood variant files across 头像 + 立绘
+  moodVariants: number // total mood variant files across 头像 + 立绘 + 立绘bg
   inRoster: boolean
 }
 
@@ -45,9 +46,11 @@ export function computeCoverage(
         name,
         hasAvatar: !!entry?.['头像']?.base,
         hasStandee: !!entry?.['立绘']?.base,
+        hasStandeeBg: !!entry?.['立绘bg']?.base,
         hasGallery: galleryCount > 0,
         galleryCount,
-        moodVariants: moodCount(entry?.['头像']) + moodCount(entry?.['立绘']),
+        moodVariants:
+          moodCount(entry?.['头像']) + moodCount(entry?.['立绘']) + moodCount(entry?.['立绘bg']),
         inRoster: roster.has(name)
       }
     })

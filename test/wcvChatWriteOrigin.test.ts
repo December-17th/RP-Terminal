@@ -9,7 +9,11 @@ vi.mock('../src/main/services/wcvManager', () => ({
   contextFor: vi.fn(),
   pushHostVars: vi.fn(),
   notifyVarsChanged: vi.fn(),
-  pushHostReload: vi.fn()
+  pushHostReload: vi.fn(),
+  // DisplayHost render broker (ADR 0023): registerWcvIpc wires these at registration time.
+  sendToMain: vi.fn(),
+  chatScopeFor: vi.fn(() => null),
+  onSlotDestroyed: vi.fn(() => () => {})
 }))
 vi.mock('../src/main/services/duelPreviewService', () => ({ computeDuelPreview: vi.fn() }))
 vi.mock('../src/main/services/chatCardVarsService', () => ({

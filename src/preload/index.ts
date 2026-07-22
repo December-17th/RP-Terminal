@@ -127,6 +127,41 @@ const api = {
     ipcRenderer.send('wcv-broadcast-vars', chatId, statData, origin),
   wcvBroadcastEvent: (chatId: string, name: string, payload: unknown) =>
     ipcRenderer.send('wcv-broadcast-event', chatId, name, payload),
+  // DisplayHost render broker (ADR 0023): main forwards a WCV card's renderFloors to THIS renderer,
+  // which renders the floors and replies. `onDisplayRenderRequest` returns a disposer. The renderer
+  // also pushes revision bumps and receives the set of chats with ≥1 stream-opted-in panel.
+  onDisplayRenderRequest: (
+    cb: (req: {
+      reqId: number
+      profileId: string
+      chatId: string
+      from: number
+      to: number
+      scope?: unknown
+    }) => void
+  ) => {
+    const l = (_e: unknown, req: any): void => cb(req)
+    ipcRenderer.on('display-render-request', l)
+    return () => ipcRenderer.removeListener('display-render-request', l)
+  },
+  sendDisplayRenderResponse: (msg: { reqId: number; views: unknown }) =>
+    ipcRenderer.send('display-render-response', msg),
+  sendDisplayRevisionChanged: (revision: number) =>
+    ipcRenderer.send('display-revision-changed', revision),
+  onDisplayStreamEnabledChats: (cb: (chatIds: string[]) => void) => {
+    const l = (_e: unknown, chatIds: string[]): void => cb(Array.isArray(chatIds) ? chatIds : [])
+    ipcRenderer.on('display-stream-enabled-chats', l)
+    return () => ipcRenderer.removeListener('display-stream-enabled-chats', l)
+  },
+  // Renderer-reload handshake: signal readiness once the broker's listeners are attached; main replies
+  // by re-seeding the display revision (and re-relaying the enabled-chat set) so a reloaded renderer
+  // doesn't start from revision 0 / an empty watched-chat set.
+  sendDisplayBrokerReady: () => ipcRenderer.send('display-broker-ready'),
+  onDisplayRevisionSeed: (cb: (revision: number) => void) => {
+    const l = (_e: unknown, revision: number): void => cb(Number(revision) || 0)
+    ipcRenderer.on('display-revision-seed', l)
+    return () => ipcRenderer.removeListener('display-revision-seed', l)
+  },
   generate: (profileId: string, chatId: string, userAction: string, source?: 'player' | 'script') =>
     ipcRenderer.invoke('generate', profileId, chatId, userAction, source),
   regenerate: (profileId: string, chatId: string) =>
@@ -744,6 +779,11 @@ const api = {
   // Asset manager surface (WA-2). The `assets` workspace view's read + mutation API.
   assetListIndex: (profileId: string, lorebookIds: string[]) =>
     ipcRenderer.invoke('asset-list-index', profileId, lorebookIds),
+  // Latest-floor `char_info_visuals`: read-only on-demand remote character art.
+  remoteAssetList: (profileId: string, chatId: string) =>
+    ipcRenderer.invoke('remote-asset-list', profileId, chatId),
+  remoteAssetUrl: (profileId: string, chatId: string, name: string) =>
+    ipcRenderer.invoke('remote-asset-url', profileId, chatId, name),
   assetImportFiles: (
     profileId: string,
     lorebookId: string,

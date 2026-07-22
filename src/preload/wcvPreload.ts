@@ -395,6 +395,23 @@ w.TavernHelper = g.TavernHelper
   tokens: Record<string, string>
   source: 'user' | 'card' | 'runtime'
 } => g.getPlayTheme()
+// DisplayHost (ADR 0023): the documented entry point cartridge panel surfaces use for beautified transcript
+// rendering, alongside the bare `renderFloors`/`displayRevision`/`setDisplayStreamEnabled` globals. Each
+// delegates to the shared-runtime facade so behavior stays in ONE place (shared/thRuntime → the WCV Host →
+// the app display pipeline), never forked per transport.
+;(rptHost as any).renderFloors = (from: number, to: number): Promise<any[]> =>
+  g.renderFloors(from, to)
+;(rptHost as any).displayRevision = (): number => g.displayRevision()
+;(rptHost as any).setDisplayStreamEnabled = (enabled: boolean): Promise<void> =>
+  g.setDisplayStreamEnabled(enabled)
+// DisplayHost segmentation companion (ADR 0023): PURE, transport-independent helpers so a card panel
+// consuming `renderFloors` can route the beautified html exactly as the app's MessageContent does
+// (block detection + scripted-frame routing) instead of reimplementing it. No Host member / IPC —
+// each delegates to the shared-runtime facade `g`. See src/shared/displayBlocks.ts + docs/rpt-api.md.
+;(rptHost as any).splitDisplayHtml = (html: string): any[] => g.splitDisplayHtml(html)
+;(rptHost as any).isInteractiveHtml = (html: string): boolean => g.isInteractiveHtml(html)
+;(rptHost as any).applyScriptedHtml = (el: HTMLElement, html: string): void =>
+  g.applyScriptedHtml(el, html)
 
 // --- libraries the card bundle externalizes as bare globals (lodash `_`, Zod `z`, jQuery `$`, `toastr`) ---
 // These are transport-level library injection (not part of the TH runtime). The runtime already provides

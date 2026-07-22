@@ -9,6 +9,7 @@ import type {
   AssetHost,
   GenHost,
   EngineHost,
+  DisplayHost,
   AgentHost
 } from './hostFacets'
 
@@ -22,6 +23,7 @@ export type {
   AssetHost,
   GenHost,
   EngineHost,
+  DisplayHost,
   AgentHost
 } from './hostFacets'
 
@@ -55,6 +57,7 @@ export type Host = { ctx: CardCtx } & VarsHost &
   AssetHost &
   GenHost &
   EngineHost &
+  DisplayHost &
   AgentHost
 
 /** What createThRuntime returns — spread onto the card window by each transport. */

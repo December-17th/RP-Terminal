@@ -82,6 +82,19 @@ describe('importAssetsZip', () => {
     expect(r.skippedReasons.join(' ')).toMatch(/wrong category for type/)
   })
 
+  it('imports background-bearing MP4 and rejects transparent-type MP4', () => {
+    const zip = makeZip([
+      ['character/薇拉_立绘bg.mp4', 'V'],
+      ['location/王城_背景.mp4', 'B'],
+      ['character/薇拉_立绘.mp4', 'x']
+    ])
+    const r = svc.importAssetsZip('p1', 'w1', zip)
+    expect(r.imported).toBe(2)
+    expect(r.skipped).toBe(1)
+    expect(fs.readFileSync(path.join(charDir('w1'), '薇拉_立绘bg.mp4'), 'utf-8')).toBe('V')
+    expect(fs.readFileSync(path.join(locDir('w1'), '王城_背景.mp4'), 'utf-8')).toBe('B')
+  })
+
   it('skips __MACOSX and dotfiles silently (not counted as user errors)', () => {
     const zip = makeZip([
       ['character/爱莎_头像.jpg', 'A'],

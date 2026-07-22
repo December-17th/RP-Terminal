@@ -30,6 +30,7 @@ import { useComposerStore } from './stores/composerStore'
 import { useWcvFreezeStore } from './stores/wcvFreezeStore'
 import { initSlash } from './plugin/slash'
 import { initCardEventBridge } from './cardBridge/hostBroadcast'
+import { initDisplayBroker } from './display/displayBroker'
 import { applyThemeForScheme, colorSchemeOf } from './theme'
 import { deriveCardTheme } from './cardTheme'
 import { useUiStore } from './stores/uiStore'
@@ -185,6 +186,10 @@ export default function App(): React.ReactElement {
     // Broadcast TavernHelper lifecycle/mutation events to BOTH transports — the compute+fan-out logic
     // lives in initCardEventBridge (cardBridge/hostBroadcast), so the two paths can't drift (WS-7).
     const unsubEvents = initCardEventBridge()
+    // DisplayHost render broker (ADR 0023): answers renderFloors from main + owns the display revision
+    // counter + streaming feed for trusted card panels. Registered here so it runs regardless of which
+    // workspace surface is mounted (a card that owns the chat rect never mounts ChatView/StreamingView).
+    const unsubDisplayBroker = initDisplayBroker()
     // Agent Runtime activity is keyed by Invocation ID, so overlapping calls in one chat remain
     // independently visible and stoppable. Notification policy never gates this activity edge. (M5c-2:
     // the legacy `workflow-activity`/`workflow-trace`/`workflow-panel` feeds were removed with the
@@ -232,6 +237,7 @@ export default function App(): React.ReactElement {
       unsubFreeze()
       unsubFloors()
       unsubEvents()
+      unsubDisplayBroker()
       unsubAgentRuns()
       unsubModeChanged()
     }

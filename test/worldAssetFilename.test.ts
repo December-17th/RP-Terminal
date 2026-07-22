@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { parseAssetFilename, buildAssetFilename } from '../src/shared/worldAssets/filename'
+import { assetMediaKindForExt } from '../src/shared/worldAssets/types'
 
 describe('parseAssetFilename', () => {
+  it('classifies image and video extensions separately', () => {
+    expect(assetMediaKindForExt('GIF')).toBe('image')
+    expect(assetMediaKindForExt('mp4')).toBe('video')
+    expect(assetMediaKindForExt('bmp')).toBeNull()
+  })
   it('parses base avatar', () => {
     expect(parseAssetFilename('爱莎_头像.jpg')).toEqual({
       name: '爱莎',
@@ -49,6 +55,27 @@ describe('parseAssetFilename', () => {
       mood: '舞台',
       ext: 'jpe'
     })
+  })
+  it('keeps 立绘 and 立绘bg as distinct types', () => {
+    expect(parseAssetFilename('爱莎_立绘.png')?.type).toBe('立绘')
+    expect(parseAssetFilename('爱莎_立绘bg.png')?.type).toBe('立绘bg')
+  })
+  it('accepts GIF for composited and full-frame art', () => {
+    expect(parseAssetFilename('爱莎_立绘.gif')?.ext).toBe('gif')
+    expect(parseAssetFilename('爱莎_立绘bg.gif')?.ext).toBe('gif')
+  })
+  it('accepts MP4 only for background-bearing types', () => {
+    for (const type of ['立绘bg', '背景', '全景', 'CG'] as const) {
+      expect(parseAssetFilename(`场景_${type}.mp4`)?.type).toBe(type)
+    }
+    for (const type of ['头像', '立绘', '相册'] as const) {
+      expect(parseAssetFilename(`爱莎_${type}.mp4`)).toBeNull()
+    }
+  })
+  it('refuses to build an invalid transparent MP4 filename', () => {
+    expect(() => buildAssetFilename({ name: '爱莎', type: '立绘', ext: 'mp4' })).toThrow(
+      /not supported/
+    )
   })
   // 相册/CG join ASSET_TYPES with NO parser change — the right-to-left type scan finds them.
   it('parses a 相册 gallery cover (base) and a numbered slot', () => {

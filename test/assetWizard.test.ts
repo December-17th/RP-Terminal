@@ -21,13 +21,19 @@ describe('extOf / baseName', () => {
 
 describe('validateWizardRow', () => {
   it('flags an empty name', () => {
-    expect(validateWizardRow({ name: '  ', ext: 'png' })).toEqual({ valid: false, error: 'name' })
+    expect(validateWizardRow({ name: '  ', type: '头像', ext: 'png' })).toEqual({
+      valid: false,
+      error: 'name'
+    })
   })
   it('flags an unsupported extension', () => {
-    expect(validateWizardRow({ name: '薇拉', ext: 'txt' })).toEqual({ valid: false, error: 'ext' })
+    expect(validateWizardRow({ name: '薇拉', type: '头像', ext: 'txt' })).toEqual({
+      valid: false,
+      error: 'ext'
+    })
   })
   it('accepts a valid row', () => {
-    expect(validateWizardRow({ name: '薇拉', ext: 'PNG' })).toEqual({ valid: true })
+    expect(validateWizardRow({ name: '薇拉', type: '头像', ext: 'PNG' })).toEqual({ valid: true })
   })
 })
 

@@ -5,6 +5,10 @@ import { createHash } from 'crypto'
 import { readFile } from 'fs/promises'
 import { log } from './logService'
 import { serveAssetRequest, ASSET_SCHEME } from './worldAssetProtocol'
+import {
+  REMOTE_ASSET_SCHEME,
+  serveRemoteAssetRequest
+} from './remoteAssetProtocol'
 import { getGrants } from './pluginService'
 import { cardCodeRoot } from './cardCodeService'
 import {
@@ -75,6 +79,7 @@ const ensureSession = (): void => {
     }
   })
   ses.protocol.handle(ASSET_SCHEME, (req) => serveAssetRequest(req))
+  ses.protocol.handle(REMOTE_ASSET_SCHEME, (req) => serveRemoteAssetRequest(req))
   ses.webRequest.onHeadersReceived({ urls: ['https://*.jsdelivr.net/*'] }, (details, cb) => {
     if (!/\.html(\?|$)/i.test(details.url)) return cb({})
     const headers: Record<string, string[]> = { ...details.responseHeaders }
@@ -456,10 +461,43 @@ export const requestOverlay = (overlayId: string, decl: OverlayDecl | null): boo
 /** Close whatever overlay is open (card ✕/Esc, app-side Esc, session/card switch). No-op when none. */
 export const closeOverlay = (): void => overlayController.dismiss()
 
+/** Push an arbitrary payload to the main window renderer (used by the DisplayHost render broker to
+ *  forward render requests + relay the stream-enabled chat set; ADR 0023). No-op with no window. */
+export const sendToMain = (channel: string, payload: unknown): void => {
+  mainWindow?.webContents.send(channel, payload)
+}
+
+// Slot-teardown listeners (the DisplayHost broker uses this to drop a destroyed panel's stream opt-in).
+const slotDestroyListeners = new Set<(webContentsId: number, chatId: string) => void>()
+/** Subscribe to slot destruction — fired with the destroyed view's webContents id + chatId. Returns a
+ *  disposer. */
+export const onSlotDestroyed = (
+  cb: (webContentsId: number, chatId: string) => void
+): (() => void) => {
+  slotDestroyListeners.add(cb)
+  return () => slotDestroyListeners.delete(cb)
+}
+
 export const destroy = (id: string): void => {
   const slot = slots.get(id)
   if (!slot) return
   slots.delete(id)
+  // Notify teardown subscribers BEFORE the webContents is closed (its id is still readable).
+  if (slotDestroyListeners.size) {
+    let wcId = -1
+    try {
+      wcId = slot.view.webContents.id
+    } catch {
+      wcId = -1
+    }
+    for (const cb of slotDestroyListeners) {
+      try {
+        cb(wcId, slot.chatId)
+      } catch {
+        // a listener throwing must not abort the teardown
+      }
+    }
+  }
   // Drop this id's freeze-frame still + throttle stamp — message-WCV ids are monotonically unique, so
   // without this the captured screenshot for every destroyed surface leaks for the process lifetime.
   freezeController.dropTarget(id)
