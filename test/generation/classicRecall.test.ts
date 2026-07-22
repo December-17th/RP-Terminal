@@ -30,7 +30,13 @@ vi.mock('../../src/main/services/memoryRecallService', () => ({
 }))
 vi.mock('../../src/main/services/generation/assemble', () => ({
   matchWorldInfo: stages.matchWorldInfo,
-  assemblePrompt: stages.assemblePrompt
+  assemblePrompt: stages.assemblePrompt,
+  // The build-time setvar capture brackets assembly with these two pure helpers. This suite pins the
+  // RECALL seam, so they are stubbed to "nothing was written" rather than pulling the real assemble
+  // module (and its whole service graph) back in — the capture itself is pinned in
+  // classicTurnHazards.test.ts against the real path.
+  snapshotTemplateVars: () => ({}),
+  captureTemplateWrites: () => []
 }))
 vi.mock('../../src/main/services/generation/mainSample', () => ({
   sampleMainCall: stages.sampleMainCall

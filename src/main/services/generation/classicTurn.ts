@@ -2,7 +2,12 @@ import { RunContext } from './runContext'
 import { trimProcessedContext, exportTableEntries } from './classicStages'
 import { sampleMainCall } from './mainSample'
 import { buildGenContext } from './genContext'
-import { matchWorldInfo, assemblePrompt } from './assemble'
+import {
+  matchWorldInfo,
+  assemblePrompt,
+  snapshotTemplateVars,
+  captureTemplateWrites
+} from './assemble'
 import { parseResponse, computeMetrics } from './parseResponse'
 import { foldState } from './foldState'
 import { persistFloor } from './persistFloor'
@@ -79,6 +84,15 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
   if (exported === ABORTED) return null
 
   // ── 5. prompt.assemble ─────────────────────────────────────────────────────────────────────────
+  // Bracket assembly with a snapshot of `gen.workingVars`: build-time `{{setvar}}` mutates that object
+  // IN PLACE while the prompt is built (the by-reference channel in this file's header), and those
+  // writes are NOT re-derivable from the response — so unless they are journaled, Forward Replay drops
+  // them. Capture takes candidate paths from BOTH the write recorder (`assembled.varWrites` — the EJS
+  // engine AND the `{{setvar}}`/`{{addvar}}` macros, so a write that changed nothing still counts) and
+  // the snapshot/diff (which still catches the engine's keyless wholesale `setvar(null, {…})`), then
+  // journals the post-assembly value at each. Inert until `persistFloor` journals it against the
+  // committed floor.
+  const varsBeforeAssembly = snapshotTemplateVars(gen.workingVars)
   const assembled = await stage(() => {
     const matched = matchWorldInfo(gen)
     const extra = exported.entries
@@ -93,6 +107,11 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
   })
   if (assembled === ABORTED) return null
   const { sendMessages, params } = assembled
+  const templateWrites = captureTemplateWrites(
+    varsBeforeAssembly,
+    gen.workingVars,
+    assembled.varWrites
+  )
 
   // ── 6. llm.sample — the main provider call, through the Milestone 1 Harness seam ───────────────
   const sampled = await stage(() =>
@@ -131,6 +150,7 @@ export const runClassicTurnDirect = async (ctx: RunContext): Promise<FloorFile |
       events: parsedOut.parsed.events,
       variables,
       metrics: parsedOut.metrics,
+      templateWrites,
       ...(recall?.plotBlock ? { plot_block: recall.plotBlock } : {})
     })
   )

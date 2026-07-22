@@ -33,7 +33,11 @@ const fakeDb = vi.hoisted(() => ({
       },
       all: () => [] as unknown[]
     }
-  }
+  },
+  // FloorState owns every floor-row write now (including the Yuzu annotation below), so the fake
+  // store has to answer the two calls `createFloorState` makes on construction / in a transaction.
+  exec: () => {},
+  transaction: (fn: () => unknown) => fn
 }))
 
 vi.mock('../src/main/services/db', () => ({
@@ -160,11 +164,17 @@ describe('floorService — lean floor projections (perf audit P0-2)', () => {
     const updated = updateActiveFloorResponse('p1', 'c1', 2, '<| block |>\nactive\n<| end |>')
     expect(updated?.response.content).toContain('<| block |>')
     expect(updated?.swipes).toEqual(['old', '<| block |>\nactive\n<| end |>'])
-    const write = seam.runs.find((run) => run.sql.startsWith('UPDATE floors SET response_content'))
-    expect(write?.args.slice(0, 3)).toEqual([
+    // Routed through FloorState's transcript write (refold: false) — same columns, no replay.
+    const write = seam.runs.find((run) => run.sql.includes('UPDATE floors SET'))
+    expect(write?.args).toEqual([
+      null, // user_content untouched
       '<| block |>\nactive\n<| end |>',
+      1,
       JSON.stringify(['old', '<| block |>\nactive\n<| end |>']),
-      1
+      1,
+      1,
+      'c1',
+      2
     ])
     expect(write?.sql).not.toContain('variables')
   })

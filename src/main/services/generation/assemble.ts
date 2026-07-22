@@ -21,6 +21,10 @@ import { PresetParameters, Preset } from '../../types/preset'
 import { GenContext } from './types'
 import { ExecutionRecord } from '../../../shared/executionRecord'
 import { createRecordBuilder } from './executionRecord'
+import { isWritableVariablesPath } from '../../../shared/agentRuntime/paths'
+import { toParts } from '../../../shared/objectPath'
+import type { VarWriteHook } from '../../../shared/templateEngine'
+import type { FloorStateOperation } from '../agentRuntime/floorState/FloorState'
 
 /**
  * prompt.preset composer overrides (context-epochs plan §3): each field, when present, replaces one
@@ -106,6 +110,221 @@ export const matchWorldInfo = (ctx: GenContext): LorebookEntry[] => {
   return matchedEntries
 }
 
+// ── build-time setvar capture ────────────────────────────────────────────────────────────────────
+//
+// Build-time `{{setvar}}` / EJS `setvar()` write straight into `ctx.workingVars` (the PARITY HAZARD
+// documented on `assemblePrompt`). Those writes reach the STORED floor — but nothing journals them,
+// so Forward Replay, which rebuilds a floor from `previous floor variables → model fold → journaled
+// operations`, silently drops every one of them.
+//
+// ONE mechanism, TWO path sources. Capture is always "journal the FINAL value at a candidate path",
+// so the two sources can never disagree about a value — they only ever widen the candidate set:
+//
+//  1. the WRITE RECORDER (`VarWriteHook`), which BOTH build-time dialects report into — the EJS engine
+//     (`setvar`/`incvar`/`decvar`/`delvar` + scope aliases, templateEngine.ts) and the `{{setvar}}` /
+//     `{{addvar}}` MACROS (shared/macros.ts), which never enter the engine and are threaded via
+//     promptBuilder's `macroBase`. It reports the paths a helper actually WROTE. A diff can only see
+//     that state CHANGED, so it silently drops the case this whole feature exists for:
+//     `setvar('x', 1)` while `x` is already `1`. Live assembly FORCES 1; without a journal row, replay
+//     after an earlier-floor edit keeps whatever it inherited.
+//  2. a snapshot/diff of `workingVars` across assembly. Still load-bearing, for ONE known writer the
+//     hook cannot describe: the engine's keyless wholesale replace `setvar(null, {…})`
+//     (templateEngine.ts:334-345) clears the store and `Object.assign`s a new object — there is no
+//     path to report, so only a diff can see it (and the deletions it implies). Keep the diff until
+//     that branch reports.
+//
+// Replay applies the resulting `'template'` operations BEFORE the model fold
+// (FloorState.computeFloorSuffix) — the live order (assembly first, model turn second).
+
+/** Root keys the MODEL FOLD owns and re-derives from the response on every replay: journaling them
+ *  as pre-fold operations would be redundant at best and would fight the fold at worst
+ *  (`combat_cue` is deleted and re-derived every turn; `stat_data`/`delta_data` are MVU's). */
+const FOLD_OWNED_ROOT_KEYS = new Set(['stat_data', 'delta_data', 'combat_cue'])
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value)
+
+/** The value as it would SURVIVE onto the floor (floor variables are persisted as JSON), or
+ *  `undefined` when JSON cannot represent it — i.e. when the floor would not hold it either. */
+const asStorableJson = (value: unknown): unknown => {
+  try {
+    const text = JSON.stringify(value)
+    return text === undefined ? undefined : JSON.parse(text)
+  } catch {
+    return undefined
+  }
+}
+
+const sameStorable = (a: unknown, b: unknown): boolean =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+
+/** Read a value by the JOURNAL's path dialect — plain split-on-dot segments, matching floorFold's
+ *  `variablesParentAt`, which is what replay will walk when it applies the operation. */
+const valueAtSegments = (root: Record<string, unknown>, segments: string[]): unknown => {
+  let cur: unknown = root
+  for (const segment of segments) {
+    if (!isPlainObject(cur)) return undefined
+    cur = cur[segment]
+  }
+  return cur
+}
+
+/** Candidate paths from the snapshot/diff: every leaf whose STORED value differs across assembly. */
+const collectChangedPaths = (
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  prefix: string,
+  out: string[]
+): void => {
+  const root = prefix === 'variables'
+  for (const key of Object.keys(after)) {
+    if (root && FOLD_OWNED_ROOT_KEYS.has(key)) continue
+    const path = `${prefix}.${key}`
+    const previous = before[key]
+    const current = after[key]
+    // Recurse only when BOTH sides are plain objects; otherwise the subtree is set wholesale, so a
+    // freshly-created (even empty) object is never lost to an empty leaf diff.
+    if (isPlainObject(previous) && isPlainObject(current)) {
+      collectChangedPaths(previous, current, path, out)
+      continue
+    }
+    if (sameStorable(asStorableJson(current), asStorableJson(previous))) continue
+    out.push(path)
+  }
+  for (const key of Object.keys(before)) {
+    if (root && FOLD_OWNED_ROOT_KEYS.has(key)) continue
+    if (Object.prototype.hasOwnProperty.call(after, key)) continue
+    out.push(`${prefix}.${key}`)
+  }
+}
+
+/**
+ * A recorded write key → the path the journal can actually address, or `undefined` when the write
+ * can never be journaled (a fold-owned root, an unusable key).
+ *
+ * Two dialects meet here. The engine writes with the bracket-aware `toParts` (`a[0].b` → a.0.b),
+ * while replay walks PLAIN OBJECTS only. So a path whose route runs through an array / scalar /
+ * missing container is truncated to that ancestor and journaled WHOLESALE — the same truncation the
+ * diff walk makes when the two sides aren't both plain objects.
+ */
+const journalPathFor = (after: Record<string, unknown>, key: string): string | undefined => {
+  const parts = toParts(key)
+  if (!parts.length || FOLD_OWNED_ROOT_KEYS.has(parts[0])) return undefined
+  let container: unknown = after
+  const kept: string[] = []
+  for (let i = 0; i < parts.length; i++) {
+    kept.push(parts[i])
+    if (i === parts.length - 1) break
+    const next = isPlainObject(container) ? container[parts[i]] : undefined
+    if (!isPlainObject(next)) break
+    container = next
+  }
+  return `variables.${kept.join('.')}`
+}
+
+/** Is some strict ancestor of `path` already journaled? Then its value rides along and re-journaling
+ *  the descendant is pure noise (both carry the same post-assembly value either way). */
+const hasJournaledAncestor = (path: string, journaled: Set<string>): boolean => {
+  const segments = path.split('.')
+  for (let i = segments.length - 1; i > 1; i--)
+    if (journaled.has(segments.slice(0, i).join('.'))) return true
+  return false
+}
+
+/**
+ * Snapshot `workingVars` before assembly, so capture can tell "already absent" from "deleted" and so
+ * the diff source has something to compare with. A deep JSON clone — assembly mutates the live object
+ * in place, by reference, on purpose.
+ *
+ * The fold-owned roots are left OUT of the clone: capture skips them on both sides anyway, and
+ * `stat_data` is by far the largest thing in a mature session's variables.
+ */
+export const snapshotTemplateVars = (
+  workingVars: Record<string, unknown>
+): Record<string, unknown> => {
+  const capturable: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(workingVars ?? {}))
+    if (!FOLD_OWNED_ROOT_KEYS.has(key)) capturable[key] = value
+  return JSON.parse(JSON.stringify(capturable)) as Record<string, unknown>
+}
+
+/**
+ * Records which variable paths build-time template helpers wrote during ONE assembly, so journaling
+ * no longer depends on the value having CHANGED. ONE recorder serves BOTH dialects — the EJS engine
+ * and the `{{setvar}}`/`{{addvar}}` macros — so they cannot diverge on which writes count.
+ *
+ * Only writes that land on the FLOOR's own store count, which is why the hook is handed the store:
+ * the engine's `storeFor` routes `scope:'global'` to the globals bag, and promptBuilder renders the L1
+ * frozen frontier against a separate `frozenVars` snapshot (`{...template, vars: frozenVars}`, macros
+ * included) — neither object reaches the floor, so journaling a write to either would force a value the
+ * live turn never stored. Every other engine scope (local/chat/message) DOES resolve to `ctx.vars`,
+ * i.e. the floor store, and is recorded; the macro dialect has no write scopes at all and always
+ * targets whichever `vars` object it was handed.
+ */
+export interface TemplateWriteRecorder {
+  onVarWrite: VarWriteHook
+  /** The recorded write keys, first-write order, deduplicated. */
+  paths: () => string[]
+}
+
+export const createTemplateWriteRecorder = (
+  floorStore: Record<string, unknown>
+): TemplateWriteRecorder => {
+  const seen = new Set<string>()
+  return {
+    // `kind` is deliberately ignored: capture journals the FINAL state at each recorded path, so a
+    // path written twice yields one operation with the last value, and a path written then deleted
+    // yields a delete — decided below by the value, not by the last write's kind.
+    onVarWrite: (path, _kind, store) => {
+      if (store !== floorStore || !path) return
+      seen.add(path)
+    },
+    paths: () => [...seen]
+  }
+}
+
+/**
+ * The build-time writes assembly made, as journalable floor operations. Every candidate path — from
+ * the write recorder (`recordedPaths`, engine + macros) and from the snapshot/diff alike — is journaled with
+ * the value it holds AFTER assembly, so a path written twice produces ONE `set` carrying the last
+ * value and a path written then deleted produces a `delete`.
+ *
+ * Fold-owned roots are skipped; so is any path the journal would refuse (runtime-owned
+ * `variables.__rpt`, prototype keys) — capture must never be able to fail a turn.
+ */
+export const captureTemplateWrites = (
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  recordedPaths: readonly string[] = []
+): FloorStateOperation[] => {
+  const from = before ?? {}
+  const to = after ?? {}
+  const candidates: string[] = []
+  collectChangedPaths(from, to, 'variables', candidates)
+  for (const key of recordedPaths) {
+    const path = journalPathFor(to, key)
+    if (path) candidates.push(path)
+  }
+
+  const operations: FloorStateOperation[] = []
+  const journaled = new Set<string>()
+  for (const path of candidates) {
+    if (journaled.has(path) || !isWritableVariablesPath(path)) continue
+    if (hasJournaledAncestor(path, journaled)) continue
+    const segments = path.split('.').slice(1)
+    const stored = asStorableJson(valueAtSegments(to, segments))
+    if (stored === undefined) {
+      // Never journaled and gone again — there is nothing for replay to reproduce.
+      if (asStorableJson(valueAtSegments(from, segments)) === undefined) continue
+      operations.push({ kind: 'delete', path })
+    } else {
+      operations.push({ kind: 'set', path, value: stored })
+    }
+    journaled.add(path)
+  }
+  return operations
+}
+
 /**
  * Assemble the exact message array + sampler params sent to the provider. Moved verbatim out of
  * `generate()` (Phase 2b-1a) — same build/trim/reshape pipeline, same request log.
@@ -127,12 +346,22 @@ export const assemblePrompt = (
    *  authored inputs, handed to `assembledArtifact` so the `Prompt` artifact's contributions carry
    *  `budgetClass` (history/pinned). Not consumed by the legacy `sendMessages`/`params` callers. */
   authored: { messages: ChatMessage[]; budgetClasses: BudgetClass[] }
+  /** The variable paths build-time writers — EJS `setvar`/`incvar`/`decvar`/`delvar` AND the
+   *  `{{setvar}}`/`{{addvar}}` macros — put onto `ctx.workingVars` during THIS assembly: the
+   *  write-recorder half of build-time setvar capture. Hand to `captureTemplateWrites` (the turn does;
+   *  other callers may ignore it). */
+  varWrites: string[]
 } => {
   // Forensic Execution Record (issue 07 / WP-1.1). ADDITIVE + behavior-neutral: the builder
   // journals every controlled transform and is returned alongside the UNCHANGED sendMessages;
   // callers may ignore it. `t0` bounds the added assembly time reported as `record.stats.buildMs`.
   const t0 = Date.now()
   const record = createRecordBuilder()
+  // Build-time setvar capture, source 1: the write recorder shared by BOTH dialects — wired into the
+  // TemplateContext below (the EJS engine) and forwarded from there onto every macro expansion by
+  // promptBuilder's `macroBase`. Bound to `workingVars` BY IDENTITY so only writes that land on the
+  // floor's store are recorded (see the recorder's doc).
+  const varWrites = createTemplateWriteRecorder(ctx.workingVars)
   const {
     profileId,
     chatId,
@@ -224,6 +453,9 @@ export const assemblePrompt = (
       // EJS engine on/off (settings toggle). When off, evalTemplate strips tags instead of running them;
       // {{macros}} still expand (they share vars/globals).
       enabled: settings.templates?.enabled !== false,
+      // Observation-only: records which paths build-time setvar/delvar wrote, and — forwarded through
+      // promptBuilder's `macroBase` — which paths `{{setvar}}`/`{{addvar}}` wrote (see the capture header).
+      onVarWrite: varWrites.onVarWrite,
       globals,
       constants: {
         userName,
@@ -330,6 +562,7 @@ export const assemblePrompt = (
     params,
     record: record.finish(sendMessages, Date.now() - t0),
     // Pre-shape authored inputs + budget policy for the `Prompt` artifact's contributions (issue 18c).
-    authored: { messages: trimmed, budgetClasses: trimmedClasses ?? budgetClasses }
+    authored: { messages: trimmed, budgetClasses: trimmedClasses ?? budgetClasses },
+    varWrites: varWrites.paths()
   }
 }

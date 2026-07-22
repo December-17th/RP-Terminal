@@ -1,11 +1,17 @@
 import path from 'path'
 import { getChat, appendFloor, truncateFloors } from './chatService'
-import { getAllFloors, getFloor, saveFloor } from './floorService'
+import { editFloorTranscript, getAllFloors, getFloor } from './floorService'
 import { normalizeSwipes } from './swipeHelpers'
 import { loadGlobals, saveGlobals } from './templateService'
 import { getAppDir, readJsonSync, writeJsonSyncAtomic } from './storageService'
 import { FloorFile } from '../types/chat'
-import { getPath, setPath, delPath } from '../../shared/objectPath'
+import { getPath, setPath, delPath, toParts } from '../../shared/objectPath'
+import { isWritableVariablesPath } from '../../shared/agentRuntime/paths'
+import {
+  floorStateForChat,
+  type FloorStateOperation,
+  type FloorTranscriptUpdate
+} from './agentRuntime/floorState'
 
 /**
  * Host-side engine bridge for the P1 card-script runtime. Card scripts run in a
@@ -72,6 +78,77 @@ const applyOp = (store: Record<string, any>, action: VarAction): any => {
   }
 }
 
+/**
+ * Translate an APPLIED floor-variable write into the journal operation that reproduces it on replay.
+ * Floor variables belong to FloorState, so a card write is journaled (source 'card') instead of being
+ * saved onto the floor row — otherwise the next Forward Replay silently discards it.
+ *
+ * It is a translation, not a rename, because two things differ from `applyOp`'s own write:
+ *  - PATH DIALECT: `applyOp` resolves dot/bracket paths through `toParts` ("a[0].b" → a,0,b) while
+ *    FloorState splits a journal path on '.', so the key is normalized through `toParts` first.
+ *  - ARRAY INTERMEDIATES: replay recreates a missing OR array intermediate as a plain object
+ *    (`variablesParentAt`), so a write reaching THROUGH an array cannot be journaled leaf-deep without
+ *    destroying that array. Such a write is journaled at the shallowest ancestor whose chain is all
+ *    plain objects, carrying that ancestor's post-write subtree as the value.
+ *  - RELATIVE WRITES: `inc`/`dec` journal as `increment` (a `dec` as a negative one), so a re-fold that
+ *    moves the BASE value underneath the write reproduces what the card asked for (+5) instead of the
+ *    absolute it happened to observe (105). Three cases can't be expressed that way and stay a `set`,
+ *    because FloorState would otherwise reject them: a non-exact (array-ancestor) path, a non-finite
+ *    delta (`Number('abc')` → NaN, rejected by `validateOperation`), and a base that EXISTS but is not
+ *    a finite number — `applyOp` coerces it (`Number('5') || 0`) while replay throws REPLAY_FAILED on
+ *    incrementing a non-number. An ABSENT base is fine: both treat it as 0.
+ *  - NO-OPS: `applyOp` is allowed to write NOTHING — an `insert` onto a key that already exists (that
+ *    IS its semantic), a `set`/`inc` of the value already stored, a `del` of an absent key. Journaling
+ *    the absolute `set <current value>` below for one of those would turn "leave this alone" into "pin
+ *    this value": a later replay against a base that MOVED would overwrite the newer value with the
+ *    stale one, inverting the operation. Nothing changed, so there is nothing to reproduce — the same
+ *    guard `applyVariableOps` (generation/varsWrite.ts) applies when its deltas are all no-ops.
+ * Otherwise the value is JSON round-tripped — exactly what `JSON.stringify(floor.variables)` used to
+ * persist — and a value that does not survive that (undefined / a function / NaN's null) becomes a
+ * `delete`, since the key simply vanished from the stored JSON before. Returns null when nothing is
+ * journalable (no key — `applyOp` changed nothing either — a write that changed nothing, or a
+ * reserved/invalid `variables.…` path).
+ */
+const journalOperation = (
+  store: Record<string, any>,
+  action: VarAction,
+  /** The state at `action.key` BEFORE `applyOp` ran: the raw value (the increment mapping's
+   *  replayability test) plus its JSON encoding, SNAPSHOTTED at capture time so the no-op guard's
+   *  "before" can never turn out to be an alias of the post-write value. */
+  before: { value: unknown; json: string | undefined }
+): FloorStateOperation | null => {
+  const parts = toParts(action.key ?? '')
+  if (!parts.length) return null
+  let depth = parts.length
+  for (let i = 0, cursor: any = store; i < parts.length - 1; i++) {
+    cursor = cursor?.[parts[i]]
+    if (!cursor || typeof cursor !== 'object' || Array.isArray(cursor)) {
+      depth = i + 1
+      break
+    }
+  }
+  const key = parts.slice(0, depth).join('.')
+  const journalPath = `variables.${key}`
+  if (!isWritableVariablesPath(journalPath)) return null
+  // The no-op guard (see NO-OPS above). Compared at `action.key` rather than at `journalPath`: the leaf
+  // is the only place a write ever lands, and `journalPath` is an ancestor of it, so the journaled
+  // subtree changed exactly when the leaf did.
+  if (JSON.stringify(getPath(store, action.key)) === before.json) return null
+  if ((action.op === 'inc' || action.op === 'dec') && depth === parts.length) {
+    const magnitude = action.value === undefined ? 1 : Number(action.value)
+    const delta = action.op === 'dec' ? -magnitude : magnitude
+    const replayableBase =
+      before.value === undefined ||
+      (typeof before.value === 'number' && Number.isFinite(before.value))
+    if (Number.isFinite(delta) && replayableBase)
+      return { kind: 'increment', path: journalPath, value: delta }
+  }
+  const encoded = JSON.stringify(getPath(store, key))
+  return encoded === undefined
+    ? { kind: 'delete', path: journalPath }
+    : { kind: 'set', path: journalPath, value: JSON.parse(encoded) }
+}
+
 // Character-scoped vars persist per card across all its sessions (TH-2). File-keyed by
 // card id, alongside the per-profile template globals.
 const characterVarsPath = (profileId: string): string =>
@@ -132,12 +209,21 @@ export const pluginVars = (profileId: string, chatId: string, action: VarAction)
 
   const floor = getFloor(profileId, chatId, target)
   const store: Record<string, any> = floor?.variables ?? {}
+  // Captured BEFORE the write, both halves at once: an inc/dec journals as a relative `increment`,
+  // which is only replayable when the base it starts from is absent or a finite number, and the JSON
+  // encoding is what the no-op guard compares the post-write leaf against (see journalOperation).
+  const beforeValue = action.key ? getPath(store, action.key) : undefined
+  const before = { value: beforeValue, json: JSON.stringify(beforeValue) }
   const value = applyOp(store, action)
-  if (action.op !== 'get' && floor) {
-    floor.variables = store
-    saveFloor(profileId, chatId, floor)
-  }
-  return { value, scope, store }
+  if (action.op === 'get' || !floor) return { value, scope, store }
+  // FloorState owns floors.variables: JOURNAL the write (source 'card') instead of saving the floor
+  // back. A script write is not re-derivable from response text, so an unjournaled one was silently
+  // discarded by the next replay (an upstream edit, an MVU re-evaluation). Journaling also republishes
+  // the affected suffix, so the store returned here is the re-folded one the DB now holds.
+  const operation = journalOperation(store, action, before)
+  if (!operation) return { value, scope, store }
+  floorStateForChat(chatId)?.append(chatId, target, 'card', [operation])
+  return { value, scope, store: getFloor(profileId, chatId, target)?.variables ?? store }
 }
 
 /** Snapshot both variable scopes for a chat (script init). */
@@ -175,8 +261,16 @@ export const getMessages = (profileId: string, chatId: string): PluginMessage[] 
   }))
 }
 
-/** Edit a floor's user and/or response text in place (TH setChatMessages). Keeps the
- *  active swipe in sync with the edited response. */
+/**
+ * Edit a floor's user and/or response text in place (TH setChatMessages). Keeps the active swipe in
+ * sync with the edited response.
+ *
+ * Routed through `floorService.editFloorTranscript` — the ONE transcript-edit operation, shared with
+ * the UI edit (`updateFloorFields`) and the swipe paths — so this surface cannot carry weaker
+ * guarantees than they do: the re-fold (a card rewriting a response with different `<UpdateVariable>`
+ * content used to leave the OLD variables standing), the launcher summary, the memory-maintain
+ * staleness fence, and the refill engine's edit signal.
+ */
 export const setMessage = (
   profileId: string,
   chatId: string,
@@ -185,15 +279,18 @@ export const setMessage = (
 ): boolean => {
   const floor = getFloor(profileId, chatId, floorIndex)
   if (!floor) return false
-  if (typeof patch.user === 'string') floor.user_message.content = patch.user
+  const update: FloorTranscriptUpdate = { floor: floorIndex }
+  if (typeof patch.user === 'string') update.userContent = patch.user
   if (typeof patch.response === 'string') {
-    floor.response.content = patch.response
     const s = normalizeSwipes(floor.swipes, patch.response, floor.swipe_id)
     s.swipes[s.swipe_id] = patch.response
-    floor.swipes = s.swipes
-    floor.swipe_id = s.swipe_id
+    update.responseContent = patch.response
+    update.swipes = s.swipes
+    update.swipeId = s.swipe_id
   }
-  saveFloor(profileId, chatId, floor)
+  // An empty patch changed nothing, and `editFloorTranscript` owns that short-circuit: no replay (the
+  // old no-op re-save of the same row), no epoch bump, no listener — and this call still reports success.
+  editFloorTranscript(profileId, chatId, update)
   return true
 }
 

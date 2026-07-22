@@ -77,6 +77,24 @@ export interface TemplateData {
  */
 export type EscapeMode = 'identity' | 'html'
 
+/**
+ * OBSERVATION-ONLY notification that a variable-writing helper (`setvar`/`incvar`/`decvar`/`delvar`
+ * and their scope aliases) just wrote the store. Purely additive: it fires AFTER the mutation, its
+ * return value is discarded, and a throw is swallowed — it can change neither the rendered output
+ * nor a helper's return value.
+ *
+ * `path` is the key exactly as the template passed it (the bracket-aware dialect `setPath` uses);
+ * `store` is the object the write LANDED ON, so a recorder can tell a floor-store write apart from a
+ * `scope:'global'` one (→ `ctx.globals`) or a write against a derived read-only snapshot (the L1
+ * frozen frontier renders with `vars` swapped for `frozenVars`). Reporting every write is the point;
+ * deciding which ones matter belongs to the host, the only side that knows those stores apart.
+ */
+export type VarWriteHook = (
+  path: string,
+  kind: 'set' | 'delete',
+  store: Record<string, any>
+) => void
+
 export interface TemplateContext {
   vars: Record<string, any> // chat/local variables (mutated by setvar)
   globals: Record<string, any> // global variables (persisted per profile)
@@ -86,6 +104,8 @@ export interface TemplateContext {
   enabled?: boolean
   /** `<%=` escaper profile. Omitted/undefined → 'identity' (generation). Render/display passes 'html'. */
   escape?: EscapeMode
+  /** Optional write recorder (see `VarWriteHook`). Absent → the helpers behave exactly as before. */
+  onVarWrite?: VarWriteHook
 }
 
 export interface TemplateContextOpts {
@@ -94,6 +114,7 @@ export interface TemplateContextOpts {
   data?: TemplateData
   enabled?: boolean
   escape?: EscapeMode
+  onVarWrite?: VarWriteHook
 }
 
 /**
@@ -112,7 +133,8 @@ export const buildTemplateContext = (
   constants: opts.constants ?? {},
   data: opts.data,
   enabled: opts.enabled ?? true,
-  escape: opts.escape
+  escape: opts.escape,
+  onVarWrite: opts.onVarWrite
 })
 
 let QJS: QuickJSWASMModule | null = null
@@ -262,6 +284,24 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
   const storeFor = (opt: any): Record<string, any> =>
     opt && opt.scope === 'global' ? ctx.globals : ctx.vars
 
+  /**
+   * Report ONE completed write to `ctx.onVarWrite` (build-time setvar journaling). Called AFTER the
+   * store mutation and its result is discarded, so evaluation order, the helper's return value, and
+   * the rendered output are all untouched; a throwing hook is swallowed so a recorder bug can never
+   * change what a template produces. No hook installed → this is a single null check.
+   */
+  const noteWrite = (store: Record<string, any>, key: any, kind: 'set' | 'delete'): void => {
+    const hook = ctx.onVarWrite
+    if (!hook || key == null) return
+    const path = String(key)
+    if (!path) return
+    try {
+      hook(path, kind, store)
+    } catch {
+      /* observation must never fail a render */
+    }
+  }
+
   const reg = (name: string, fn: (...a: any[]) => any): void => {
     const h = vm.newFunction(name, (...handles) => {
       try {
@@ -298,7 +338,10 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
         for (const k of Object.keys(store)) delete store[k]
         Object.assign(store, value)
       }
-    } else setPath(store, key, value)
+    } else {
+      setPath(store, key, value)
+      noteWrite(store, key, 'set')
+    }
     return undefined
   })
   reg('incvar', (key: any, value: any, opt: any) => {
@@ -306,6 +349,7 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     const cur = Number(getPath(store, key)) || 0
     const next = cur + (value === undefined ? 1 : Number(value))
     setPath(store, key, next)
+    noteWrite(store, key, 'set')
     return next
   })
   reg('decvar', (key: any, value: any, opt: any) => {
@@ -313,6 +357,7 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     const cur = Number(getPath(store, key)) || 0
     const next = cur - (value === undefined ? 1 : Number(value))
     setPath(store, key, next)
+    noteWrite(store, key, 'set')
     return next
   })
   reg('delvar', (key: any, opt: any) => {
@@ -321,6 +366,7 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
     let cur = store
     for (let i = 0; i < parts.length - 1; i++) cur = cur?.[parts[i]]
     if (cur) delete cur[parts[parts.length - 1]]
+    noteWrite(store, key, 'delete')
     return undefined
   })
 
