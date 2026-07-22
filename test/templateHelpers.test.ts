@@ -186,6 +186,120 @@ describe('templateService TH-3 helpers', () => {
     expect(evalTemplate('<%= faker.uuid().length %>', ctx())).toBe('36')
   })
 
+  // ST-Prompt-Template `setvar(key, value, { merge: true })`. The pattern that needs it: several
+  // world-info entries (one per DLC character) each write THEIR key into one shared variable. Without
+  // merge each `setvar` replaces the whole map, so only the last entry to render survives.
+  //
+  // Upstream documents the semantic as lodash `_.merge` BY NAME ("Whether to use merge to set the
+  // variable (_.merge)"), so these cases are pinned against observed lodash behaviour — element-wise
+  // array merge that keeps the target's tail, and `undefined` source values skipped — NOT against
+  // RPT's own `deepMerge` (which replaces arrays wholesale and stays the semantic for MVU layering).
+  describe('setvar { merge: true }', () => {
+    it('deep-merges into an existing object instead of replacing it', () => {
+      const c = ctx({ vars: {} })
+      evalTemplate(
+        "<% setLocalVar('visuals', { 艾琪奈夏: { url: 'a.png' } }, { merge: true }) %>" +
+          "<% setLocalVar('visuals', { 瓦德尔基奥萨: { url: 'b.png' } }, { merge: true }) %>",
+        c
+      )
+      expect(c.vars.visuals).toEqual({
+        艾琪奈夏: { url: 'a.png' },
+        瓦德尔基奥萨: { url: 'b.png' }
+      })
+    })
+
+    it('merges nested keys and lets the newer value win a collision', () => {
+      const write = "setvar('v', { a: { tint: 'new' }, b: 2 }"
+      const merged = ctx({ vars: { v: { a: { keep: 1, tint: 'old' } } } })
+      evalTemplate(`<% ${write}, { merge: true }) %>`, merged)
+      expect(merged.vars.v).toEqual({ a: { keep: 1, tint: 'new' }, b: 2 })
+      // The SAME write without the option replaces the subtree — `keep` is gone.
+      const replaced = ctx({ vars: { v: { a: { keep: 1, tint: 'old' } } } })
+      evalTemplate(`<% ${write}) %>`, replaced)
+      expect(replaced.vars.v).toEqual({ a: { tint: 'new' }, b: 2 })
+    })
+
+    it('merges at a NESTED path, resolved through the live store', () => {
+      // Guards the whole point of reading with getPath rather than store[key]: an implementation that
+      // only handled single-segment keys would degrade every nested merge to a wholesale replace.
+      const c = ctx({ vars: { ui: { visuals: { 艾琪奈夏: { url: 'a.png' } }, theme: 'dark' } } })
+      evalTemplate(
+        "<% setvar('ui.visuals', { 瓦德尔基奥萨: { url: 'b.png' } }, { merge: true }) %>",
+        c
+      )
+      expect(c.vars.ui).toEqual({
+        visuals: { 艾琪奈夏: { url: 'a.png' }, 瓦德尔基奥萨: { url: 'b.png' } },
+        theme: 'dark' // the sibling survives — the merge landed on the subtree, not on `ui`
+      })
+    })
+
+    it('merges through a bracketed (array-index) path segment', () => {
+      const c = ctx({ vars: { list: [{ meta: { keep: 1 } }] } })
+      evalTemplate("<% setvar('list[0].meta', { added: 2 }, { merge: true }) %>", c)
+      expect(c.vars.list).toEqual([{ meta: { keep: 1, added: 2 } }])
+    })
+
+    it('without merge, the last write still replaces (unchanged default)', () => {
+      const c = ctx({ vars: {} })
+      evalTemplate("<% setvar('visuals', { a: 1 }) %><% setvar('visuals', { b: 2 }) %>", c)
+      expect(c.vars.visuals).toEqual({ b: 2 })
+    })
+
+    it('falls back to a plain set when there is no container to merge into', () => {
+      const fresh = ctx({ vars: {} })
+      evalTemplate("<% setvar('n.deep', { a: 1 }, { merge: true }) %>", fresh)
+      expect(fresh.vars.n).toEqual({ deep: { a: 1 } }) // created, intermediates and all
+      const scalar = ctx({ vars: { n: 5 } })
+      evalTemplate("<% setvar('n', { a: 1 }, { merge: true }) %>", scalar)
+      expect(scalar.vars.n).toEqual({ a: 1 }) // upstream: "otherwise replaced"
+    })
+
+    it('merges arrays ELEMENT-WISE, keeping the target tail (_.merge, not a wholesale replace)', () => {
+      const c = ctx({ vars: { list: [1, 2, 3] } })
+      evalTemplate("<% setvar('list', [9], { merge: true }) %>", c)
+      expect(c.vars.list).toEqual([9, 2, 3])
+      const objs = ctx({ vars: { l: [{ a: 1 }, { b: 2 }] } })
+      evalTemplate("<% setvar('l', [{ c: 3 }], { merge: true }) %>", objs)
+      expect(objs.vars.l).toEqual([{ a: 1, c: 3 }, { b: 2 }])
+    })
+
+    it('skips undefined source values instead of writing them through (_.merge)', () => {
+      const c = ctx({ vars: { v: { keep: 1, tint: 'old' } } })
+      evalTemplate("<% setvar('v', { keep: undefined, tint: 'new' }, { merge: true }) %>", c)
+      expect(c.vars.v).toEqual({ keep: 1, tint: 'new' })
+    })
+
+    it('a mismatched source type replaces rather than merges', () => {
+      const c = ctx({ vars: { v: { a: { x: 1 } } } })
+      evalTemplate("<% setvar('v', { a: [1, 2] }, { merge: true }) %>", c)
+      expect(c.vars.v).toEqual({ a: [1, 2] }) // array source over an object target wins outright
+    })
+
+    it('reports the merged path to the write recorder, so build-time capture journals it', () => {
+      const writes: string[] = []
+      const c = ctx({ vars: { visuals: { a: 1 } }, onVarWrite: (p) => writes.push(p) })
+      evalTemplate("<% setLocalVar('visuals', { b: 2 }, { merge: true }) %>", c)
+      expect(writes).toEqual(['visuals'])
+      expect(c.vars.visuals).toEqual({ a: 1, b: 2 })
+    })
+
+    it('keyless setvar(null, …) merges instead of clearing when asked', () => {
+      const c = ctx({ vars: { keep: 1 } })
+      evalTemplate('<% setvar(null, { added: 2 }, { merge: true }) %>', c)
+      expect(c.vars).toEqual({ keep: 1, added: 2 })
+      evalTemplate('<% setvar(null, { only: 3 }) %>', c)
+      expect(c.vars).toEqual({ only: 3 }) // no merge → wholesale replace (unchanged)
+    })
+
+    it('keyless merge of an array splats indices onto the tree, exactly as _.merge does', () => {
+      // Degenerate but pinned: `_.merge({keep:1}, [7,8])` === `{keep:1, 0:7, 1:8}`. Faithfulness over
+      // tidiness — the engine's contract is upstream's behaviour, not what reads nicest.
+      const c = ctx({ vars: { keep: 1 } })
+      evalTemplate('<% setvar(null, [7, 8], { merge: true }) %>', c)
+      expect(c.vars).toEqual({ keep: 1, 0: 7, 1: 8 })
+    })
+  })
+
   // WS-1: the variable surface resolves a stat_data key whether read with the explicit `stat_data.`
   // prefix or bare (hoisted) — consistently, in every context. The store passed here is the WRAPPED
   // floor-vars shape ({ stat_data: {...} }) that all three callers now use.

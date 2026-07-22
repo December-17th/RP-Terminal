@@ -128,10 +128,10 @@ export const matchWorldInfo = (ctx: GenContext): LorebookEntry[] => {
 //     `setvar('x', 1)` while `x` is already `1`. Live assembly FORCES 1; without a journal row, replay
 //     after an earlier-floor edit keeps whatever it inherited.
 //  2. a snapshot/diff of `workingVars` across assembly. Still load-bearing, for ONE known writer the
-//     hook cannot describe: the engine's keyless wholesale replace `setvar(null, {…})`
-//     (templateEngine.ts:334-345) clears the store and `Object.assign`s a new object — there is no
-//     path to report, so only a diff can see it (and the deletions it implies). Keep the diff until
-//     that branch reports.
+//     hook cannot describe: the engine's KEYLESS `setvar(null, {…})` (templateEngine's `setvar`
+//     binding), which rewrites the store wholesale — clear + `Object.assign`, or a deep merge into it
+//     under `{ merge: true }`. Either shape reports no path, so only a diff can see it (and the
+//     deletions the replacing shape implies). Keep the diff until that branch reports.
 //
 // Replay applies the resulting `'template'` operations BEFORE the model fold
 // (FloorState.computeFloorSuffix) — the live order (assembly first, model turn second).
