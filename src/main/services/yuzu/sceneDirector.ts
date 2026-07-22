@@ -6,15 +6,8 @@ import { log } from '../logService'
 import { AgentCatalog } from '../agentRuntime/catalog'
 import { invocationRuntime } from '../agentRuntime/InvocationRuntimeService'
 import { parseAnnotatedFloor } from '../../../shared/yuzu/annotatedFloor'
+import { rosterFromStatData } from '../../../shared/worldAssets/coverage'
 import { buildDirectorInput, buildDirectorPrompt } from './directorPrompt'
-
-const relationshipActors = (floor: FloorFile): string[] => {
-  const statData = floor.variables?.stat_data
-  if (!statData || typeof statData !== 'object' || Array.isArray(statData)) return []
-  const relationships = (statData as Record<string, unknown>)['关系列表']
-  if (!relationships || typeof relationships !== 'object' || Array.isArray(relationships)) return []
-  return Object.keys(relationships as Record<string, unknown>)
-}
 
 /** Run the bound scene director once after the raw narrator floor has committed. Every failure is fail-open. */
 export const runYuzuSceneDirector = async (
@@ -36,17 +29,22 @@ export const runYuzuSceneDirector = async (
       (agent.effective.result.mode !== 'text' ||
         agent.effective.result.validator !== 'yuzu-annotated-floor')
     ) return floor
+    // Actors the run knows about but no lorebook declares — the 主角 + every 关系列表 key of the
+    // COMMITTED floor, so anyone the narrator just introduced is stageable on the same turn. Shared
+    // with the Assets coverage grid so the roster shape is read in exactly one place; tolerant of a
+    // malformed stat_data (yields no names rather than throwing).
+    const genericActors = rosterFromStatData(floor.variables?.stat_data)
     const input = buildDirectorInput(
       gen.profileId,
       gen.lorebookIds,
       floor.response.content,
-      relationshipActors(floor)
+      genericActors
     )
     const prompt = buildDirectorPrompt(
       gen.profileId,
       gen.lorebookIds,
       floor.response.content,
-      relationshipActors(floor)
+      genericActors
     )
     const outcome = await invocationRuntime().run({
       profileId: gen.profileId,

@@ -1133,10 +1133,9 @@ const en: Record<string, string> = {
   'agentRuns.status.failed': 'Failed',
   'agentRuns.status.cancelled': 'Cancelled',
   'agentRuns.status.degraded': 'Degraded',
-  // Yuzu full-card takeover surface — escape control + failure fallback.
-  'yuzu.surface.exit': 'Exit',
-  'yuzu.surface.exitTitle': 'Leave the card view and return to the classic workspace',
-  'yuzu.surface.loadError': 'This card view could not be started. It may be untrusted or failed to load — use Exit to return to the classic workspace.',
+  // Yuzu full-card takeover surface — failure fallback. The takeover covers only the region BELOW the
+  // top strip, so the escapes this names stay reachable even when the native card view paints an error.
+  'yuzu.surface.loadError': 'This card view could not be started. It may be untrusted or failed to load — use "Back to worlds" in the top bar, or grant this world access under Settings → Scripts.',
 
   'status.waiting': 'Waiting for session...',
   'status.heading': 'RPG Status',

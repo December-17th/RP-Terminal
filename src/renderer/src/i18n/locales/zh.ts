@@ -1098,10 +1098,9 @@ const zh: Record<string, string> = {
   'agentRuns.status.failed': '失败',
   'agentRuns.status.cancelled': '已取消',
   'agentRuns.status.degraded': '已降级',
-  // Yuzu 全屏卡片界面 —— 退出控件与失败兜底。
-  'yuzu.surface.exit': '退出',
-  'yuzu.surface.exitTitle': '退出卡片界面，返回经典工作区',
-  'yuzu.surface.loadError': '无法启动此卡片界面，可能未被信任或加载失败——请点击「退出」返回经典工作区。',
+  // Yuzu 全屏卡片界面 —— 失败兜底。接管只覆盖顶栏以下的区域，因此即使原生卡片视图报错，
+  // 这里提到的退路依然可用。
+  'yuzu.surface.loadError': '无法启动此卡片界面，可能未被信任或加载失败——请使用顶栏的「返回世界列表」，或在「设置 → 脚本」中为该世界授予权限。',
 
   'status.waiting': '等待会话…',
   'status.heading': 'RPG 状态',

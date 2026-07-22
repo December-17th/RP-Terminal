@@ -82,4 +82,12 @@ describe('Yuzu scene-director prompt', () => {
     expect(prompt).toContain('- 无立绘角色')
     expect(prompt).not.toContain('无立绘角色\n  -')
   })
+
+  it('keeps a lorebook actor’s expressions when the same name also arrives as a generic actor', () => {
+    const prompt = buildDirectorPrompt('p', ['first'], '正文', ['柚子', '无立绘角色'])
+    const actors = prompt.match(
+      /【全部可用角色与表情开始】\n([\s\S]*?)\n【全部可用角色与表情结束】/
+    )?.[1]
+    expect(actors).toBe('- 无立绘角色\n- 枫\n  - 惊讶\n- 柚子\n  - 微笑')
+  })
 })
