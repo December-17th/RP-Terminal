@@ -5,7 +5,10 @@ import * as characterService from '../services/characterService'
 import * as settingsService from '../services/settingsService'
 import { CharacterImportText, getCharacterImportText } from './characterImportText'
 import { gate } from './ipcGuards'
-import type { CharacterImportDialogResult } from '../../shared/characterImport'
+import type {
+  CharacterImportDialogResult,
+  CharacterAgentResolutions
+} from '../../shared/characterImport'
 
 interface PendingCharacterImport {
   profileId: string
@@ -19,10 +22,10 @@ const pendingCharacterImports = new Map<string, PendingCharacterImport>()
 
 const applyPendingImport = (
   pending: PendingCharacterImport,
-  agentRenames: Record<string, string> = {},
+  agentResolutions: CharacterAgentResolutions = {},
   isContinuation = false
 ): CharacterImportDialogResult => {
-  const options = { agentRenames }
+  const options = { agentResolutions }
   const result =
     pending.mode === 'update'
       ? characterService.updateCharacterInPlace(
@@ -217,12 +220,12 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
     'confirm-character-import',
     gate(
       'confirm-character-import',
-      (_, token: string, agentRenames: Record<string, string>) => {
+      (_, token: string, agentResolutions: CharacterAgentResolutions) => {
         const pending = pendingCharacterImports.get(token)
         if (!pending) {
           return { status: 'failed', errorCode: 'REQUEST_EXPIRED' }
         }
-        const result = applyPendingImport(pending, agentRenames, true)
+        const result = applyPendingImport(pending, agentResolutions, true)
         if (result.status === 'imported') pendingCharacterImports.delete(token)
         return result
       }

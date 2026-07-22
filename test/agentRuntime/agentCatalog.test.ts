@@ -347,4 +347,82 @@ describe('AgentCatalog', () => {
       expect(() => catalog.create(importedAgent('Authored'))).toThrowError(AgentCatalogError)
     })
   })
+
+  describe('reconcileCardSource collision resolutions', () => {
+    const codeOf = (fn: () => unknown): string | undefined => {
+      try {
+        fn()
+        return undefined
+      } catch (error) {
+        return error instanceof AgentCatalogError ? error.code : 'not-catalog-error'
+      }
+    }
+
+    it('skip: leaves the existing Agent untouched, installs nothing, and re-collides on reimport', () => {
+      const catalog = new AgentCatalog('p')
+      const existing = catalog.create(textAgent('Shared', 'user'))
+
+      const result = catalog.reconcileCardSource('card-s', '1', [textAgent('Shared', 'card')], {
+        Shared: { action: 'skip' }
+      })
+      expect(result.skipped).toEqual(['Shared'])
+      expect(result.replaced).toEqual([])
+      expect(result.installed).toEqual([])
+
+      const shared = catalog.get('Shared')!
+      expect(shared.id).toBe(existing.id)
+      expect(shared.source.kind).toBe('user-created')
+
+      // Skip is not remembered — a later reimport collides again.
+      const inspection = catalog.validateCardSource('card-s', '2', [textAgent('Shared', 'card2')])
+      expect(inspection.collisions.map((collision) => collision.incomingName)).toEqual(['Shared'])
+    })
+
+    it('replace: overwrites in place (same id), resets customizations, and keeps role bindings', () => {
+      const catalog = new AgentCatalog('p')
+      const existing = catalog.create(textAgent('Narrator', 'user version'))
+      catalog.edit(existing.id, textAgent('Narrator', 'customized'))
+      catalog.bindRole('classic.narrator', existing.id)
+      expect(catalog.get(existing.id)?.customized).toBe(true)
+
+      const result = catalog.reconcileCardSource(
+        'card-r',
+        '1',
+        [textAgent('Narrator', 'card version')],
+        { Narrator: { action: 'replace' } }
+      )
+      expect(result.replaced).toEqual(['Narrator'])
+      expect(result.installed).toEqual([])
+
+      const replaced = catalog.get('Narrator')!
+      expect(replaced.id).toBe(existing.id)
+      expect(replaced.source).toMatchObject({ kind: 'card', key: 'card-r', version: '1' })
+      expect(replaced.effective.prompt[0].content).toEqual([{ type: 'text', text: 'card version' }])
+      expect(replaced.customized).toBe(false)
+      expect(replaced.invocationConfig).toEqual({})
+      // The binding referenced the surviving id, so it now names the replacement Agent.
+      expect(catalog.getRoleBindings()['classic.narrator']).toBe('Narrator')
+    })
+
+    it('replace on a built-in Agent throws REPLACE_BUILTIN (no writes)', () => {
+      const catalog = new AgentCatalog('p')
+      expect(
+        codeOf(() =>
+          catalog.reconcileCardSource('card-b', '1', [textAgent('Memory Maintenance', 'card')], {
+            'Memory Maintenance': { action: 'replace' }
+          })
+        )
+      ).toBe('REPLACE_BUILTIN')
+      // The built-in is unchanged.
+      expect(catalog.get('Memory Maintenance')?.source.kind).toBe('builtin')
+    })
+
+    it('an unresolved collision still throws MISSING_RENAME', () => {
+      const catalog = new AgentCatalog('p')
+      catalog.create(textAgent('Shared', 'user'))
+      expect(
+        codeOf(() => catalog.reconcileCardSource('card-m', '1', [textAgent('Shared', 'card')]))
+      ).toBe('MISSING_RENAME')
+    })
+  })
 })

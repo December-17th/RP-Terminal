@@ -9,7 +9,10 @@ import type {
   CardAgentToolExecution,
   CardFloorCommit
 } from '../shared/agentRuntime'
-import type { CharacterImportDialogResult } from '../shared/characterImport'
+import type {
+  CharacterImportDialogResult,
+  CharacterAgentResolutions
+} from '../shared/characterImport'
 
 // Custom APIs for renderer
 const api = {
@@ -35,9 +38,9 @@ const api = {
     ipcRenderer.invoke('import-character-dialog', profileId),
   confirmCharacterImport: (
     token: string,
-    agentRenames: Record<string, string>
+    agentResolutions: CharacterAgentResolutions
   ): Promise<CharacterImportDialogResult> =>
-    ipcRenderer.invoke('confirm-character-import', token, agentRenames),
+    ipcRenderer.invoke('confirm-character-import', token, agentResolutions),
   cancelCharacterImport: (token: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('cancel-character-import', token),
   exportCharacterDialog: (profileId: string, characterId: string) =>

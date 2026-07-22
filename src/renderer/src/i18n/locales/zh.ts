@@ -9,10 +9,19 @@ const zh: Record<string, string> = {
   'nav.lorebook': '世界书',
   'nav.assets': '素材',
   'characterImport.cartridgeWarning': '卡片面板未安装：{{error}}',
-  'characterImport.agentRenameTitle': '重命名导入的智能体',
-  'characterImport.agentRenameDetail': '这些智能体名称已被使用。请为下列每个导入智能体选择唯一名称。',
+  'characterImport.agentRenameTitle': '处理导入的智能体',
+  'characterImport.agentRenameDetail':
+    '这些智能体名称已被使用。请为每一项选择：重命名导入的智能体、跳过，或替换现有智能体。',
   'characterImport.agentRenameLabel': '导入的“{{incoming}}”与现有“{{existing}}”冲突',
+  'characterImport.agentRenamePlaceholder': '新的唯一名称',
   'characterImport.agentRenameConfirm': '继续导入',
+  'characterImport.agentActionRename': '重命名',
+  'characterImport.agentActionSkip': '跳过',
+  'characterImport.agentActionReplace': '替换',
+  'characterImport.agentSkipHint': '将不安装导入的智能体，现有智能体保持不变。',
+  'characterImport.agentReplaceWarning':
+    '替换“{{existing}}”并删除其智能体运行历史，聊天记录将保留。',
+  'characterImport.agentReplaceBuiltinDisabled': '内置智能体无法被替换。',
   'characterImport.error.INVALID_RENAMES':
     '部分智能体重命名缺失或名称已被占用。请为每个智能体选择唯一名称。',
   'characterImport.error.IMPORT_FAILED': '无法导入所选卡片。',

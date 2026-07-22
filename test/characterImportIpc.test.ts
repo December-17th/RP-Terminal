@@ -1,28 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const hoisted = vi.hoisted(() => ({
-  importCharacter: vi.fn((_profileId: string, _file: string, _assets: unknown, options: any) =>
-    options.agentRenames?.Shared === 'Unique'
-      ? {
-          id: 'new-card',
-          summary: {
-            name: 'World',
-            isWorldCard: false,
-            regexScripts: 0,
-            loreEntries: 0,
-            scripts: 0,
-            uiWidgets: 0,
-            presets: 0,
-            lorebooks: 0,
-            workflows: 0,
-            tableTemplates: 0,
-            pluginsSkipped: 0,
-            assetsImported: 0
-          }
-        }
-      : null
-  )
-}))
+const hoisted = vi.hoisted(() => {
+  const importedResult = {
+    id: 'new-card',
+    summary: {
+      name: 'World',
+      isWorldCard: false,
+      regexScripts: 0,
+      loreEntries: 0,
+      scripts: 0,
+      uiWidgets: 0,
+      presets: 0,
+      lorebooks: 0,
+      workflows: 0,
+      tableTemplates: 0,
+      pluginsSkipped: 0,
+      assetsImported: 0
+    }
+  }
+  return {
+    importCharacter: vi.fn((_profileId: string, _file: string, _assets: unknown, options: any) => {
+      // Faithful to characterService: a resolution is valid when it renames to a free name, skips, or
+      // replaces. (The `Unique` rename target stands in for "a free name"; `Taken`/same-name is rejected.)
+      const resolution = options.agentResolutions?.Shared
+      const ok =
+        (resolution?.action === 'rename' && resolution.newName === 'Unique') ||
+        resolution?.action === 'skip' ||
+        resolution?.action === 'replace'
+      return ok ? importedResult : null
+    })
+  }
+})
 
 vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: () => ({}) },
@@ -54,7 +62,9 @@ vi.mock('../src/main/services/characterService', () => ({
   hasBundle: () => false,
   characterAgentImportInspection: () => ({
     incomingAgents: ['Shared'],
-    collisions: [{ incomingName: 'Shared', existing: { id: 'existing', name: 'Shared' } }],
+    collisions: [
+      { incomingName: 'Shared', existing: { id: 'existing', name: 'Shared', builtin: false } }
+    ],
     requiredRenames: ['Shared']
   }),
   importCharacterFromFile: hoisted.importCharacter,
@@ -96,10 +106,54 @@ describe('character Agent collision IPC continuation', () => {
     })
 
     expect(
-      handlers.get('confirm-character-import')!(event, inspection.token, { Shared: 'Shared' })
+      handlers.get('confirm-character-import')!(event, inspection.token, {
+        Shared: { action: 'rename', newName: 'Shared' }
+      })
     ).toMatchObject({ status: 'invalid-renames', errorCode: 'INVALID_RENAMES' })
     expect(
-      handlers.get('confirm-character-import')!(event, inspection.token, { Shared: 'Unique' })
+      handlers.get('confirm-character-import')!(event, inspection.token, {
+        Shared: { action: 'rename', newName: 'Unique' }
+      })
+    ).toMatchObject({ status: 'imported', id: 'new-card' })
+  })
+
+  it('imports via a skip resolution', async () => {
+    const inspection = await handlers.get('import-character-dialog')!(event, 'profile')
+    const result = handlers.get('confirm-character-import')!(event, inspection.token, {
+      Shared: { action: 'skip' }
+    })
+    expect(result).toMatchObject({ status: 'imported', id: 'new-card' })
+    expect(hoisted.importCharacter).toHaveBeenCalledWith(
+      'profile',
+      expect.anything(),
+      undefined,
+      expect.objectContaining({ agentResolutions: { Shared: { action: 'skip' } } })
+    )
+  })
+
+  it('imports via a replace resolution', async () => {
+    const inspection = await handlers.get('import-character-dialog')!(event, 'profile')
+    expect(
+      handlers.get('confirm-character-import')!(event, inspection.token, {
+        Shared: { action: 'replace' }
+      })
+    ).toMatchObject({ status: 'imported', id: 'new-card' })
+  })
+
+  it('keeps the token retryable when the service rejects a resolution (e.g. replace on a built-in)', async () => {
+    const inspection = await handlers.get('import-character-dialog')!(event, 'profile')
+    // Simulate the service rejecting this resolution (reconcile throws REPLACE_BUILTIN → null).
+    hoisted.importCharacter.mockImplementationOnce(() => null)
+    expect(
+      handlers.get('confirm-character-import')!(event, inspection.token, {
+        Shared: { action: 'replace' }
+      })
+    ).toMatchObject({ status: 'invalid-renames', errorCode: 'INVALID_RENAMES' })
+    // The token survives, so a follow-up valid resolution still imports.
+    expect(
+      handlers.get('confirm-character-import')!(event, inspection.token, {
+        Shared: { action: 'skip' }
+      })
     ).toMatchObject({ status: 'imported', id: 'new-card' })
   })
 
@@ -109,7 +163,9 @@ describe('character Agent collision IPC continuation', () => {
       await handlers.get('cancel-character-import')!(event, inspection.token)
     ).toEqual({ ok: true })
     expect(
-      handlers.get('confirm-character-import')!(event, inspection.token, { Shared: 'Unique' })
+      handlers.get('confirm-character-import')!(event, inspection.token, {
+        Shared: { action: 'rename', newName: 'Unique' }
+      })
     ).toMatchObject({ status: 'failed', errorCode: 'REQUEST_EXPIRED' })
     expect(hoisted.importCharacter).not.toHaveBeenCalled()
   })

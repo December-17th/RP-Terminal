@@ -14,7 +14,7 @@ declare global {
       ) => Promise<import('../shared/characterImport').CharacterImportDialogResult | null>
       confirmCharacterImport: (
         token: string,
-        agentRenames: Record<string, string>
+        agentResolutions: import('../shared/characterImport').CharacterAgentResolutions
       ) => Promise<import('../shared/characterImport').CharacterImportDialogResult>
       cancelCharacterImport: (token: string) => Promise<{ ok: boolean }>
       getRuntimeScripts: (

@@ -767,3 +767,20 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
 }
 
 export const agentRunStore = createAgentRunStore()
+
+/**
+ * Delete every Agent run row for `agentName` in one already-open session DB, returning the number of rows
+ * removed. Used when a card import REPLACES a colliding catalog Agent (the old Agent's run history is
+ * discarded while chat history is kept). The match is case-insensitive to mirror the catalog's NOCASE
+ * name uniqueness. `agentName` lives at the top level of the persisted record JSON (never a redacted key),
+ * so the json_extract filter is exact. This is a raw, db-scoped helper: callers pass the session handle
+ * (e.g. from `getSessionDb`) and own the loop over a profile's chats.
+ */
+export const deleteByAgentNameInDb = (db: Database.Database, agentName: string): number => {
+  const info = db
+    .prepare(
+      "DELETE FROM agent_runs WHERE LOWER(json_extract(record, '$.agentName')) = LOWER(?)"
+    )
+    .run(agentName)
+  return info.changes
+}

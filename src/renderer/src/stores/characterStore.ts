@@ -7,7 +7,10 @@ import { useChatStore } from './chatStore'
 import { useUiStore } from './uiStore'
 import { t } from '../i18n'
 import { characterImportErrorMessage } from '../i18n/errorMessages'
-import type { CharacterImportDialogResult } from '../../../shared/characterImport'
+import type {
+  CharacterImportDialogResult,
+  CharacterAgentResolutions
+} from '../../../shared/characterImport'
 
 type AgentCollisionResult = Extract<
   CharacterImportDialogResult,
@@ -26,7 +29,7 @@ interface CharacterState {
   setActiveCharacter: (char: CharacterCard) => void
   importCharacter: (profileId: string) => Promise<void>
   pendingAgentImport: (AgentCollisionResult & { profileId: string }) | null
-  confirmAgentImport: (renames: Record<string, string>) => Promise<void>
+  confirmAgentImport: (resolutions: CharacterAgentResolutions) => Promise<void>
   cancelAgentImport: () => Promise<void>
   exportCharacter: (profileId: string, characterId: string) => Promise<void>
   importMockCharacter: (profileId: string) => Promise<void>
@@ -118,10 +121,10 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     if (res.status === 'imported') await finishCharacterImport(profileId, res, set)
     else useToastStore.getState().push(characterImportErrorMessage(t, res.errorCode))
   },
-  confirmAgentImport: async (renames) => {
+  confirmAgentImport: async (resolutions) => {
     const pending = get().pendingAgentImport
     if (!pending) return
-    const res = await window.api.confirmCharacterImport(pending.token, renames)
+    const res = await window.api.confirmCharacterImport(pending.token, resolutions)
     if (res.status === 'imported') await finishCharacterImport(pending.profileId, res, set)
     else useToastStore.getState().push(characterImportErrorMessage(t, res.errorCode))
   },

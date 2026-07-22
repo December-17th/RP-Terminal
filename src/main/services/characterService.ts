@@ -20,6 +20,7 @@ import { parseStPng, extractAppendedZip } from '../parsers/stPngParser'
 import { importAssetsZip } from './worldAssetService'
 import { installCartridgeCode, deleteCardCode } from './cardCodeService'
 import { deleteChatFully, chatIdsForCharacter } from './chatDeleteService'
+import type { CharacterAgentResolutions } from '../../shared/characterImport'
 
 const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
 export const getAvatarPath = (characterId: string): string =>
@@ -472,7 +473,7 @@ export interface CardAgentHooks {
     roleRecommendations: Partial<
       Record<'classic.narrator' | 'yuzu.sceneDirector', string>
     >,
-    incomingRenames: Record<string, string>
+    resolutions: CharacterAgentResolutions
   ) => CardAgentCollision[]
   installAgents: (
     profileId: string,
@@ -482,7 +483,7 @@ export interface CardAgentHooks {
     roleRecommendations: Partial<
       Record<'classic.narrator' | 'yuzu.sceneDirector', string>
     >,
-    incomingRenames: Record<string, string>
+    resolutions: CharacterAgentResolutions
   ) => void
   replaceAgents: (
     profileId: string,
@@ -493,18 +494,19 @@ export interface CardAgentHooks {
     roleRecommendations: Partial<
       Record<'classic.narrator' | 'yuzu.sceneDirector', string>
     >,
-    incomingRenames: Record<string, string>
+    resolutions: CharacterAgentResolutions
   ) => void
   removeAgents: (profileId: string, characterId: string, purge?: boolean) => void
 }
 
 export interface CardAgentCollision {
   incomingName: string
-  existing: { id: string; name: string }
+  existing: { id: string; name: string; builtin: boolean }
 }
 
 export interface CharacterAgentImportOptions {
-  agentRenames?: Record<string, string>
+  /** Per-collision resolutions (rename/skip/replace) keyed by the colliding incoming agent name. */
+  agentResolutions?: CharacterAgentResolutions
   /** Existing card source whose Agents should reconcile during a destructive replacement. */
   previousCharacterId?: string
 }
@@ -519,7 +521,7 @@ export const inspectCharacterAgentCollisions = (
   profileId: string,
   characterId: string,
   card: RPTerminalCard,
-  incomingRenames: Record<string, string> = {}
+  resolutions: CharacterAgentResolutions = {}
 ): CardAgentCollision[] => {
   const rpt = getRpExt(card)
   return (
@@ -529,9 +531,19 @@ export const inspectCharacterAgentCollisions = (
       card.data.character_version || '1',
       rpt?.agents ?? [],
       rpt?.agent_role_recommendations ?? {},
-      incomingRenames
+      resolutions
     ) ?? []
   )
+}
+
+/** A collision is unresolved when it has no resolution, or a rename with a blank name (skip/replace
+ *  are always resolved). Mirrors the catalog's `isResolved`; kept local to avoid a shared-helper import. */
+const collisionUnresolved = (
+  resolutions: CharacterAgentResolutions | undefined,
+  incomingName: string
+): boolean => {
+  const resolution = resolutions?.[incomingName]
+  return !resolution || (resolution.action === 'rename' && !resolution.newName.trim())
 }
 
 export const inspectCharacterAgentImport = (
@@ -597,7 +609,7 @@ const installBundleArtifacts = (
   opts: {
     installExtraLorebooks: boolean
     installTableTemplates: boolean
-    agentRenames?: Record<string, string>
+    agentResolutions?: CharacterAgentResolutions
     agentsAlreadyInstalled?: boolean
   }
 ): BundleCounts => {
@@ -609,7 +621,7 @@ const installBundleArtifacts = (
       card.data.character_version || '1',
       rpt?.agents ?? [],
       rpt?.agent_role_recommendations ?? {},
-      opts.agentRenames ?? {}
+      opts.agentResolutions ?? {}
     )
   }
 
@@ -775,9 +787,9 @@ export const importCharacterFromFile = (
       profileId,
       options.previousCharacterId ?? newId,
       card,
-      options.agentRenames ?? {}
+      options.agentResolutions ?? {}
     )
-    if (collisions.some(({ incomingName }) => !options.agentRenames?.[incomingName]?.trim())) {
+    if (collisions.some(({ incomingName }) => collisionUnresolved(options.agentResolutions, incomingName))) {
       return null
     }
     getDb().transaction(() => {
@@ -792,7 +804,7 @@ export const importCharacterFromFile = (
           card.data.character_version || '1',
           rpt?.agents ?? [],
           rpt?.agent_role_recommendations ?? {},
-          options.agentRenames ?? {}
+          options.agentResolutions ?? {}
         )
       } else {
         cardAgentHooks?.installAgents(
@@ -801,7 +813,7 @@ export const importCharacterFromFile = (
           card.data.character_version || '1',
           rpt?.agents ?? [],
           rpt?.agent_role_recommendations ?? {},
-          options.agentRenames ?? {}
+          options.agentResolutions ?? {}
         )
       }
     })()
@@ -809,7 +821,7 @@ export const importCharacterFromFile = (
     const counts = installBundleArtifacts(profileId, newId, card, filePath, assetZipPath, {
       installExtraLorebooks: true,
       installTableTemplates: true,
-      agentRenames: options.agentRenames,
+      agentResolutions: options.agentResolutions,
       agentsAlreadyInstalled: true
     })
     return { id: newId, summary: buildImportSummary(parsed, counts) }
@@ -853,9 +865,9 @@ export const updateCharacterInPlace = (
       profileId,
       characterId,
       card,
-      options.agentRenames ?? {}
+      options.agentResolutions ?? {}
     )
-    if (collisions.some(({ incomingName }) => !options.agentRenames?.[incomingName]?.trim())) {
+    if (collisions.some(({ incomingName }) => collisionUnresolved(options.agentResolutions, incomingName))) {
       return null
     }
 
@@ -869,7 +881,7 @@ export const updateCharacterInPlace = (
         card.data.character_version || '1',
         rpt?.agents ?? [],
         rpt?.agent_role_recommendations ?? {},
-        options.agentRenames ?? {}
+        options.agentResolutions ?? {}
       )
     })()
 
@@ -892,7 +904,7 @@ export const updateCharacterInPlace = (
     const counts = installBundleArtifacts(profileId, characterId, card, filePath, assetZipPath, {
       installExtraLorebooks: false,
       installTableTemplates: false,
-      agentRenames: options.agentRenames,
+      agentResolutions: options.agentResolutions,
       agentsAlreadyInstalled: true
     })
     return { id: characterId, summary: buildImportSummary(parsed, counts) }

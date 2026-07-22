@@ -22,6 +22,7 @@ import {
   AgentCatalog,
   AgentCatalogError
 } from '../../src/main/services/agentRuntime/catalog/AgentCatalog'
+import { getSessionDb, closeAll } from '../../src/main/services/sessionDbService'
 
 const profileId = 'profile'
 const textAgent = (name: string, prompt: string) => ({
@@ -54,6 +55,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  closeAll() // close cached session-DB handles (Windows file locks) before removing the tmp dir
   closeDb()
   fs.rmSync(tmp, { recursive: true, force: true })
 })
@@ -107,14 +109,14 @@ describe('card Agent Catalog bridge', () => {
     expect(inspectCharacterAgentImport(profileId, file)).toEqual([
       expect.objectContaining({
         incomingName: 'Shared',
-        existing: expect.objectContaining({ name: 'Shared' })
+        existing: expect.objectContaining({ name: 'Shared', builtin: false })
       })
     ])
     expect(importCharacterFromFile(profileId, file)).toBeNull()
     catalog.create(textAgent('Taken Rename', 'user'))
     expect(
       importCharacterFromFile(profileId, file, undefined, {
-        agentRenames: { Shared: 'Taken Rename' }
+        agentResolutions: { Shared: { action: 'rename', newName: 'Taken Rename' } }
       })
     ).toBeNull()
     expect(
@@ -122,7 +124,7 @@ describe('card Agent Catalog bridge', () => {
     ).toEqual({ n: 0 })
 
     const imported = importCharacterFromFile(profileId, file, undefined, {
-      agentRenames: { Shared: 'Card Shared' }
+      agentResolutions: { Shared: { action: 'rename', newName: 'Card Shared' } }
     })
     expect(imported).not.toBeNull()
     expect(catalog.get('Card Shared')?.source.key).toBe(imported!.id)
@@ -152,6 +154,75 @@ describe('card Agent Catalog bridge', () => {
     expect(agent.effective.modelHint).toBe('gpt-preview')
     // A legitimate override still rides through.
     expect(agent.effective.defaults.maxRetryAttempts).toBe(9)
+  })
+
+  const seedChatWithRun = (chatId: string, agentName: string): void => {
+    getDb()
+      .prepare(
+        'INSERT INTO chats (id, profile_id, character_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+      )
+      .run(chatId, profileId, 'world', 'now', 'now')
+    getSessionDb(profileId, chatId)
+      .prepare(
+        `INSERT INTO agent_runs (invocation_id, chat_id, floor, status, started_at, record)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        `${chatId}-run`,
+        chatId,
+        1,
+        'succeeded',
+        'now',
+        JSON.stringify({ invocationId: `${chatId}-run`, agentName })
+      )
+  }
+
+  it('threads a skip resolution: imports the card without installing the colliding Agent', () => {
+    const catalog = new AgentCatalog(profileId)
+    const existing = catalog.create(textAgent('Shared', 'user'))
+    const file = writeCard(card('1', [textAgent('Shared', 'card'), textAgent('Fresh', 'card')]))
+
+    const imported = importCharacterFromFile(profileId, file, undefined, {
+      agentResolutions: { Shared: { action: 'skip' } }
+    })
+    expect(imported).not.toBeNull()
+    // The existing Agent is untouched (same id, still user-created), the skipped card Agent never installs.
+    const shared = catalog.get('Shared')!
+    expect(shared.id).toBe(existing.id)
+    expect(shared.source.kind).toBe('user-created')
+    // A non-colliding card Agent from the same card still installs.
+    expect(catalog.get('Fresh')?.source.key).toBe(imported!.id)
+  })
+
+  it('threads a replace resolution: overwrites in place (same id) and purges the old run history', () => {
+    const catalog = new AgentCatalog(profileId)
+    const existing = catalog.create(textAgent('Shared', 'user'))
+    seedChatWithRun('chat-a', 'Shared')
+    seedChatWithRun('chat-b', 'Other')
+    const file = writeCard(card('1', [textAgent('Shared', 'card')]))
+
+    const imported = importCharacterFromFile(profileId, file, undefined, {
+      agentResolutions: { Shared: { action: 'replace' } }
+    })
+    expect(imported).not.toBeNull()
+
+    const shared = catalog.get('Shared')!
+    // Same row id (role bindings survive), now a card-source Agent for the imported card.
+    expect(shared.id).toBe(existing.id)
+    expect(shared.source).toMatchObject({ kind: 'card', key: imported!.id })
+    expect(shared.effective.prompt[0].content).toEqual([{ type: 'text', text: 'card' }])
+
+    // The replaced Agent's run history is gone; an unrelated Agent's run survives.
+    const countRuns = (chatId: string, agentName: string): number =>
+      (
+        getSessionDb(profileId, chatId)
+          .prepare(
+            "SELECT COUNT(*) AS n FROM agent_runs WHERE json_extract(record, '$.agentName') = ?"
+          )
+          .get(agentName) as { n: number }
+      ).n
+    expect(countRuns('chat-a', 'Shared')).toBe(0)
+    expect(countRuns('chat-b', 'Other')).toBe(1)
   })
 
   it('reconciles same-card Agents during destructive replace instead of self-colliding', () => {

@@ -9,6 +9,10 @@ import {
 } from '../../../../shared/agentRuntime'
 import { getDb } from '../../db'
 import { BUILTIN_AGENTS } from './builtins'
+import type {
+  CharacterAgentResolutions,
+  CharacterAgentCollisionResolution
+} from '../../../../shared/characterImport'
 
 export type AgentSourceKind = 'builtin' | 'user-created' | 'user-imported' | 'card'
 /** Defined in the shared contracts so the renderer can name roles; re-exported for existing callers. */
@@ -73,6 +77,14 @@ export interface PackageInstallResult {
   roleRecommendations: Partial<Record<AgentRole, string>>
 }
 
+export interface CardReconcileResult extends PackageInstallResult {
+  /** Final agent names that overwrote an existing colliding agent in place (Replace resolution). Callers
+   *  use these to purge the replaced agents' run history. */
+  replaced: string[]
+  /** Incoming agent names the user chose to skip (not installed; existing agent untouched). */
+  skipped: string[]
+}
+
 export interface CardSourceInspection extends PackageInspection {
   retained: Array<{ agent: CatalogAgent; incoming: AgentDefinition }>
   added: AgentDefinition[]
@@ -125,6 +137,7 @@ export class AgentCatalogError extends Error {
       | 'INVALID_DEFINITION'
       | 'NAME_COLLISION'
       | 'MISSING_RENAME'
+      | 'REPLACE_BUILTIN'
       | 'NOT_FOUND'
       | 'SOURCE_BACKED'
       | 'ROLE_BOUND'
@@ -235,6 +248,24 @@ const parseDefinition = (raw: unknown): AgentDefinition => {
  */
 const parseImportedDefinition = (raw: unknown): AgentDefinition =>
   parseDefinition(neutralizeImportedPreset(raw))
+
+/** A collision is resolved once the user picks skip, replace, or a rename with a non-blank name. */
+const isResolved = (resolution: CharacterAgentCollisionResolution | undefined): boolean =>
+  !!resolution &&
+  (resolution.action === 'skip' ||
+    resolution.action === 'replace' ||
+    (resolution.action === 'rename' && !!resolution.newName.trim()))
+
+/** The trimmed rename target for `name`, or undefined when the resolution is not a (non-blank) rename. */
+const resolutionRenamedName = (
+  resolutions: CharacterAgentResolutions,
+  name: string
+): string | undefined => {
+  const resolution = resolutions[name]
+  return resolution?.action === 'rename' && resolution.newName.trim()
+    ? resolution.newName.trim()
+    : undefined
+}
 
 const validateSource = (source: AgentSource): void => {
   if (
@@ -406,53 +437,18 @@ export class AgentCatalog {
     sourceKey: string,
     version: string,
     agents: unknown[],
-    incomingRenames: Record<string, string> = {},
+    resolutions: CharacterAgentResolutions = {},
     roleRecommendations: Partial<Record<AgentRole, string>> = {}
   ): CardSourceInspection {
     const inspection = this.inspectCardSource(sourceKey, version, agents)
     const unresolved = inspection.collisions.filter(
-      ({ incomingName }) => !incomingRenames[incomingName]?.trim()
+      ({ incomingName }) => !isResolved(resolutions[incomingName])
     )
     if (unresolved.length) return inspection
 
-    const additions = inspection.added.map((definition) =>
-      parseDefinition({ ...definition, name: incomingRenames[definition.name] ?? definition.name })
-    )
-    const finalNames = new Set<string>()
-    for (const definition of additions) {
-      const key = normalizeAgentName(definition.name)
-      if (finalNames.has(key) || this.get(definition.name)) {
-        throw new AgentCatalogError(
-          'NAME_COLLISION',
-          `Agent Name "${definition.name}" is already in use`
-        )
-      }
-      finalNames.add(key)
-    }
-    const retainedNames = new Map(
-      inspection.retained.map(({ agent, incoming }) => [incoming.name, agent.name])
-    )
-    const retainedDefinitions = new Map(
-      inspection.retained.map(({ agent, incoming }) => [
-        normalizeAgentName(agent.name),
-        incoming
-      ])
-    )
-    for (const [role, sourceName] of Object.entries(roleRecommendations) as Array<
-      [AgentRole, string]
-    >) {
-      const name = retainedNames.get(sourceName) ?? incomingRenames[sourceName] ?? sourceName
-      const definition =
-        additions.find((agent) => normalizeAgentName(agent.name) === normalizeAgentName(name)) ??
-        retainedDefinitions.get(normalizeAgentName(name)) ??
-        this.get(name)?.effective
-      if (!definition || !isRoleCompatible(role, definition)) {
-        throw new AgentCatalogError(
-          'INCOMPATIBLE_ROLE',
-          `Role recommendation ${role} does not name a compatible Agent`
-        )
-      }
-    }
+    const plan = this.planCardSource(inspection, resolutions)
+    // Throws INCOMPATIBLE_ROLE if a recommendation no longer names a compatible Agent post-resolution.
+    this.computeRoleRecommendations(inspection, plan, resolutions, roleRecommendations)
     return inspection
   }
 
@@ -460,66 +456,27 @@ export class AgentCatalog {
     sourceKey: string,
     version: string,
     agents: unknown[],
-    incomingRenames: Record<string, string> = {},
+    resolutions: CharacterAgentResolutions = {},
     roleRecommendations: Partial<Record<AgentRole, string>> = {}
-  ): PackageInstallResult {
+  ): CardReconcileResult {
     const inspection = this.validateCardSource(
       sourceKey,
       version,
       agents,
-      incomingRenames,
+      resolutions,
       roleRecommendations
     )
-    for (const collision of inspection.collisions) {
-      if (!incomingRenames[collision.incomingName]?.trim()) {
-        throw new AgentCatalogError(
-          'MISSING_RENAME',
-          `Incoming Agent "${collision.incomingName}" must be renamed before import`,
-          inspection.collisions
-        )
-      }
-    }
-    const additions = inspection.added.map((definition) =>
-      parseDefinition({ ...definition, name: incomingRenames[definition.name] ?? definition.name })
+    // `planCardSource` re-throws MISSING_RENAME / REPLACE_BUILTIN / NAME_COLLISION on an unresolved or
+    // invalid resolution map (validateCardSource returns early — without planning — when collisions are
+    // still unresolved, so this second call is what enforces the map on the install path).
+    const plan = this.planCardSource(inspection, resolutions)
+    const recommendations = this.computeRoleRecommendations(
+      inspection,
+      plan,
+      resolutions,
+      roleRecommendations
     )
-    const finalNames = new Set<string>()
-    for (const definition of additions) {
-      const key = normalizeAgentName(definition.name)
-      if (finalNames.has(key) || this.get(definition.name)) {
-        throw new AgentCatalogError(
-          'NAME_COLLISION',
-          `Agent Name "${definition.name}" is already in use`
-        )
-      }
-      finalNames.add(key)
-    }
-    const retainedNames = new Map(
-      inspection.retained.map(({ agent, incoming }) => [incoming.name, agent.name])
-    )
-    const retainedDefinitions = new Map(
-      inspection.retained.map(({ agent, incoming }) => [
-        normalizeAgentName(agent.name),
-        incoming
-      ])
-    )
-    const recommendations = Object.fromEntries(
-      Object.entries(roleRecommendations).map(([role, name]) => [
-        role,
-        retainedNames.get(name) ?? incomingRenames[name] ?? name
-      ])
-    ) as Partial<Record<AgentRole, string>>
-    for (const [role, name] of Object.entries(recommendations) as Array<[AgentRole, string]>) {
-      const definition =
-        additions.find((agent) => normalizeAgentName(agent.name) === normalizeAgentName(name)) ??
-        retainedDefinitions.get(normalizeAgentName(name)) ??
-        this.get(name)?.effective
-      if (!definition || !isRoleCompatible(role, definition)) {
-        throw new AgentCatalogError(
-          'INCOMPATIBLE_ROLE',
-          `Role recommendation ${role} does not name a compatible Agent`
-        )
-      }
-    }
+    const source: AgentSource = { kind: 'card', key: sourceKey, version }
 
     return this.database.transaction(() => {
       const now = new Date().toISOString()
@@ -539,11 +496,15 @@ export class AgentCatalog {
           WHERE profile_id = ? AND id = ?`
       )
       for (const agent of inspection.removed) markMissing.run(now, this.profileId, agent.id)
+      // Replace: overwrite the existing colliding row in place, keeping its id (so role bindings survive).
+      for (const { existingId, definition } of plan.replaces) {
+        this.overwriteWithCardAgent(existingId, definition, source)
+      }
       return {
-        installed: additions.map((definition) =>
-          this.insert(definition, { kind: 'card', key: sourceKey, version }, true)
-        ),
-        roleRecommendations: recommendations
+        installed: plan.inserts.map((definition) => this.insert(definition, source, true)),
+        roleRecommendations: recommendations,
+        replaced: plan.replacedNames,
+        skipped: plan.skipped
       }
     })()
   }
@@ -553,15 +514,15 @@ export class AgentCatalog {
     sourceKey: string,
     version: string,
     agents: unknown[],
-    incomingRenames: Record<string, string> = {},
+    resolutions: CharacterAgentResolutions = {},
     roleRecommendations: Partial<Record<AgentRole, string>> = {}
-  ): PackageInstallResult {
+  ): CardReconcileResult {
     return this.database.transaction(() => {
       const result = this.reconcileCardSource(
         previousSourceKey,
         version,
         agents,
-        incomingRenames,
+        resolutions,
         roleRecommendations
       )
       this.database
@@ -850,6 +811,178 @@ export class AgentCatalog {
           WHERE profile_id = ? AND source_kind = 'card' AND source_key = ?`
       )
       .run(new Date().toISOString(), this.profileId, sourceKey)
+  }
+
+  /**
+   * Turn a card-source inspection + the user's per-collision resolutions into a concrete plan:
+   * which added agents to insert (non-colliding or renamed), which existing agents to overwrite in place
+   * (replace), and which incoming agents to skip. Throws the typed errors the IPC retry path surfaces:
+   *  - MISSING_RENAME  — a collision has no resolution (or a blank rename),
+   *  - REPLACE_BUILTIN — a replace targets a built-in Agent,
+   *  - NAME_COLLISION  — a final name duplicates another planned name or an unrelated existing Agent.
+   */
+  private planCardSource(
+    inspection: CardSourceInspection,
+    resolutions: CharacterAgentResolutions
+  ): {
+    inserts: AgentDefinition[]
+    replaces: Array<{ existingId: string; definition: AgentDefinition; finalName: string }>
+    skipped: string[]
+    replacedNames: string[]
+  } {
+    const collisionByName = new Map(
+      inspection.collisions.map((collision) => [collision.incomingName, collision.existing])
+    )
+    const retainedIds = new Set(inspection.retained.map(({ agent }) => agent.id))
+    for (const collision of inspection.collisions) {
+      const resolution = resolutions[collision.incomingName]
+      if (!isResolved(resolution)) {
+        throw new AgentCatalogError(
+          'MISSING_RENAME',
+          `Incoming Agent "${collision.incomingName}" must be resolved before import`,
+          inspection.collisions
+        )
+      }
+      if (resolution!.action === 'replace' && collision.existing.source.kind === 'builtin') {
+        throw new AgentCatalogError(
+          'REPLACE_BUILTIN',
+          `Built-in Agent "${collision.existing.name}" cannot be replaced by an imported Agent`,
+          inspection.collisions
+        )
+      }
+      if (resolution!.action === 'replace' && retainedIds.has(collision.existing.id)) {
+        throw new AgentCatalogError(
+          'NAME_COLLISION',
+          `Agent Name "${collision.incomingName}" is already in use`
+        )
+      }
+    }
+
+    const inserts: AgentDefinition[] = []
+    const replaces: Array<{ existingId: string; definition: AgentDefinition; finalName: string }> = []
+    const skipped: string[] = []
+    for (const added of inspection.added) {
+      const existing = collisionByName.get(added.name)
+      if (!existing) {
+        inserts.push(parseDefinition(added))
+        continue
+      }
+      const resolution = resolutions[added.name]!
+      if (resolution.action === 'skip') {
+        skipped.push(added.name)
+      } else if (resolution.action === 'rename') {
+        inserts.push(parseDefinition({ ...added, name: resolution.newName.trim() }))
+      } else {
+        const definition = parseDefinition(added)
+        replaces.push({ existingId: existing.id, definition, finalName: definition.name })
+      }
+    }
+
+    const replacedIds = new Set(replaces.map((replace) => replace.existingId))
+    const finalNames = new Set<string>()
+    for (const definition of inserts) {
+      const key = normalizeAgentName(definition.name)
+      const collision = this.get(definition.name)
+      if (finalNames.has(key) || (collision && !replacedIds.has(collision.id))) {
+        throw new AgentCatalogError(
+          'NAME_COLLISION',
+          `Agent Name "${definition.name}" is already in use`
+        )
+      }
+      finalNames.add(key)
+    }
+    for (const { finalName } of replaces) {
+      const key = normalizeAgentName(finalName)
+      if (finalNames.has(key)) {
+        throw new AgentCatalogError('NAME_COLLISION', `Agent Name "${finalName}" is already in use`)
+      }
+      finalNames.add(key)
+    }
+
+    return { inserts, replaces, skipped, replacedNames: replaces.map((replace) => replace.finalName) }
+  }
+
+  /** Resolve card role recommendations against the resolution plan; throws INCOMPATIBLE_ROLE if a
+   *  recommendation no longer names an enabled, role-compatible Agent. Returns the final role→name map. */
+  private computeRoleRecommendations(
+    inspection: CardSourceInspection,
+    plan: {
+      inserts: AgentDefinition[]
+      replaces: Array<{ existingId: string; definition: AgentDefinition; finalName: string }>
+    },
+    resolutions: CharacterAgentResolutions,
+    roleRecommendations: Partial<Record<AgentRole, string>>
+  ): Partial<Record<AgentRole, string>> {
+    const retainedNames = new Map(
+      inspection.retained.map(({ agent, incoming }) => [incoming.name, agent.name])
+    )
+    const retainedDefinitions = new Map(
+      inspection.retained.map(({ agent, incoming }) => [normalizeAgentName(agent.name), incoming])
+    )
+    const plannedDefinitions = new Map<string, AgentDefinition>()
+    for (const definition of plan.inserts) {
+      plannedDefinitions.set(normalizeAgentName(definition.name), definition)
+    }
+    for (const { definition } of plan.replaces) {
+      plannedDefinitions.set(normalizeAgentName(definition.name), definition)
+    }
+    const recommendations = Object.fromEntries(
+      Object.entries(roleRecommendations).map(([role, name]) => [
+        role,
+        retainedNames.get(name) ?? resolutionRenamedName(resolutions, name) ?? name
+      ])
+    ) as Partial<Record<AgentRole, string>>
+    for (const [role, name] of Object.entries(recommendations) as Array<[AgentRole, string]>) {
+      const definition =
+        plannedDefinitions.get(normalizeAgentName(name)) ??
+        retainedDefinitions.get(normalizeAgentName(name)) ??
+        this.get(name)?.effective
+      if (!definition || !isRoleCompatible(role, definition)) {
+        throw new AgentCatalogError(
+          'INCOMPATIBLE_ROLE',
+          `Role recommendation ${role} does not name a compatible Agent`
+        )
+      }
+    }
+    return recommendations
+  }
+
+  /**
+   * Overwrite an existing catalog row so it becomes a fresh card Agent for `source`, KEEPING its id
+   * (and thus any role bindings). Mirrors {@link insert}'s column writes: baseline/available/effective all
+   * come from `definition`, customizations reset to empty, invocation config reset to `{}`, and the row is
+   * (re-)enabled. `created_at` is deliberately left untouched.
+   */
+  private overwriteWithCardAgent(
+    id: string,
+    definition: AgentDefinition,
+    source: AgentSource
+  ): void {
+    validateSource(source)
+    this.database
+      .prepare(
+        `UPDATE agent_catalog
+            SET name = ?, name_key = ?, source_kind = ?, source_key = ?, source_version = ?,
+                source_present = 1, available_source_version = ?, available_definition = ?,
+                baseline_definition = ?, customization_ops = '[]', effective_definition = ?,
+                effective_hash = ?, invocation_config = '{}', enabled = 1, updated_at = ?
+          WHERE profile_id = ? AND id = ?`
+      )
+      .run(
+        definition.name,
+        normalizeAgentName(definition.name),
+        source.kind,
+        source.key,
+        source.version,
+        source.version,
+        JSON.stringify(definition),
+        JSON.stringify(definition),
+        JSON.stringify(definition),
+        hashDefinition(definition),
+        new Date().toISOString(),
+        this.profileId,
+        id
+      )
   }
 
   private seedBuiltins(): void {

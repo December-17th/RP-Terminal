@@ -481,7 +481,16 @@ explicitly out-of-contract.)
 the full `extensions` object (lossless), detects `world_card`, collects bundled regex from
 `extensions.regex_scripts`, installs `rp_terminal.agents[]` into the profile Agent Catalog
 ([`cardAgentCatalogBridge.ts`](../../src/main/services/cardAgentCatalogBridge.ts)), and imports
-`rp_terminal.table_templates[]` through the chatSheets/native template parser. (The former
+`rp_terminal.table_templates[]` through the chatSheets/native template parser. When a bundled Agent's
+name collides with an existing catalog Agent, the import pauses for a per-collision resolution
+([`CharacterAgentResolutions`](../../src/shared/characterImport.ts), surfaced by
+[`CharacterAgentRenameModal.tsx`](../../src/renderer/src/components/CharacterAgentRenameModal.tsx)):
+**rename** the incoming Agent to a free name, **skip** it (leave the existing Agent untouched, install
+nothing), or **replace** the existing Agent in place — the incoming Agent overwrites the colliding row
+keeping its id (so role bindings survive) and the old Agent's run history (`agent_runs`) is deleted while
+chat history is kept. Replace is disallowed for built-in Agents
+([`AgentCatalog.reconcileCardSource`](../../src/main/services/agentRuntime/catalog/AgentCatalog.ts) throws
+`REPLACE_BUILTIN`). (The former
 `rp_terminal.workflows[]` import path was removed with the workflow runtime — ADR 0020; the key is
 preserved but inert.) Table templates remain reusable library artifacts. Re-importing a matching card
 offers three explicit paths: **update** preserves the existing world id and sessions while replacing

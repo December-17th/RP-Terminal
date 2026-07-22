@@ -7,12 +7,22 @@ const en: Record<string, string> = {
   'nav.lorebook': 'Lorebook',
   'nav.assets': 'Assets',
   'characterImport.cartridgeWarning': 'Card panels not installed: {{error}}',
-  'characterImport.agentRenameTitle': 'Rename imported Agents',
+  'characterImport.agentRenameTitle': 'Resolve imported Agents',
   'characterImport.agentRenameDetail':
-    'These Agent names are already in use. Choose a unique name for every imported Agent listed below.',
+    'These Agent names are already in use. For each one, choose whether to rename the imported Agent, skip it, or replace the existing Agent.',
   'characterImport.agentRenameLabel':
     'Incoming “{{incoming}}” conflicts with existing “{{existing}}”',
+  'characterImport.agentRenamePlaceholder': 'New unique name',
   'characterImport.agentRenameConfirm': 'Continue import',
+  'characterImport.agentActionRename': 'Rename',
+  'characterImport.agentActionSkip': 'Skip',
+  'characterImport.agentActionReplace': 'Replace',
+  'characterImport.agentSkipHint':
+    'The imported Agent will not be installed. The existing Agent is left unchanged.',
+  'characterImport.agentReplaceWarning':
+    'Replaces “{{existing}}” and deletes its Agent run history. Chat history is kept.',
+  'characterImport.agentReplaceBuiltinDisabled':
+    'A built-in Agent cannot be replaced.',
   'characterImport.error.INVALID_RENAMES':
     'Some Agent renames are missing or already in use. Choose a unique name for each Agent.',
   'characterImport.error.IMPORT_FAILED': 'The selected card could not be imported.',

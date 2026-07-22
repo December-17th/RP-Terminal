@@ -6,6 +6,7 @@ import Adapter from '../mocks/betterSqlite3Node'
 import { SESSION_SCHEMA } from '../../src/main/services/sessionDbService'
 import {
   createAgentRunStore,
+  deleteByAgentNameInDb,
   type AgentRunStart
 } from '../../src/main/services/agentRuntime/runs/AgentRunStore'
 import { AgentCatalog } from '../../src/main/services/agentRuntime/catalog/AgentCatalog'
@@ -128,6 +129,22 @@ describe('AgentRunStore', () => {
     expect(Object.isFrozen(store.list('c1')[0].contracts)).toBe(true)
     expect(() => Object.assign(stored, { status: 'failed' })).toThrow()
     expect(record.status).toBe('running')
+  })
+
+  it('deleteByAgentNameInDb removes only the named Agent runs, case-insensitively', () => {
+    store.create({ ...start('run-a'), definition: { ...definition, name: 'Alpha' } })
+    store.create({ ...start('run-a2'), definition: { ...definition, name: 'Alpha' } })
+    store.create({ ...start('run-b'), definition: { ...definition, name: 'Beta' } })
+
+    // Case-insensitive match (catalog names are NOCASE-unique): 'alpha' hits the 'Alpha' runs.
+    const removed = deleteByAgentNameInDb(db as never, 'alpha')
+    expect(removed).toBe(2)
+
+    const remaining = db.prepare('SELECT COUNT(*) AS n FROM agent_runs').get() as { n: number }
+    expect(remaining.n).toBe(1)
+    expect(store.list('c1').map((run) => run.agentName)).toEqual(['Beta'])
+    // Deleting an absent name is a no-op.
+    expect(deleteByAgentNameInDb(db as never, 'Gamma')).toBe(0)
   })
 
   it('remains interpretable after its Catalog snapshot is edited and deleted', () => {
