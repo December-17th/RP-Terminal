@@ -55,3 +55,32 @@ describe('sandbox runScript', () => {
     expect(r.ok).toBe(false)
   })
 })
+
+describe('sandbox runScript — processorMode time determinism', () => {
+  it('does not leak the __Date helper into processor scope', () => {
+    const r = runScript<string>(mod, {
+      code: 'return typeof __Date',
+      processorMode: true
+    })
+    expect(r.ok).toBe(true)
+    expect(r.result).toBe('undefined')
+  })
+
+  it('freezes the constructor route (new Date(...).constructor.now())', () => {
+    const r = runScript<number>(mod, {
+      code: 'return new Date(12345).constructor.now()',
+      processorMode: true
+    })
+    expect(r.ok).toBe(true)
+    expect(r.result).toBe(0)
+  })
+
+  it('freezes the clock but passes through explicit Date args', () => {
+    const r = runScript<number[]>(mod, {
+      code: 'return [Date.now(), new Date().getTime(), new Date(500).getTime()]',
+      processorMode: true
+    })
+    expect(r.ok).toBe(true)
+    expect(r.result).toEqual([0, 0, 500])
+  })
+})

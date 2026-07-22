@@ -6,7 +6,7 @@ import { log } from '../logService'
 import { AgentCatalog } from '../agentRuntime/catalog'
 import { invocationRuntime } from '../agentRuntime/InvocationRuntimeService'
 import { parseAnnotatedFloor } from '../../../shared/yuzu/annotatedFloor'
-import { buildDirectorPrompt } from './directorPrompt'
+import { buildDirectorInput, buildDirectorPrompt } from './directorPrompt'
 
 /** Run the bound scene director once after the raw narrator floor has committed. Every failure is fail-open. */
 export const runYuzuSceneDirector = async (
@@ -20,6 +20,15 @@ export const runYuzuSceneDirector = async (
     if (!binding) return floor
     const agent = catalog.get(binding)
     if (!agent?.enabled) return floor
+    const portableProcessing =
+      agent.effective?.formatVersion === 2 &&
+      (!!agent.effective.processing?.preprocess || !!agent.effective.processing?.postprocess)
+    if (
+      portableProcessing &&
+      (agent.effective.result.mode !== 'text' ||
+        agent.effective.result.validator !== 'yuzu-annotated-floor')
+    ) return floor
+    const input = buildDirectorInput(gen.profileId, gen.lorebookIds, floor.response.content)
     const prompt = buildDirectorPrompt(gen.profileId, gen.lorebookIds, floor.response.content)
     const outcome = await invocationRuntime().run({
       profileId: gen.profileId,
@@ -27,21 +36,36 @@ export const runYuzuSceneDirector = async (
       floor: floor.floor,
       agent: agent.name,
       options: {
+        ...(portableProcessing ? { input } : {}),
         required: false,
         maxSteps: 1,
-        maxRetryAttempts: 0,
+        ...(!portableProcessing ? { maxRetryAttempts: 0 } : {}),
         ...(agent.invocationConfig.apiPresetId
           ? { apiPresetId: agent.invocationConfig.apiPresetId }
           : {})
       },
-      promptOverride: [{ role: 'system', content: [{ type: 'text', text: prompt }] }],
-      acceptRawTextResult: true,
+      ...(!portableProcessing
+        ? {
+            promptOverride: [{ role: 'system' as const, content: [{ type: 'text' as const, text: prompt }] }],
+            acceptRawTextResult: true
+          }
+        : {
+            yssVocabulary: {
+              locations: new Set(input.assetVocabulary.locations),
+              actors: new Set(Object.keys(input.assetVocabulary.actors)),
+              expressions: new Set(Object.values(input.assetVocabulary.actors).flat()),
+              cgs: new Set<string>(),
+              audio: new Set<string>()
+            }
+          }),
       restartOnSourceChange: false,
       skipResultIncorporation: true,
       signal: ctx.modelSignal ?? ctx.signal
     })
     if (outcome.status !== 'succeeded' || typeof outcome.result !== 'string') return floor
-    if (!parseAnnotatedFloor(outcome.result)) return floor
+    if (outcome.processingWarnings?.some((warning) => warning.phase === 'postprocess')) return floor
+    const gameText = /<gametxt>([\s\S]*?)<\/gametxt>/.exec(outcome.result)?.[1]
+    if (!(gameText ? parseAnnotatedFloor(gameText) : parseAnnotatedFloor(outcome.result))) return floor
     return (
       updateActiveFloorResponse(gen.profileId, gen.chatId, floor.floor, outcome.result) ?? floor
     )

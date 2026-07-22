@@ -35,6 +35,7 @@ export type BundleKind =
   | 'uiWidgets'
   | 'tableTemplates'
   | 'pluginsSkipped'
+  | 'scriptedAgents'
 
 const englishKinds: Record<BundleKind, string> = {
   loreEntries: 'lore entries',
@@ -45,7 +46,8 @@ const englishKinds: Record<BundleKind, string> = {
   cardCodeSurfaces: 'card-code UI surfaces',
   uiWidgets: 'UI widgets',
   tableTemplates: 'memory table templates',
-  pluginsSkipped: 'plugins (skipped — not yet supported)'
+  pluginsSkipped: 'plugins (skipped — not yet supported)',
+  scriptedAgents: 'scripted Agents'
 }
 
 const english: CharacterImportText = {
@@ -93,7 +95,8 @@ const chineseKinds: Record<BundleKind, string> = {
   scripts: '个角色卡脚本',
   uiWidgets: '个界面组件',
   tableTemplates: '个记忆表模板',
-  pluginsSkipped: '个插件（已跳过，暂不支持）'
+  pluginsSkipped: '个插件（已跳过，暂不支持）',
+  scriptedAgents: '个带处理脚本的智能体'
 }
 
 const chinese: CharacterImportText = {

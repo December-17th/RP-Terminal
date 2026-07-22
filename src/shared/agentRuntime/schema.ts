@@ -101,7 +101,7 @@ const PromptSchema = z.array(PromptMessageSchema).min(1)
 const TextResultContractSchema = z.strictObject({
   mode: z.literal('text'),
   saveAs: ResultSlotPathSchema.optional(),
-  validator: z.literal('yss').optional()
+  validator: z.enum(['yss', 'yuzu-annotated-floor']).optional()
 })
 
 const JsonResultContractSchema = z.strictObject({
@@ -112,6 +112,28 @@ const JsonResultContractSchema = z.strictObject({
 
 const ToolsOnlyResultContractSchema = z.strictObject({
   mode: z.literal('tools-only')
+})
+
+const ProcessorTextOutputSchema = z.strictObject({
+  mode: z.literal('text')
+})
+
+const ProcessorJsonOutputSchema = z.strictObject({
+  mode: z.literal('json'),
+  schema: JsonSchemaSchema
+})
+
+const ProcessorOutputSchema = z.discriminatedUnion('mode', [
+  ProcessorTextOutputSchema,
+  ProcessorJsonOutputSchema
+])
+
+const PreprocessorSchema = z.strictObject({ code: z.string() })
+const PostprocessorSchema = z.strictObject({ code: z.string(), output: ProcessorOutputSchema })
+const ProcessingSchema = z.strictObject({
+  runtime: z.literal('rpt-processor-v1'),
+  preprocess: PreprocessorSchema.optional(),
+  postprocess: PostprocessorSchema.optional()
 })
 
 const ResultContractSchema = z.discriminatedUnion('mode', [
@@ -228,9 +250,8 @@ const AgentTriggerSchema = z.strictObject({
   })
 })
 
-const RawAgentDefinitionSchema = z.strictObject({
+const AgentDefinitionFields = {
   format: z.literal('rpt-agent'),
-  formatVersion: z.literal(1),
   name: NonEmptyStringSchema,
   description: NonEmptyStringSchema.optional(),
   prompt: PromptSchema,
@@ -241,7 +262,16 @@ const RawAgentDefinitionSchema = z.strictObject({
   modelHint: NonEmptyStringSchema.optional(),
   trigger: AgentTriggerSchema.optional(),
   defaults: AgentDefaultsSchema
-})
+}
+
+const RawAgentDefinitionSchema = z.discriminatedUnion('formatVersion', [
+  z.strictObject({ ...AgentDefinitionFields, formatVersion: z.literal(1) }),
+  z.strictObject({
+    ...AgentDefinitionFields,
+    formatVersion: z.literal(2),
+    processing: ProcessingSchema.optional()
+  })
+])
 
 /**
  * Owner API-preset policy for IMPORTED Agents. An Agent imported from a card or a `.rptagent` file must
@@ -491,6 +521,9 @@ export function parseAgentDefinition(raw: unknown): AgentContractResult<AgentDef
     )
   }
   if (value.result.mode === 'json') addSchemaErrors(value.result.schema, ['result', 'schema'])
+  if (value.formatVersion === 2 && value.processing?.postprocess?.output.mode === 'json') {
+    addSchemaErrors(value.processing.postprocess.output.schema, ['processing', 'postprocess', 'output', 'schema'])
+  }
 
   const toolNames = new Map<string, number>()
   for (const [index, tool] of value.tools.entries()) {
@@ -537,6 +570,16 @@ export function parseAgentDefinition(raw: unknown): AgentContractResult<AgentDef
         'TOOLS_REQUIRED',
         'a tools-only Result Contract requires at least one declared tool',
         ['result', 'mode'],
+        { kind: 'agent', agent: value.name }
+      )
+    )
+  }
+  if (value.result.mode === 'tools-only' && value.formatVersion === 2 && value.processing?.postprocess) {
+    errors.push(
+      contractError(
+        'POSTPROCESS_RESULT_REQUIRED',
+        'a tools-only Result Contract cannot declare postprocess',
+        ['processing', 'postprocess'],
         { kind: 'agent', agent: value.name }
       )
     )

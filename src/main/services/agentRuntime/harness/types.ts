@@ -25,6 +25,8 @@ import type { StagedToolOperation, ToolExecutionScope, ToolRegistry } from '../t
 export interface HarnessExecuteRequest {
   definition: AgentDefinition
   input: JsonObject
+  /** Input was validated (or deliberately fallen through) by a v2 preprocessor. */
+  inputProcessed?: boolean
   profileId: string
   /** Main-derived mounted-card scope for resolving live card Tool Bindings. */
   toolScope?: ToolExecutionScope

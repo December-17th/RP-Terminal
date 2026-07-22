@@ -20,6 +20,7 @@ export interface AgentCatalogSummary {
   sourcePresent: boolean
   enabled: boolean
   customized: boolean
+  scripted: boolean
   upgradeAvailable: boolean
   blocksNextTurn: boolean
   resultMode: 'text' | 'json' | 'tools-only'

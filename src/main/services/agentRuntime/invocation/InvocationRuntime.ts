@@ -18,6 +18,12 @@ import {
 import type { HarnessRunRequest } from '../runs'
 import type { AgentRunReplayOutcome } from '../../../../shared/agentRuntime'
 import type { ToolExecutionScope } from '../tools'
+import type { SceneVocabulary } from '../../../../shared/yuzu/sceneSchema'
+import {
+  runPostprocessor,
+  runPreprocessor,
+  type ProcessingWarning
+} from '../processing'
 
 export const INVOCATION_DEFAULTS = {
   required: true,
@@ -40,6 +46,10 @@ export interface InvocationHarnessPort {
     invocationId: string,
     failure: HarnessFailure,
     replay?: AgentRunReplayOutcome
+  ): void
+  attachProcessing?(
+    invocationId: string,
+    processing: NonNullable<import('../../../../shared/agentRuntime').AgentRunRecord['processing']>
   ): void
   stop(invocationId: string): boolean
   shutdown?(): void
@@ -129,6 +139,8 @@ export interface InvocationRequest {
   promptOverride?: AgentDefinition['prompt']
   /** Main-internal result-contract substitution for a caller-owned deterministic parser. */
   acceptRawTextResult?: boolean
+  /** Main-owned vocabulary for a yss Result Contract. */
+  yssVocabulary?: SceneVocabulary
   /** Main-internal opt-out when a stale presentation result must fail instead of sampling again. */
   restartOnSourceChange?: boolean
   /** Main-internal read-only result path: record the run but discard every stateful consequence. */
@@ -144,6 +156,7 @@ export interface InvocationSuccess {
   result: JsonValue | undefined
   sourceRestarts: number
   required: boolean
+  processingWarnings?: ProcessingWarning[]
 }
 
 export interface InvocationFailure {
@@ -380,6 +393,10 @@ export const createInvocationRuntime = ({
         }
       | undefined
     let required: boolean = INVOCATION_DEFAULTS.required
+    let rawInput: JsonObject | undefined
+    let processedInput: JsonObject | undefined
+    let preprocessLogs: string[] = []
+    const processingWarnings: ProcessingWarning[] = []
     const detachedPresentation =
       item.request.acceptRawTextResult === true &&
       item.request.skipResultIncorporation === true &&
@@ -461,6 +478,22 @@ export const createInvocationRuntime = ({
           }
         }
 
+        const hasPreprocessor =
+          resolvedAgent.effective.formatVersion === 2 &&
+          resolvedAgent.effective.processing?.preprocess !== undefined
+        // Preprocess is per-source-snapshot: ordinary/corrective retries reuse the same snapshot
+        // object (identity match) and its processed input; a source restart resolves a fresh
+        // snapshot object, so the identity differs and the preprocessor re-runs against it.
+        if (!hasPreprocessor || processedInput === undefined || rawInput !== source.input) {
+          const stalePreprocessWarning = processingWarnings.findIndex((w) => w.phase === 'preprocess')
+          if (stalePreprocessWarning >= 0) processingWarnings.splice(stalePreprocessWarning, 1)
+          rawInput = source.input
+          const preprocessing = await runPreprocessor(resolvedAgent.effective, rawInput)
+          processedInput = preprocessing.value
+          preprocessLogs = preprocessing.logs
+          if (preprocessing.warning) processingWarnings.push(preprocessing.warning)
+        }
+
         const attemptController = new AbortController()
         item.attemptController = attemptController
         item.stale = false
@@ -489,7 +522,8 @@ export const createInvocationRuntime = ({
               version: resolvedAgent.source.version,
               hash: resolvedAgent.effectiveHash
             },
-            input: source.input,
+            input: processedInput,
+            ...(hasPreprocessor ? { inputProcessed: true } : {}),
             ...(item.request.toolScope ? { toolScope: item.request.toolScope } : {}),
             options: corrective
               ? { ...harnessInvocationOptions(item.request.options), maxRetryAttempts: 0 }
@@ -503,6 +537,7 @@ export const createInvocationRuntime = ({
             ...(prompt?.prompt ? { prompt: prompt.prompt } : {}),
             ...(prompt?.warnings?.length ? { warnings: prompt.warnings } : {}),
             ...(item.request.acceptRawTextResult ? { acceptRawTextResult: true } : {}),
+            ...(item.request.yssVocabulary ? { yssVocabulary: item.request.yssVocabulary } : {}),
             signal: attemptController.signal,
             ...(corrective
               ? {
@@ -623,6 +658,64 @@ export const createInvocationRuntime = ({
           } as InvocationOutcome
         }
 
+
+        const validatedModelResult = execution.result
+        const postprocessing = await runPostprocessor(
+          resolvedAgent.effective,
+          execution.result,
+          rawInput,
+          processedInput
+        )
+        if (postprocessing.warning) {
+          const maximumRetries =
+            item.request.options?.maxRetryAttempts ??
+            resolvedAgent.effective.defaults.maxRetryAttempts ??
+            INVOCATION_DEFAULTS.maxRetryAttempts
+          if (retryAttemptsConsumed < maximumRetries) {
+            const lastAttempt = execution.evidence.attempts.at(-1)
+            if (lastAttempt) {
+              lastAttempt.outcome = 'retry'
+              lastAttempt.error = {
+                code: postprocessing.warning.code,
+                message: postprocessing.warning.message,
+                retryable: true
+              }
+              lastAttempt.rejectedOutput =
+                execution.result === undefined ? '' : JSON.stringify(execution.result)
+            }
+            retryAttemptsConsumed += 1
+            const delayMs =
+              item.request.options?.retryDelayMs ??
+              resolvedAgent.effective.defaults.retryDelayMs ??
+              INVOCATION_DEFAULTS.retryDelayMs
+            await waitForRetry(delayMs, item.controller.signal)
+            corrective = {
+              source,
+              rejectedOutput: execution.result === undefined ? '' : JSON.stringify(execution.result),
+              failure: {
+                code: postprocessing.warning.code,
+                message: postprocessing.warning.message,
+                retryable: true
+              },
+              reservedRetry: true
+            }
+            continue
+          }
+          processingWarnings.push(postprocessing.warning)
+        }
+        execution = { ...execution, result: postprocessing.value }
+        if (resolvedAgent.effective.formatVersion === 2 && resolvedAgent.effective.processing) {
+          harness.attachProcessing?.(item.invocationId, {
+            rawInput,
+            processedInput,
+            ...(validatedModelResult !== undefined ? { validatedModelResult } : {}),
+            ...(execution.result !== undefined ? { finalResult: execution.result } : {}),
+            preprocessLogs,
+            postprocessLogs: postprocessing.logs,
+            warnings: processingWarnings
+          })
+        }
+
         if (item.request.skipResultIncorporation) {
           harness.commitSuccess?.(item.invocationId, execution, {
             status: 'discarded',
@@ -633,7 +726,8 @@ export const createInvocationRuntime = ({
             status: 'succeeded',
             result: execution.result,
             sourceRestarts,
-            required
+            required,
+            ...(processingWarnings.length ? { processingWarnings } : {})
           }
         }
 
@@ -756,7 +850,8 @@ export const createInvocationRuntime = ({
           status: 'succeeded',
           result: execution.result,
           sourceRestarts,
-          required
+          required,
+          ...(processingWarnings.length ? { processingWarnings } : {})
         }
       }
       return cancelled(item.invocationId, required, sourceRestarts)

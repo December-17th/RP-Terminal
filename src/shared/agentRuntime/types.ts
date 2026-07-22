@@ -35,9 +35,34 @@ export interface PromptMessage {
 }
 
 export type ResultContract =
-  | { mode: 'text'; saveAs?: ResultSlotPath; validator?: 'yss' }
+  | { mode: 'text'; saveAs?: ResultSlotPath; validator?: 'yss' | 'yuzu-annotated-floor' }
   | { mode: 'json'; schema: JsonSchema; saveAs?: ResultSlotPath }
   | { mode: 'tools-only' }
+
+export type ProcessorOutputContract =
+  | { mode: 'text' }
+  | { mode: 'json'; schema: JsonSchema }
+
+export interface AgentPreprocessor {
+  code: string
+}
+
+export interface AgentPostprocessor {
+  code: string
+  output: ProcessorOutputContract
+}
+
+export interface AgentProcessing {
+  runtime: 'rpt-processor-v1'
+  preprocess?: AgentPreprocessor
+  postprocess?: AgentPostprocessor
+}
+
+export interface AgentProcessingWarning {
+  phase: 'preprocess' | 'postprocess'
+  code: 'SCRIPT_FAILED' | 'OUTPUT_INVALID' | 'LIMIT_EXCEEDED'
+  message: string
+}
 
 export type ToolTransactionMode = 'read-only' | 'transactional' | 'non-transactional'
 
@@ -135,7 +160,7 @@ export interface InvocationDefaults {
 
 export interface AgentDefinition {
   format: 'rpt-agent'
-  formatVersion: 1
+  formatVersion: 1 | 2
   name: string
   description?: string
   prompt: PromptMessage[]
@@ -143,6 +168,8 @@ export interface AgentDefinition {
   preset?: AgentPresetBundle
   inputSchema: JsonSchema
   result: ResultContract
+  /** Portable, capability-free processing scripts. Only valid in formatVersion 2. */
+  processing?: AgentProcessing
   tools: AgentToolDefinition[]
   modelHint?: string
   /** Optional declarative cadence trigger (M3). Absent for an Agent that only runs on demand. */
@@ -261,6 +288,7 @@ export type CardAgentRunOutcome =
       result?: JsonValue
       sourceRestarts: number
       required: boolean
+      processingWarnings?: AgentProcessingWarning[]
     }
   | {
       invocationId: string

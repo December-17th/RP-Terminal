@@ -293,6 +293,7 @@ export interface ImportSummary {
   tableTemplates: number
   /** Bundled plugins detected but NOT installed yet (package format/grant flow TBD). */
   pluginsSkipped: number
+  scriptedAgents: number
   /** Images extracted from an optional asset zip supplied at import time. */
   assetsImported: number
   /**
@@ -388,6 +389,9 @@ export const summarizeCardBundle = (parsed: ParsedCard): ImportSummary => {
     lorebooks: collectBundledLorebooks(parsed.card).length,
     tableTemplates: collectBundledTableTemplates(parsed.card).length,
     pluginsSkipped: Array.isArray(rpt?.plugins) ? rpt.plugins.length : 0,
+    scriptedAgents: (rpt?.agents ?? []).filter(
+      (agent) => agent.formatVersion === 2 && !!agent.processing
+    ).length,
     assetsImported: 0
   }
 }

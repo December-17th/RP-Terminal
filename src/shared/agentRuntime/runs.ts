@@ -127,6 +127,19 @@ export interface AgentRunRecord {
   replay: AgentRunReplayOutcome
   metrics: AgentRunMetrics
   warnings: string[]
+  processing?: {
+    rawInput: JsonObject
+    processedInput: JsonObject
+    validatedModelResult?: JsonValue
+    finalResult?: JsonValue
+    preprocessLogs: string[]
+    postprocessLogs: string[]
+    warnings: Array<{
+      phase: 'preprocess' | 'postprocess'
+      code: 'SCRIPT_FAILED' | 'OUTPUT_INVALID' | 'LIMIT_EXCEEDED'
+      message: string
+    }>
+  }
 }
 
 export interface AgentRunSummary {

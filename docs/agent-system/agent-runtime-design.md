@@ -85,7 +85,10 @@ All Agents use the same versioned JSON definition shape whether they are:
 - imported into the user's profile library as `.rptagent`; or
 - bundled in a World Card under `data.extensions.rp_terminal.agents[]`.
 
-An Agent Definition contains no executable code. A representative definition is:
+An Agent Definition is declarative in format version 1. Format version 2 may additionally carry the
+portable, capability-free `rpt-processor-v1` preprocessing and postprocessing function bodies
+documented below; it does not permit modules, files, URLs, asynchronous work, or host helpers. A
+representative version-1 definition is:
 
 ```json
 {
@@ -160,6 +163,47 @@ Prompt preparation happens before the Harness. The Harness receives finished mes
 ST prompt assembly. Guaranteed-inert preset envelopes are rejected at save time. Assembly failure is
 fail-open but recorded on the Run Record and shown as Degraded, as specified by
 [ADR 0021](../adr/0021-agents-assemble-prompts-through-the-existing-engine.md).
+
+#### 3.1.1 Portable processing in format version 2
+
+Version 2 alone may add this top-level shape:
+
+```json
+{
+  "processing": {
+    "runtime": "rpt-processor-v1",
+    "preprocess": { "code": "return input.value;" },
+    "postprocess": {
+      "code": "return input.value;",
+      "output": { "mode": "text" }
+    }
+  }
+}
+```
+
+Each `code` value is a synchronous JavaScript function body. It receives only `input` and `log()`;
+there are no modules, URLs, files, asynchronous work, host APIs, or domain helpers. Preprocess input
+is `{ value: rawInput }` and must explicitly return the replacement object passed to the model. A
+missing/invalid return, exception, timeout, limit, or returned value that fails `inputSchema` falls
+back to `rawInput` with a structured warning; that fallback deliberately bypasses `inputSchema`.
+Without preprocess, `inputSchema` remains a hard invocation check. Preprocess runs once and its value
+is reused by all ordinary model retries.
+
+The model Result Contract is validated first. Postprocess then receives
+`{ value: validatedModelResult, rawInput, processedInput }` and must explicitly return the final value.
+It requires a separate `output` contract: `{ mode: "text" }` or `{ mode: "json", schema }`; `saveAs`
+belongs only to the normal Result Contract. A tools-only Agent may preprocess but cannot postprocess.
+Postprocess failure retries full model generation using the shared `maxRetryAttempts` and
+`retryDelayMs` budget. Exhaustion returns the validated model result as a successful passthrough with
+a structured processing warning; preprocess warnings never trigger retries.
+
+Every phase uses a fresh JSON copy, deterministic time, and deterministic `Math.random` seeded from
+the processor and its input. Limits are 64 KiB source, 2 MiB JSON input, 2 MiB returned JSON, 32 MiB
+QuickJS memory, and 250 ms per phase. The final Run Record stores raw/processed input, validated model
+result, final result, processor logs, and warnings; ordinary attempt history and cost metrics remain
+ordered and lightweight. Standalone and card-bundled v2 definitions import/export losslessly. Imports
+need no trust approval, run immediately, and disclose scripted Agents in the import summary; the
+Workspace marks them Scripted and edits participate in normal baseline/restore/conflict semantics.
 
 ### 3.2 Names and collisions
 
@@ -672,16 +716,19 @@ the composer.
 ### Role bindings
 
 - `classic.narrator` accepts a compatible text Agent.
-- `yuzu.sceneDirector` accepts a compatible YSS-text Agent.
+- `yuzu.sceneDirector` accepts either the legacy full-response text path or a v2 processor Agent whose
+  model Result Contract uses the distinct `yuzu-annotated-floor` validator. Standard `yss` remains the
+  general scene grammar and is not repurposed for the restricted `<| block |>` proof-of-concept grammar.
 
 RP Terminal supplies built-in defaults. A card may recommend a replacement, while the player chooses
 the final role binding.
 
 Classic Narrator text becomes the floor's canonical `response_content`.
 
-Yuzu Scene Director emits YSS mixed with text, not JSON. Raw YSS is canonical
-`response_content`; the Yuzu subsystem derives its internal Scene representation and may rebuild that
-derived form from the raw response.
+The v2 Yuzu Director preprocesses only the contents of `<gametxt>`, validates the model's restricted
+annotated-floor blocks, then postprocesses them back into the complete narrator response. Content
+outside `<gametxt>` remains canonical and unchanged. The Yuzu subsystem derives its stage
+representation from the validated inner payload.
 
 YSS uses the existing line-oriented forms:
 

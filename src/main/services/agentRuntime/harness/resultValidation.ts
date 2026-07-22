@@ -1,6 +1,7 @@
 import type { JsonValue } from '../../../../shared/agentRuntime'
 import type { SceneVocabulary } from '../../../../shared/yuzu/sceneSchema'
 import { parseScene } from '../../../../shared/yuzu/sceneValidate'
+import { parseAnnotatedFloor } from '../../../../shared/yuzu/annotatedFloor'
 import { closeTruncatedJson } from './repair'
 import { compileJsonSchema } from './schemaValidation'
 import type { HarnessExecuteRequest, HarnessFailure } from './types'
@@ -41,6 +42,16 @@ export const validateHarnessResult = (
         return {
           ok: false,
           failure: { code: 'INVALID_YSS_RESULT', message: parsed.detail, retryable: true }
+        }
+      }
+    }
+    if (contract.validator === 'yuzu-annotated-floor' && !parseAnnotatedFloor(text)) {
+      return {
+        ok: false,
+        failure: {
+          code: 'INVALID_YUZU_ANNOTATED_FLOOR',
+          message: 'Result is not a valid restricted Yuzu annotated floor',
+          retryable: true
         }
       }
     }

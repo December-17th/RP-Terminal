@@ -51,8 +51,8 @@ const success = (result: string): HarnessExecutionResult => ({
   evidence: { attempts: [] }
 })
 
-const setup = (names = ['A', 'B']) => {
-  const agents = new Map(names.map((name) => [name, agent(name)]))
+const setup = (names = ['A', 'B'], makeAgent: (name: string) => CatalogAgent = agent) => {
+  const agents = new Map(names.map((name) => [name, makeAgent(name)]))
   let revision = 1
   const incorporated: Array<{ floor: number; result: unknown }> = []
   const floor: InvocationFloorPort = {
@@ -98,6 +98,113 @@ const setup = (names = ['A', 'B']) => {
 }
 
 describe('InvocationRuntime', () => {
+  const processedAgent = (
+    name: string,
+    postCode = 'return input.value',
+    preprocessCode = 'return { selected: input.value.revision }'
+  ): CatalogAgent => {
+    const parsed = parseAgentDefinition({
+      format: 'rpt-agent',
+      formatVersion: 2,
+      name,
+      prompt: [{ role: 'system', content: 'Answer.' }],
+      inputSchema: {
+        type: 'object',
+        properties: { selected: { type: 'number' } },
+        required: ['selected'],
+        additionalProperties: false
+      },
+      result: { mode: 'text' },
+      processing: {
+        runtime: 'rpt-processor-v1',
+        preprocess: { code: preprocessCode },
+        postprocess: { code: postCode, output: { mode: 'text' } }
+      },
+      defaults: { maxRetryAttempts: 1, retryDelayMs: 0 }
+    })
+    if (!parsed.ok) throw new Error('invalid processed fixture')
+    const base = agent(name)
+    return { ...base, baseline: parsed.value, effective: parsed.value }
+  }
+
+  it('runs preprocess once and reuses processed input when postprocess retries generation', async () => {
+    const { runtime, execute } = setup(
+      ['A'],
+      (name) => processedAgent(name, 'if (input.value === "bad") throw new Error("retry"); return input.value')
+    )
+    execute.mockResolvedValueOnce(success('bad')).mockResolvedValueOnce(success('good'))
+
+    await expect(
+      runtime.run({
+        profileId: 'p', chatId: 'processor-retry', floor: 12, agent: 'A',
+        options: { maxRetryAttempts: 1, retryDelayMs: 0 }
+      })
+    ).resolves.toMatchObject({ status: 'succeeded', result: 'good' })
+
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(execute.mock.calls.map(([request]) => request.input)).toEqual([
+      { selected: 1 },
+      { selected: 1 }
+    ])
+    expect(execute.mock.calls[1][0].corrective).toMatchObject({ failure: { code: 'SCRIPT_FAILED' } })
+  })
+
+  it('re-preprocesses a fresh snapshot after a source restart', async () => {
+    const { runtime, execute, setRevision } = setup(['A'], (name) => processedAgent(name))
+    execute.mockImplementationOnce(async () => {
+      setRevision(2)
+      runtime.invalidateSources('c', 12)
+      return success('stale')
+    })
+
+    await expect(
+      runtime.run({ profileId: 'p', chatId: 'c', floor: 12, agent: 'A' })
+    ).resolves.toMatchObject({ status: 'succeeded', sourceRestarts: 1 })
+
+    expect(execute).toHaveBeenCalledTimes(2)
+    // The abandoned snapshot preprocessed to { selected: 1 }; the restart must re-run the
+    // preprocessor against the fresh snapshot rather than reuse the stale processed input.
+    expect(execute.mock.calls[0][0].input).toEqual({ selected: 1 })
+    expect(execute.mock.calls[1][0].input).toEqual({ selected: 2 })
+  })
+
+  it('returns validated model passthrough with a warning after post retries are exhausted', async () => {
+    const { runtime, execute } = setup(
+      ['A'],
+      (name) => processedAgent(name, 'throw new Error("always bad")')
+    )
+    execute.mockResolvedValue(success('model fallback'))
+
+    await expect(
+      runtime.run({
+        profileId: 'p', chatId: 'processor-fallback', floor: 12, agent: 'A',
+        options: { maxRetryAttempts: 1, retryDelayMs: 0 }
+      })
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      result: 'model fallback',
+      processingWarnings: [{ phase: 'postprocess', code: 'SCRIPT_FAILED' }]
+    })
+    expect(execute).toHaveBeenCalledTimes(2)
+  })
+
+  it('marks only authored-preprocessor input as already handled by inputSchema', async () => {
+    const plain = setup(['A'])
+    await plain.runtime.run({ profileId: 'p', chatId: 'plain-schema', floor: 12, agent: 'A' })
+    expect(plain.execute.mock.calls[0][0]).not.toHaveProperty('inputProcessed')
+
+    const fallback = setup(['A'], (name) =>
+      processedAgent(name, 'return input.value', 'return { wrong: true }')
+    )
+    const scripted = fallback.runtime.run({
+      profileId: 'p', chatId: 'fallback-schema', floor: 12, agent: 'A'
+    })
+    await scripted
+    expect(fallback.execute.mock.calls[0][0]).toMatchObject({
+      inputProcessed: true,
+      input: { revision: 1 }
+    })
+  })
   it('coalesces the immutable chat/floor/Agent identity', async () => {
     const { runtime, execute } = setup()
     const request = { profileId: 'p', chatId: 'c', floor: 12, agent: 'A' }
