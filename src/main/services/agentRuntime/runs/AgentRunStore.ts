@@ -65,6 +65,7 @@ export interface AgentRunStore {
    * would be indistinguishable noise for every subscriber.
    */
   attachRenderedPrompt(invocationId: string, renderedPrompt: AgentRunMessage[]): void
+  attachProcessing(invocationId: string, processing: NonNullable<AgentRunRecord['processing']>): void
   update(
     invocationId: string,
     evidence: HarnessEvidence,
@@ -636,6 +637,22 @@ export const createAgentRunStore = (dependencies: Dependencies = {}): AgentRunSt
       if (!record || record.status !== 'running') return
       persist(
         sanitize({ ...record, renderedPrompt: clone(renderedPrompt) }) as unknown as AgentRunRecord
+      )
+    },
+    attachProcessing(invocationId, processing) {
+      const live = controllers.get(invocationId)
+      if (!live) return
+      const record = read(live.chatId, invocationId)
+      if (!record || record.status !== 'running') return
+      const processorWarnings = processing.warnings.map(
+        (warning) => `${warning.phase}: ${warning.code}: ${warning.message}`
+      )
+      persist(
+        sanitize({
+          ...record,
+          processing: clone(processing),
+          warnings: [...new Set([...record.warnings, ...processorWarnings])]
+        }) as unknown as AgentRunRecord
       )
     },
     replaceSource(invocationId, source) {

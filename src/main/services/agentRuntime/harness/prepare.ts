@@ -94,12 +94,14 @@ export const prepareHarnessExecution = ({
       provider
     }
   }
-  const input = inputSchema.validate.safeParse(request.input)
-  if (!input.success) {
-    return {
-      ok: false,
-      failure: { code: 'INVALID_INPUT', message: input.error.message, retryable: false },
-      provider
+  if (!request.inputProcessed) {
+    const input = inputSchema.validate.safeParse(request.input)
+    if (!input.success) {
+      return {
+        ok: false,
+        failure: { code: 'INVALID_INPUT', message: input.error.message, retryable: false },
+        provider
+      }
     }
   }
   if (request.definition.result.mode === 'json') {

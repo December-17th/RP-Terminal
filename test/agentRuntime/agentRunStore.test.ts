@@ -92,6 +92,28 @@ describe('AgentRunStore', () => {
     store = createAgentRunStore({ getDb: () => db, now: () => '2026-07-18T12:00:00.000Z' })
   })
 
+  it('surfaces structured processing warnings through the existing warning list without duplicates', () => {
+    store.create(start('processing-warning'))
+    const processing = {
+      rawInput: { raw: true },
+      processedInput: { raw: true },
+      validatedModelResult: 'fallback',
+      finalResult: 'fallback',
+      preprocessLogs: [],
+      postprocessLogs: [],
+      warnings: [
+        { phase: 'postprocess' as const, code: 'SCRIPT_FAILED' as const, message: 'bad script' }
+      ]
+    }
+    store.attachProcessing('processing-warning', processing)
+    store.attachProcessing('processing-warning', processing)
+
+    expect(store.get('c1', 'processing-warning')).toMatchObject({
+      warnings: ['postprocess: SCRIPT_FAILED: bad script'],
+      processing
+    })
+  })
+
   it('keeps an interpretable immutable snapshot after the live Agent changes', () => {
     const invocation = start('run-1')
     const { record } = store.create(invocation)

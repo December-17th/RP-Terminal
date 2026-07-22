@@ -23,6 +23,12 @@ export interface SandboxJob {
   seed?: number
   /** Wall-clock budget; the VM is interrupted past it. Default 1000ms. */
   timeoutMs?: number
+  /** Maximum QuickJS heap size for this fresh runtime. */
+  memoryLimitBytes?: number
+  /** Preserve an explicit undefined return instead of normalizing it to null. */
+  preserveUndefined?: boolean
+  /** Processor profile: expose only input/log and freeze observable time. */
+  processorMode?: boolean
 }
 
 export interface SandboxResult<T = unknown> {
@@ -84,6 +90,7 @@ export const runScript = <T = unknown>(
   const deadline = Date.now() + (job.timeoutMs ?? 1000)
 
   const runtime = mod.newRuntime()
+  if (job.memoryLimitBytes !== undefined) runtime.setMemoryLimit(job.memoryLimitBytes)
   runtime.setInterruptHandler(() => Date.now() > deadline)
   const vm = runtime.newContext()
   try {
@@ -99,7 +106,7 @@ export const runScript = <T = unknown>(
       }
       return vm.undefined
     })
-    vm.setProp(vm.global, '__emit', emitFn)
+    if (!job.processorMode) vm.setProp(vm.global, '__emit', emitFn)
     emitFn.dispose()
 
     const logFn = vm.newFunction('__log', (...hs) => {
@@ -124,12 +131,19 @@ export const runScript = <T = unknown>(
     const program =
       `(function(){` +
       `var input=${safeJson(job.input)};` +
-      `var rng=function(){return __rng();};` +
-      `Math.random=rng;` +
-      `var emit=function(e){__emit(e);};` +
+      (job.processorMode
+        ? `Math.random=function(){return __rng();};var __Date=Date;Date=function(){return arguments.length?new __Date(...arguments):new __Date(0);};Date.now=function(){return 0;};Date.parse=__Date.parse;Date.UTC=__Date.UTC;Date.prototype=__Date.prototype;`
+        : `var rng=function(){return __rng();};Math.random=rng;var emit=function(e){__emit(e);};`) +
       `var log=function(){__log.apply(null,Array.prototype.slice.call(arguments));};` +
-      `var __r=(function(input,rng,emit,log){\n${job.code}\n})(input,rng,emit,log);` +
-      `return JSON.stringify(__r===undefined?null:__r);` +
+      (job.processorMode
+        ? `var __r=(function(input,log){\n${job.code}\n})(input,log);`
+        : `var __r=(function(input,rng,emit,log){\n${job.code}\n})(input,rng,emit,log);`) +
+      (job.processorMode
+        ? `if(__r&&typeof __r.then==='function'){throw new Error('Processor must return synchronously');}`
+        : ``) +
+      (job.preserveUndefined
+        ? `return JSON.stringify({defined:__r!==undefined,value:__r});`
+        : `return JSON.stringify(__r===undefined?null:__r);`) +
       `})()`
 
     const res = vm.evalCode(program)
@@ -145,6 +159,10 @@ export const runScript = <T = unknown>(
       result = JSON.parse(out)
     } catch {
       result = out
+    }
+    if (job.preserveUndefined) {
+      const envelope = result as { defined?: boolean; value?: T } | null
+      return { ok: true, result: envelope?.defined ? envelope.value : undefined, events, logs }
     }
     return { ok: true, result: result as T, events, logs }
   } catch (e) {

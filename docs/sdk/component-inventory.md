@@ -379,7 +379,7 @@ text/portrait animation; TavernHelper/MVU globals come from
 has a `catchall` so future slots round-trip.
 
 **Standalone `.rptagent` Agent files (app-facing import).** The same `rpt-agent` Agent Definition format
-(`format: "rpt-agent"`, `formatVersion: 1`) that fills the `agents[]` bundle slot also imports as a
+(`format: "rpt-agent"`, `formatVersion: 1 | 2`) that fills the `agents[]` bundle slot also imports as a
 **standalone file** outside any card. The Agent Workspace's **Scan agent folder** action reads `.rptagent`
 JSON from a folder (default `test-agents/`, overridable via the `RPT_AGENT_DIR` env var) and imports each
 into the profile Agent Catalog as a `user-imported` row; the filename is the source key and the content
@@ -396,6 +396,21 @@ is rejected at parse time). It fires when `N` committed floors have elapsed sinc
 dispatched at the new-floor commit boundary (`emitCardFloorCommitted`) through the same identity path as
 Run now, so replay/re-incorporation never fire it and it coalesces with a manual run on the same floor.
 The card `rpt.agents.*` trigger API remains held (§2, Agent scheduling).
+
+**Portable processing scripts.** Version 1 remains declarative and rejects `processing`. Version 2
+may declare `processing: { runtime: "rpt-processor-v1", preprocess?: { code }, postprocess?: { code,
+output } }`. Each `code` value is a synchronous JavaScript function body. The isolated QuickJS phase
+receives only `input` and `log()`: preprocess receives `{ value: rawInput }`, while postprocess receives
+`{ value: validatedModelResult, rawInput, processedInput }`. Postprocess requires its own text or JSON
+output contract. Scripts cannot load modules, URLs, or files or call host/domain helpers. Each phase
+uses a fresh JSON copy, deterministic time and `Math.random`, a 64 KiB source limit, 2 MiB input and
+output limits, 32 MiB memory, and a 250 ms deadline. A script, limit, or output-validation failure is
+fail-open and recorded as a structured processing warning; postprocess failures consume the Agent's
+normal model retry budget before the validated model result is returned as fallback. Scripted Agents
+run immediately after card/file import and are disclosed in the bundle summary. Verify:
+[`schema.ts`](../../src/shared/agentRuntime/schema.ts),
+[`AgentProcessor.ts`](../../src/main/services/agentRuntime/processing/AgentProcessor.ts), and
+[`InvocationRuntime.ts`](../../src/main/services/agentRuntime/invocation/InvocationRuntime.ts).
 
 ---
 

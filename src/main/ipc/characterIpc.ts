@@ -192,6 +192,7 @@ export const registerCharacterIpc = (ipcMain: IpcMain): void => {
           summary.cardCodeSurfaces && text.bundleItem(summary.cardCodeSurfaces, 'cardCodeSurfaces'),
           summary.uiWidgets && text.bundleItem(summary.uiWidgets, 'uiWidgets'),
           summary.tableTemplates && text.bundleItem(summary.tableTemplates, 'tableTemplates'),
+          summary.scriptedAgents && text.bundleItem(summary.scriptedAgents, 'scriptedAgents'),
           summary.pluginsSkipped && text.bundleItem(summary.pluginsSkipped, 'pluginsSkipped')
         ].filter(Boolean)
         const { response } = await dialog.showMessageBox(win, {

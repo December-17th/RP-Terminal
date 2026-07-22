@@ -11,6 +11,8 @@ export interface CharacterImportSummary {
   lorebooks: number
   tableTemplates: number
   pluginsSkipped: number
+  /** Portable v2 Agents containing one or more processing scripts. */
+  scriptedAgents: number
   assetsImported: number
   cartridgeError?: string
 }

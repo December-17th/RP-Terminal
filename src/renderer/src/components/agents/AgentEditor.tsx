@@ -242,6 +242,10 @@ export function AgentEditor({
     onChange(copy)
   }
 
+  const patchProcessing = (
+    next: NonNullable<AgentDefinition['processing']>
+  ): void => patch({ processing: next })
+
   const bundle = draft.preset
 
   /**
@@ -516,13 +520,18 @@ export function AgentEditor({
                       ...(draft.result.mode === 'text' && draft.result.saveAs
                         ? { saveAs: draft.result.saveAs }
                         : {}),
-                      ...(event.target.value ? { validator: 'yss' as const } : {})
+                      ...(event.target.value
+                        ? { validator: event.target.value as 'yss' | 'yuzu-annotated-floor' }
+                        : {})
                     }
                   })
                 }
               >
                 <option value="">{t('agents.editor.validatorNone')}</option>
                 <option value="yss">{t('agents.editor.validatorYss')}</option>
+                <option value="yuzu-annotated-floor">
+                  {t('agents.editor.validatorYuzuAnnotatedFloor')}
+                </option>
               </select>
             </label>
           ) : null}
@@ -542,6 +551,65 @@ export function AgentEditor({
           ) : null}
         </section>
       </details>
+
+      {draft.formatVersion === 2 && draft.processing ? (
+        <details className="agent-editor__disclosure">
+          <summary>{t('agents.editor.processing')}</summary>
+          <section className="agent-editor__section">
+            {draft.processing.preprocess ? (
+              <label className="agent-field">
+                <span>{t('agents.editor.preprocess')}</span>
+                <textarea
+                  disabled={readOnly}
+                  rows={8}
+                  spellCheck={false}
+                  value={draft.processing.preprocess.code}
+                  onChange={(event) =>
+                    patchProcessing({
+                      ...draft.processing!,
+                      preprocess: { code: event.target.value }
+                    })
+                  }
+                />
+              </label>
+            ) : null}
+            {draft.processing.postprocess ? (
+              <>
+                <label className="agent-field">
+                  <span>{t('agents.editor.postprocess')}</span>
+                  <textarea
+                    disabled={readOnly}
+                    rows={8}
+                    spellCheck={false}
+                    value={draft.processing.postprocess.code}
+                    onChange={(event) =>
+                      patchProcessing({
+                        ...draft.processing!,
+                        postprocess: { ...draft.processing!.postprocess!, code: event.target.value }
+                      })
+                    }
+                  />
+                </label>
+                <JsonField
+                  t={t}
+                  label={t('agents.editor.postprocessOutput')}
+                  value={draft.processing.postprocess.output}
+                  onError={setJsonError}
+                  onChange={(output) =>
+                    patchProcessing({
+                      ...draft.processing!,
+                      postprocess: {
+                        ...draft.processing!.postprocess!,
+                        output: output as never
+                      }
+                    })
+                  }
+                />
+              </>
+            ) : null}
+          </section>
+        </details>
+      ) : null}
 
       <details className="agent-editor__disclosure">
         <summary>{t('agents.editor.section.toolsInput')}</summary>

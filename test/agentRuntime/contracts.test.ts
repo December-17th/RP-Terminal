@@ -11,6 +11,33 @@ import {
 import { MONTHLY_PROPERTY_AGENT, MONTHLY_WORLD_PLAN } from './fixtures/contracts'
 
 describe('AgentContracts', () => {
+  it('accepts portable processing only on formatVersion 2', () => {
+    const processing = {
+      runtime: 'rpt-processor-v1' as const,
+      preprocess: { code: 'return input.value' },
+      postprocess: { code: 'return input.value', output: { mode: 'text' as const } }
+    }
+    expect(
+      parseAgentDefinition({
+        format: 'rpt-agent', formatVersion: 2, name: 'Scripted',
+        prompt: [{ role: 'system', content: 'Run.' }], result: { mode: 'text' }, processing
+      })
+    ).toMatchObject({ ok: true, value: { formatVersion: 2, processing } })
+    expect(
+      parseAgentDefinition({
+        format: 'rpt-agent', formatVersion: 1, name: 'Declarative',
+        prompt: [{ role: 'system', content: 'Run.' }], result: { mode: 'text' }, processing
+      })
+    ).toMatchObject({ ok: false })
+    expect(
+      parseAgentDefinition({
+        format: 'rpt-agent', formatVersion: 2, name: 'Tools',
+        prompt: [{ role: 'system', content: 'Run.' }], result: { mode: 'tools-only' },
+        tools: [{ name: 'x', description: 'x', inputSchema: { type: 'object' } }],
+        processing: { runtime: 'rpt-processor-v1', postprocess: { code: 'return input.value', output: { mode: 'text' } } }
+      })
+    ).toMatchObject({ ok: false })
+  })
   it('normalizes static prompt strings through the Agent Definition Interface', () => {
     const result = parseAgentDefinition(MONTHLY_PROPERTY_AGENT)
 
@@ -227,6 +254,13 @@ describe('AgentContracts', () => {
           location: { kind: 'field', field: 'saveAs' }
         })
       ]
+    })
+  })
+
+  it('accepts the restricted Yuzu annotated-floor validator distinctly from standard yss', () => {
+    expect(parseResultContract({ mode: 'text', validator: 'yuzu-annotated-floor' })).toEqual({
+      ok: true,
+      value: { mode: 'text', validator: 'yuzu-annotated-floor' }
     })
   })
 

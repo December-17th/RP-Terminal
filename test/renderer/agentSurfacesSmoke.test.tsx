@@ -193,6 +193,47 @@ describe('Agent-Runtime renderer surfaces mount without crashing', () => {
     expect(container.textContent).toBeTruthy()
   })
 
+  it('marks a scripted Agent and exposes both processor bodies in the editor', async () => {
+    await seedActiveSession()
+    const definition = {
+      format: 'rpt-agent' as const,
+      formatVersion: 2 as const,
+      name: 'Scripted Agent',
+      prompt: [{ role: 'system' as const, content: [{ type: 'text' as const, text: 'Work.' }] }],
+      inputSchema: { type: 'object' as const },
+      result: { mode: 'text' as const },
+      tools: [],
+      processing: {
+        runtime: 'rpt-processor-v1' as const,
+        preprocess: { code: 'return input.value;' },
+        postprocess: { code: 'return input.value;', output: { mode: 'text' as const } }
+      },
+      defaults: {
+        required: false, maxSteps: 1, maxRetryAttempts: 1, retryDelayMs: 0,
+        blocksNextTurn: false, toolResultMaxTokens: 10000, notification: 'failure' as const
+      }
+    }
+    apiOverrides.listAgentCatalog = async () => [{
+      id: 'scripted', name: 'Scripted Agent', sourceKind: 'user-imported', sourceKey: 'fixture',
+      sourceVersion: '2', sourcePresent: true, enabled: true, customized: false,
+      upgradeAvailable: false, scripted: true, blocksNextTurn: false, resultMode: 'text',
+      promptMessages: 1, promptChars: 5, roles: [], hasApiPreset: false
+    }]
+    apiOverrides.getAgentDefinition = async () => definition
+    const { useAgentCatalogStore } = await import('../../src/renderer/src/stores/agentCatalogStore')
+    useAgentCatalogStore.setState({ agents: [], definitions: {}, bindings: {} })
+    const { AgentWorkspace } = await import('../../src/renderer/src/components/agents/AgentWorkspace')
+    const view = render(<AgentWorkspace profileId="p1" />)
+
+    fireEvent.click(await view.findByRole('button', { name: /Scripted Agent/i }))
+    expect(view.getByText(/Scripted/, { selector: '.agent-workspace__item-meta' })).toBeTruthy()
+    const processing = (await view.findByText('Processing scripts')).closest(
+      'details'
+    ) as HTMLDetailsElement
+    fireEvent.click(within(processing).getByText('Processing scripts'))
+    expect(view.getAllByDisplayValue('return input.value;')).toHaveLength(2)
+  })
+
   it('preserves definition and plan drafts across tabs, and Cancel restores the saved definition', async () => {
     await seedActiveSession()
     const definition = {

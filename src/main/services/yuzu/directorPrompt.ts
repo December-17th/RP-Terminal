@@ -115,12 +115,12 @@ HTML、XML 风格标签、自定义美化标签、\`<style>\`、\`<script>\`、M
 {{RAW_NARRATOR_RESPONSE}}
 【原始回复结束】`
 
-interface DirectorAssets {
+export interface DirectorAssets {
   locations: string[]
   actors: Map<string, Set<string>>
 }
 
-const collectDirectorAssets = (profileId: string, lorebookIds: string[]): DirectorAssets => {
+export const collectDirectorAssets = (profileId: string, lorebookIds: string[]): DirectorAssets => {
   const locations = new Set<string>()
   const actors = new Map<string, Set<string>>()
   for (const lorebookId of [...new Set(lorebookIds)].sort()) {
@@ -142,6 +142,23 @@ const collectDirectorAssets = (profileId: string, lorebookIds: string[]): Direct
     }
   }
   return { locations: [...locations].sort(), actors }
+}
+
+export const buildDirectorInput = (
+  profileId: string,
+  lorebookIds: string[],
+  rawNarratorResponse: string
+): { rawResponse: string; assetVocabulary: { locations: string[]; actors: Record<string, string[]> } } => {
+  const assets = collectDirectorAssets(profileId, lorebookIds)
+  return {
+    rawResponse: rawNarratorResponse,
+    assetVocabulary: {
+      locations: assets.locations,
+      actors: Object.fromEntries(
+        [...assets.actors.entries()].map(([name, expressions]) => [name, [...expressions].sort()])
+      )
+    }
+  }
 }
 
 const renderLocations = (locations: string[]): string =>

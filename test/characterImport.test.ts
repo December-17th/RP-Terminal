@@ -130,7 +130,20 @@ describe('summarizeCardBundle + hasBundle', () => {
           ui_layout: [{ type: 'StatBar', path: 'hp' }],
           presets: [{ name: 'P', parameters: {}, prompts: [] }],
           lorebooks: [{ name: 'Extra', entries: [] }],
-          plugins: [{ manifest: {} }]
+          plugins: [{ manifest: {} }],
+          agents: [
+            {
+              format: 'rpt-agent',
+              formatVersion: 2,
+              name: 'Scripted fixture',
+              prompt: [{ role: 'system', content: 'Run.' }],
+              result: { mode: 'text' },
+              processing: {
+                runtime: 'rpt-processor-v1',
+                preprocess: { code: 'return input.value' }
+              }
+            }
+          ]
         }
       }),
       lorebook: { name: 'L', entries: [{ keys: ['k'], content: 'c' } as any] }
@@ -145,7 +158,8 @@ describe('summarizeCardBundle + hasBundle', () => {
       uiWidgets: 1,
       presets: 1,
       lorebooks: 1,
-      pluginsSkipped: 1
+      pluginsSkipped: 1,
+      scriptedAgents: 1
     })
     expect(hasBundle(s)).toBe(true)
   })

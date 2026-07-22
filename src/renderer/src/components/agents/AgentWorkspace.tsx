@@ -727,6 +727,7 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
                     <span className="agent-workspace__item-meta">
                       {t(`agents.source.${agent.sourceKind}`)}
                       {agent.customized ? ` · ${t('agents.customized')}` : ''}
+                      {agent.scripted ? ` · ${t('agents.scripted')}` : ''}
                       {agent.upgradeAvailable ? ` · ${t('agents.upgradeAvailable')}` : ''}
                       {agent.enabled ? '' : ` · ${t('agents.workspace.disabled')}`}
                     </span>

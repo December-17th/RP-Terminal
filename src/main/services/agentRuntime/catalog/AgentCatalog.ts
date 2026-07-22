@@ -1158,7 +1158,8 @@ const isRoleCompatible = (role: AgentRole, definition: AgentDefinition): boolean
   if (definition.result.mode !== 'text') return false
   return role === 'classic.narrator'
     ? definition.result.validator === undefined
-    : definition.result.validator === 'yss' &&
+    : (definition.result.validator === 'yss' ||
+        definition.result.validator === 'yuzu-annotated-floor') &&
         definition.trigger === undefined &&
         definition.tools.length === 0
 }

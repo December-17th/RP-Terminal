@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const yuzuState = vi.hoisted(() => ({ on: false, bound: true }))
+const yuzuState = vi.hoisted(() => ({
+  on: false,
+  bound: true,
+  scripted: false,
+  v2NoProcessing: false
+}))
 const directorRun = vi.hoisted(() => vi.fn())
 const floors = Array.from({ length: 3 }, (_, i) => ({
   floor: i,
@@ -53,6 +58,20 @@ vi.mock('../../src/main/services/agentRuntime/catalog', () => ({
       return {
         name: 'Director',
         enabled: true,
+        ...(yuzuState.scripted
+          ? {
+              effective: {
+                formatVersion: 2,
+                result: { mode: 'text', validator: 'yuzu-annotated-floor' },
+                processing: {
+                  preprocess: { code: 'return input.value' },
+                  postprocess: { code: 'return input.value', output: { mode: 'text' } }
+                }
+              }
+            }
+          : yuzuState.v2NoProcessing
+            ? { effective: { formatVersion: 2, result: { mode: 'text' } } }
+            : {}),
         invocationConfig: { apiPresetId: 'director-preset' }
       }
     }
@@ -152,6 +171,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   yuzuState.on = false
   yuzuState.bound = true
+  yuzuState.scripted = false
+  yuzuState.v2NoProcessing = false
   mockCallModel.callModel.mockResolvedValue({ raw: RAW, rawUsage: {}, stopped: false })
   directorRun.mockResolvedValue({ status: 'succeeded', result: ANNOTATED })
 })
@@ -212,5 +233,48 @@ describe('Yuzu Classic-narrator then scene-director path', () => {
     const floor = await runClassicTurnDirect(turnCtx())
     expect(directorRun).not.toHaveBeenCalled()
     expect(floor?.response.content).toBe(RAW)
+  })
+
+  it('lets a v2 Director own its prompt and processors while the role supplies raw input', async () => {
+    yuzuState.on = true
+    yuzuState.scripted = true
+
+    await runClassicTurnDirect(turnCtx())
+
+    const request = directorRun.mock.calls[0]?.[0]
+    expect(request).not.toHaveProperty('promptOverride')
+    expect(request).not.toHaveProperty('acceptRawTextResult')
+    expect(request.options.input).toMatchObject({
+      rawResponse: RAW,
+      assetVocabulary: { locations: expect.any(Array), actors: expect.any(Object) }
+    })
+  })
+
+  it('keeps the legacy full-response path for a v2 Director with no processors', async () => {
+    yuzuState.on = true
+    yuzuState.v2NoProcessing = true
+
+    await runClassicTurnDirect(turnCtx())
+
+    expect(directorRun.mock.calls[0]?.[0]).toMatchObject({
+      acceptRawTextResult: true,
+      promptOverride: expect.any(Array),
+      options: { maxRetryAttempts: 0 }
+    })
+  })
+
+  it('preserves the narrator floor after exhausted v2 postprocessing fallback', async () => {
+    yuzuState.on = true
+    yuzuState.scripted = true
+    directorRun.mockResolvedValue({
+      status: 'succeeded',
+      result: ANNOTATED,
+      processingWarnings: [{ phase: 'postprocess', code: 'SCRIPT_FAILED', message: 'bad script' }]
+    })
+
+    const floor = await runClassicTurnDirect(turnCtx())
+
+    expect(floor?.response.content).toBe(RAW)
+    expect(mockFloor.updateActiveFloorResponse).not.toHaveBeenCalled()
   })
 })

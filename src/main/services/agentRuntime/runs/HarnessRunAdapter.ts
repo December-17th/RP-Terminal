@@ -32,6 +32,7 @@ export interface HarnessRunRequest {
   floor: number
   agent: AgentDefinitionSnapshot
   input: JsonObject
+  inputProcessed?: boolean
   options?: Omit<InvocationOptions, 'floor' | 'input' | 'inputBindings'>
   promptValues?: Record<string, JsonValue>
   history?: JsonValue
@@ -68,6 +69,10 @@ export interface HarnessRunAdapter {
     invocationId: string,
     failure: HarnessFailure,
     replay?: AgentRunReplayOutcome
+  ): void
+  attachProcessing(
+    invocationId: string,
+    processing: NonNullable<import('../../../../shared/agentRuntime').AgentRunRecord['processing']>
   ): void
   stop(invocationId: string): boolean
   shutdown(): void
@@ -170,6 +175,7 @@ export const createHarnessRunAdapter = ({
           ? { ...request.agent.definition, result: { mode: 'text' as const } }
           : request.agent.definition,
         input: request.input,
+        ...(request.inputProcessed ? { inputProcessed: true } : {}),
         profileId: request.profileId,
         ...(request.toolScope ? { toolScope: request.toolScope } : {}),
         options: resolved.value,
@@ -274,6 +280,9 @@ export const createHarnessRunAdapter = ({
       })
       handles.delete(invocationId)
       evidenceByInvocation.delete(invocationId)
+    },
+    attachProcessing(invocationId, processing) {
+      runStore.attachProcessing(invocationId, processing)
     },
     stop(invocationId) {
       const stopped = runStore.cancel(invocationId).cancelled

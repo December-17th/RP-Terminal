@@ -73,6 +73,7 @@ const toSummary = (
     sourcePresent: agent.sourcePresent,
     enabled: agent.enabled,
     customized: agent.customized,
+    scripted: agent.effective.formatVersion === 2 && !!agent.effective.processing,
     upgradeAvailable,
     blocksNextTurn: definition.defaults.blocksNextTurn,
     resultMode: definition.result.mode,

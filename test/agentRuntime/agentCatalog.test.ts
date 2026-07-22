@@ -192,6 +192,26 @@ describe('AgentCatalog', () => {
     expect(() => catalog.bindRole('yuzu.sceneDirector', toolUsing.id)).toThrow(/compatible/i)
   })
 
+  it('accepts a portable processed Yuzu scene director', () => {
+    const catalog = new AgentCatalog('p')
+    const director = catalog.create({
+      ...textAgent('Portable Director'),
+      formatVersion: 2,
+      result: { mode: 'text', validator: 'yuzu-annotated-floor' },
+      processing: {
+        runtime: 'rpt-processor-v1',
+        preprocess: { code: 'return input.value;' },
+        postprocess: {
+          code: 'return input.value;',
+          output: { mode: 'text' }
+        }
+      }
+    })
+
+    catalog.bindRole('yuzu.sceneDirector', director.id)
+    expect(catalog.getRoleBindings()).toEqual({ 'yuzu.sceneDirector': director.name })
+  })
+
   it('filters an incompatible persisted Yuzu role binding written by an older build', () => {
     const catalog = new AgentCatalog('p')
     const director = catalog.create({
