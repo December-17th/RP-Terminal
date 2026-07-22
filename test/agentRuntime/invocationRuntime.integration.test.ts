@@ -320,6 +320,32 @@ describe('InvocationRuntime session integration', () => {
     expect(provider.calls).toHaveLength(1)
   })
 
+  it('accepts a read-only presentation result after a variable-only floor write', async () => {
+    insertFloor(12, { revision: 1 })
+    const { runtime } = setup(undefined, directorAgent)
+    const invocation = runtime.run({
+      profileId: 'profile',
+      chatId: 'chat',
+      floor: 12,
+      agent: directorAgent.name,
+      acceptRawTextResult: true,
+      restartOnSourceChange: false,
+      skipResultIncorporation: true,
+      options: { maxSteps: 1, maxRetryAttempts: 0 }
+    })
+    await vi.waitFor(() => expect(provider.calls).toHaveLength(1))
+
+    db.prepare('UPDATE floors SET variables = ? WHERE chat_id = ? AND floor = ?').run(
+      JSON.stringify({ revision: 2 }),
+      'chat',
+      12
+    )
+    const result = '<|block|>\n旁白\n<|end|>'
+    provider.calls[0].succeed(result)
+
+    await expect(invocation).resolves.toMatchObject({ status: 'succeeded', result })
+  })
+
   it('floor 13 waits for floor-12 incorporation before resolving same-Agent input', async () => {
     insertFloor(12)
     insertFloor(13)

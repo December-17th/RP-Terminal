@@ -380,6 +380,10 @@ export const createInvocationRuntime = ({
         }
       | undefined
     let required: boolean = INVOCATION_DEFAULTS.required
+    const detachedPresentation =
+      item.request.acceptRawTextResult === true &&
+      item.request.skipResultIncorporation === true &&
+      item.request.restartOnSourceChange === false
     const disposeRequestSignal = linkSignal(item.request.signal, item.controller)
     try {
       while (!item.controller.signal.aborted && !item.deleted) {
@@ -420,9 +424,14 @@ export const createInvocationRuntime = ({
               agent: resolvedAgent,
               options: item.request.options
             }))
-          const sourceCurrent = await floor.isSourceCurrent(source, {
-            parallelIndependent: item.parallelIndependent
-          })
+          // A detached presentation pass owns a fully captured prompt and cannot incorporate state.
+          // Variable-only floor writes are therefore unrelated; transcript edits and deletion still
+          // mark/cancel the invocation through the runtime's existing floor listeners.
+          const sourceCurrent =
+            detachedPresentation ||
+            (await floor.isSourceCurrent(source, {
+              parallelIndependent: item.parallelIndependent
+            }))
           if (item.stale || !sourceCurrent) {
             if (item.request.restartOnSourceChange === false) {
               return {
@@ -551,9 +560,11 @@ export const createInvocationRuntime = ({
         }
         let stale = item.stale
         try {
-          stale ||= !(await floor.isSourceCurrent(source, {
-            parallelIndependent: item.parallelIndependent
-          }))
+          if (!detachedPresentation) {
+            stale ||= !(await floor.isSourceCurrent(source, {
+              parallelIndependent: item.parallelIndependent
+            }))
+          }
         } catch (cause) {
           const sourceFailure = failure(
             'SOURCE_VALIDATION_FAILED',
