@@ -38,6 +38,13 @@ const variablesAt = (db: InstanceType<typeof Adapter>, number: number): Record<s
     ).variables
   )
 
+const baselineRows = (
+  db: InstanceType<typeof Adapter>
+): Array<{ variables: string; folded_through: number | null }> =>
+  db
+    .prepare('SELECT variables, folded_through FROM floor_state_baselines WHERE chat_id = ?')
+    .all('chat') as never
+
 describe('FloorState', () => {
   let db: InstanceType<typeof Adapter>
 
@@ -492,12 +499,16 @@ describe('FloorState', () => {
       stat_data: { gold: 7 },
       delta_data: [{ path: 'gold', old: 5, new: 7 }]
     })
-    // No baseline row is invented: this seed is the state AFTER floor 0's fold, not before it.
-    expect(
-      (
-        db.prepare('SELECT COUNT(*) AS n FROM floor_state_baselines').get() as { n: number }
-      ).n
-    ).toBe(0)
+    // CHARACTERIZATION UPDATED (was: `COUNT(*) FROM floor_state_baselines` is 0 — "no baseline row
+    // is invented, this seed is the state AFTER floor 0's fold, not before it"). Writing NO row was
+    // the bug: the seed was then re-derived from `floors.variables` every publish, i.e. from the
+    // column this very replay writes floor 0's snapshot back to, so a non-idempotent floor-0
+    // operation re-applied on each republish. The seed is now persisted — as a row explicitly MARKED
+    // as already containing floor 0's fold, which is what keeps it from being read as a pre-floor-0
+    // baseline.
+    expect(baselineRows(db)).toEqual([
+      { variables: JSON.stringify({ stat_data: { gold: 5 } }), folded_through: 0 }
+    ])
   })
 
   // CHARACTERIZATION UPDATED (was: 'replays nothing (and announces nothing)' — suffix `[]`, no
@@ -585,6 +596,139 @@ describe('FloorState', () => {
       stat_data: { gold: 110 },
       delta_data: [{ path: 'gold', old: 107, new: 110 }]
     })
+  })
+
+  // ── the persisted fallback seed (`folded_through`) ───────────────────────────────────────────
+  //
+  // REGRESSION. The fallback used to re-derive its seed by re-reading `floors.variables` on EVERY
+  // publish — the very column floor 0's replayed snapshot is written back to. `set`/`delete`/`patch`
+  // survived that (each resolves to set-or-remove-at-path, so re-applying is a no-op), but an
+  // `increment` — what a card `inc`/`dec` journals — advanced AGAIN on every later floor-0-rooted
+  // publish. The marker row is what makes the seed stable.
+  it('applies a floor-0 increment exactly once however often the suffix is republished', () => {
+    floor(
+      db,
+      0,
+      { stat_data: { gold: 5 } },
+      "<UpdateVariable>\n_.add('gold', 2);\n</UpdateVariable>"
+    )
+    floor(db, 1, { stat_data: { gold: 5 } }, 'Second; the model changes nothing.')
+    const state = createFloorState({ db: db as never })
+
+    state.append('chat', 0, 'card', [
+      { kind: 'increment', path: 'variables.stat_data.gold', value: 10 }
+    ])
+    expect(variablesAt(db, 0)).toEqual({ stat_data: { gold: 15 } })
+
+    // An unrelated floor-0-rooted republish — the renderer's Re-evaluate button — adds nothing new.
+    state.replay('chat', 0)
+    expect(variablesAt(db, 0)).toEqual({ stat_data: { gold: 15 } })
+    expect(variablesAt(db, 1)).toEqual({ stat_data: { gold: 15 } })
+
+    // A third proves the seed is stable, not merely off by one publish.
+    state.replay('chat', 0)
+    expect(variablesAt(db, 0)).toEqual({ stat_data: { gold: 15 } })
+  })
+
+  it('applies a floor-0 set exactly once however often the suffix is republished', () => {
+    floor(
+      db,
+      0,
+      { stat_data: { gold: 5 } },
+      "<UpdateVariable>\n_.add('gold', 2);\n</UpdateVariable>"
+    )
+    floor(db, 1, { stat_data: { gold: 5 } }, 'Second; the model changes nothing.')
+    const state = createFloorState({ db: db as never })
+
+    state.append('chat', 0, 'card', [
+      { kind: 'set', path: 'variables.stat_data.choice', value: 'mage' }
+    ])
+    state.replay('chat', 0)
+    state.replay('chat', 0)
+
+    expect(variablesAt(db, 0)).toEqual({ stat_data: { gold: 5, choice: 'mage' } })
+    expect(variablesAt(db, 1)).toEqual({ stat_data: { gold: 5, choice: 'mage' } })
+  })
+
+  it('writes the fallback marker row once and never rewrites it', () => {
+    floor(
+      db,
+      0,
+      { stat_data: { gold: 5 } },
+      "<UpdateVariable>\n_.add('gold', 2);\n</UpdateVariable>"
+    )
+    const state = createFloorState({ db: db as never })
+
+    state.append('chat', 0, 'card', [
+      { kind: 'increment', path: 'variables.stat_data.gold', value: 10 }
+    ])
+    const afterFirst = baselineRows(db)
+    // The row records the state BEFORE floor 0's operations — the increment is NOT baked into it.
+    expect(afterFirst).toEqual([
+      { variables: JSON.stringify({ stat_data: { gold: 5 } }), folded_through: 0 }
+    ])
+
+    state.append('chat', 0, 'card', [
+      { kind: 'increment', path: 'variables.stat_data.gold', value: 1 }
+    ])
+
+    expect(baselineRows(db)).toEqual(afterFirst)
+    expect(variablesAt(db, 0)).toEqual({ stat_data: { gold: 16 } })
+  })
+
+  // The NORMAL path is untouched: a baseline row with no marker still means "state BEFORE floor 0",
+  // so floor 0's model fold is replayed on top of it exactly as before.
+  it('replays a marker-less baseline row exactly as before', () => {
+    floor(
+      db,
+      0,
+      { stat_data: { gold: 12 } },
+      "<UpdateVariable>\n_.add('gold', 2);\n</UpdateVariable>"
+    )
+    const state = createFloorState({ db: db as never })
+    state.setBaseline('chat', { stat_data: { gold: 10 } })
+    expect(baselineRows(db)).toEqual([
+      { variables: JSON.stringify({ stat_data: { gold: 10 } }), folded_through: null }
+    ])
+
+    state.replay('chat', 0)
+    state.replay('chat', 0)
+
+    expect(variablesAt(db, 0)).toEqual({
+      stat_data: { gold: 12 },
+      delta_data: [{ path: 'gold', old: 10, new: 12 }]
+    })
+    // The marker column stays NULL — `setBaseline` rows are never promoted to fallback rows.
+    expect(baselineRows(db)).toEqual([
+      { variables: JSON.stringify({ stat_data: { gold: 10 } }), folded_through: null }
+    ])
+  })
+
+  it('migrates a session DB whose floor_state_baselines predates the fold marker', () => {
+    const legacy = new Adapter(':memory:')
+    legacy.exec(SESSION_SCHEMA)
+    legacy.exec(`
+      DROP TABLE floor_state_baselines;
+      CREATE TABLE floor_state_baselines (
+        chat_id TEXT PRIMARY KEY,
+        variables TEXT NOT NULL,
+        created_at TEXT
+      );`)
+    legacy
+      .prepare(
+        'INSERT INTO floor_state_baselines (chat_id, variables, created_at) VALUES (?, ?, ?)'
+      )
+      .run('chat', JSON.stringify({ stat_data: { gold: 10 } }), 'then')
+
+    createFloorState({ db: legacy as never })
+
+    // The pre-existing row survives the ALTER and reads as marker-less — i.e. the normal path.
+    expect(
+      legacy
+        .prepare('SELECT variables, folded_through FROM floor_state_baselines')
+        .all()
+    ).toEqual([{ variables: JSON.stringify({ stat_data: { gold: 10 } }), folded_through: null }])
+    legacy.close()
   })
 
   // A card's `combat` bundle picks which system an `<rpt-combat-start>` cue opens, and only the

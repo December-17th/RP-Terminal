@@ -287,11 +287,27 @@ const FLOOR_OPERATIONS_COLUMNS = `
   legacy_ref TEXT UNIQUE,
   PRIMARY KEY (chat_id, floor, seq)`
 
+/**
+ * `floor_state_baselines.folded_through` — how much of the transcript the stored snapshot ALREADY
+ * contains. Two values, and only two:
+ *
+ *  · NULL (the normal path, and every row `setBaseline` writes) — the snapshot is the state BEFORE
+ *    the first floor. Replay folds that floor's model turn on top of it, then its operations.
+ *  · a floor NUMBER (only the legacy-save fallback writes one, always the first floor) — the
+ *    snapshot is the state AFTER that floor's model fold but BEFORE its journaled operations.
+ *    Replay skips that floor's fold, applies its operations, and continues from the next floor.
+ *
+ * The marked form exists so the fallback's seed is PERSISTED rather than re-derived from
+ * `floors.variables` on every publish — that column is where floor 0's replayed snapshot is written
+ * back to, so re-reading it fed each publish the previous publish's output and a non-idempotent
+ * operation (`increment`, i.e. a card `inc`/`dec`) advanced again every time.
+ */
 export const FLOOR_OPERATIONS_SCHEMA = `
 CREATE TABLE IF NOT EXISTS floor_state_baselines (
   chat_id TEXT PRIMARY KEY,
   variables TEXT NOT NULL,
-  created_at TEXT
+  created_at TEXT,
+  folded_through INTEGER
 );
 CREATE TABLE IF NOT EXISTS floor_operations (${FLOOR_OPERATIONS_COLUMNS}
 );
@@ -335,6 +351,32 @@ export const migrateFloorOperationsSource = (database: Database.Database): void 
   })()
 }
 
+/**
+ * Forward migration for session DBs created before `floor_state_baselines.folded_through` existed.
+ *
+ * Simpler than `migrateFloorOperationsSource` because this one only ADDS a nullable column, which
+ * SQLite supports in place — no rebuild, no transaction to wrap a single statement. NULL is exactly
+ * the pre-migration meaning of every existing row ("state BEFORE the first floor"), so the ALTER
+ * alone leaves them correct.
+ *
+ * Guarded the same way, so it runs at most once per DB and is a no-op on a fresh one:
+ *  · no `floor_state_baselines` row in `sqlite_master` → the table doesn't exist yet; the schema
+ *    exec right after this creates the CURRENT shape.
+ *  · the stored DDL already mentions `folded_through` → already the current shape. `ADD COLUMN`
+ *    rewrites the stored DDL, so this guard catches every later call.
+ */
+export const migrateFloorStateBaselineMarker = (database: Database.Database): void => {
+  const row = database
+    .prepare(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'floor_state_baselines'`
+    )
+    .get() as { sql: string | null } | undefined
+  const ddl = row?.sql
+  if (!ddl) return // no table yet — the schema exec creates the current shape
+  if (ddl.includes('folded_through')) return // already migrated
+  database.exec('ALTER TABLE floor_state_baselines ADD COLUMN folded_through INTEGER')
+}
+
 interface FloorRow {
   floor: number
   response_content: string
@@ -352,8 +394,10 @@ export interface FloorTranscriptUpdate {
 
 export const createFloorState = (dependencies: FloorStateDependencies) => {
   const { db } = dependencies
-  // BEFORE the schema exec: CREATE TABLE IF NOT EXISTS cannot widen an existing CHECK constraint.
+  // BEFORE the schema exec: CREATE TABLE IF NOT EXISTS can neither widen an existing CHECK
+  // constraint nor add a column to a table that already exists.
   migrateFloorOperationsSource(db)
+  migrateFloorStateBaselineMarker(db)
   db.exec(FLOOR_OPERATIONS_SCHEMA)
 
   const readFloors = (chatId: string): ReplayFloor[] =>
@@ -518,26 +562,63 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
     const operations = [...existing, ...legacy, ...additions].sort(
       (a, b) => a.floor - b.floor || a.seq - b.seq
     )
+    /**
+     * The snapshot for a floor whose model fold must NOT be replayed: `base` is the state that fold
+     * already produced, so only that floor's journaled operations remain. The kinds already folded
+     * into storage by the live path are held back — see `isAlreadyStoredKind`. Phase order
+     * (`template` before the fold, the rest after) is moot here because there is no fold to sit
+     * between them; seq order is what remains.
+     */
+    const applyFloorOperations = (
+      base: Record<string, unknown>,
+      floorNumber: number
+    ): Record<string, unknown> => {
+      const state = cloneJson(base)
+      for (const operation of operations)
+        if (operation.floor === floorNumber && !isAlreadyStoredKind(operation.kind))
+          applyStoredOperation(state, operation)
+      return state
+    }
     let seed: Record<string, unknown>
-    // The index replay actually starts at. Normally `startIndex`; the legacy-save fallback below is
-    // the ONE case that moves it forward, past a floor 0 whose model fold cannot be re-derived.
+    // The index replay actually starts at. Normally `startIndex`; the fold-marked seed below is the
+    // ONE case that moves it forward, past a floor 0 whose model fold cannot be re-derived.
     let replayIndex = startIndex
-    // Floor 0's snapshot on that fallback, computed here instead of by `computeFloorSuffix` because
-    // it is the one floor that must NOT be re-folded. Prepended to the suffix so floor 0 is
+    // Floor 0's snapshot in that case, computed here instead of by `computeFloorSuffix` because it
+    // is the one floor that must NOT be re-folded. Prepended to the suffix so floor 0 is
     // republished, validated and announced exactly like every other floor.
     let unfoldableFirst: ReplaySnapshot | undefined
+    // The fold-marked baseline row this publish must CREATE (only when the fallback first fires).
+    // Written inside the commit transaction, so a rejected replay leaves no marker behind.
+    let markerToPersist: { variables: Record<string, unknown>; foldedThrough: number } | undefined
     if (startIndex > 0) {
       seed = allFloors[startIndex - 1].variables
     } else {
       const baseline = db
-        .prepare('SELECT variables FROM floor_state_baselines WHERE chat_id = ?')
-        .get(chatId) as { variables: string } | undefined
+        .prepare('SELECT variables, folded_through FROM floor_state_baselines WHERE chat_id = ?')
+        .get(chatId) as { variables: string; folded_through: number | null } | undefined
       const first = allFloors[0]
-      if (baseline) {
-        seed = parseJournalJson(baseline.variables, first.floor, 'Floor-state baseline') as Record<
+      const stored =
+        baseline &&
+        (parseJournalJson(baseline.variables, first.floor, 'Floor-state baseline') as Record<
           string,
           unknown
-        >
+        >)
+      if (baseline && baseline.folded_through === null) {
+        // NORMAL PATH, unchanged: the row is the state BEFORE floor 0, so floor 0 folds on top.
+        seed = stored as Record<string, unknown>
+      } else if (baseline) {
+        // FOLD-MARKED ROW — see `FLOOR_OPERATIONS_SCHEMA`. The row is the state after that floor's
+        // model fold and before its operations, so it is a STABLE seed: applying that floor's
+        // operations to it yields the same snapshot however many times the suffix is republished.
+        if (baseline.folded_through !== first.floor)
+          throw new FloorStateError(
+            'REPLAY_FAILED',
+            `Floor-state baseline is folded through floor ${baseline.folded_through}, but the transcript now starts at floor ${first.floor}`,
+            first.floor
+          )
+        seed = applyFloorOperations(stored as Record<string, unknown>, first.floor)
+        unfoldableFirst = { floor: first.floor, variables: cloneJson(seed) }
+        replayIndex = 1
       } else {
         const modelFold = first.events.some((event) => event.type === 'state' && event.path)
         const mvu = parseMvuCommands(stripThinking(first.response))
@@ -545,39 +626,31 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
           (operation) => operation.floor === first.floor
         )
         // A floor with no model changes is itself evidence of the pre-floor state, so it seeds the
-        // replay directly (and, below, gets persisted as the baseline).
+        // replay directly (and, below, gets persisted as an ordinary marker-less baseline).
         seed = first.variables
         if (modelFold || mvu.commands.length || mvu.patches.length || previouslyAppliedOperation) {
-          // LEGACY-SAVE FALLBACK — a save written before floor-state baselines existed has no
-          // pre-floor-0 snapshot, and floor 0's STORED variables already contain that floor's model
-          // fold (and any `vars_ops` applied live), so re-FOLDING floor 0 would apply the same
-          // changes a SECOND time. Instead of refusing the whole replay (which would break the
-          // renderer's Re-evaluate button and every card write on such a save), skip floor 0's MODEL
-          // FOLD — and only that. Its stored variables ARE the true post-fold state, so they seed
-          // floor 0's own operation phase; floors 1..N then replay normally from the result.
+          // LEGACY-SAVE FALLBACK, FIRST TRIGGER — a save written before floor-state baselines
+          // existed has no pre-floor-0 snapshot, and floor 0's STORED variables already contain that
+          // floor's model fold (and any `vars_ops` applied live), so re-FOLDING floor 0 would apply
+          // the same changes a SECOND time. Instead of refusing the whole replay (which would break
+          // the renderer's Re-evaluate button and every card write on such a save), skip floor 0's
+          // MODEL FOLD — and only that. Its stored variables ARE the true post-fold state, so they
+          // seed floor 0's own operation phase; floors 1..N then replay normally from the result.
           //
           // The operations still have to be applied, or a journaled write to floor 0 of such a save
           // is recorded and silently lost (on a one-floor save, lost with no snapshot written at
-          // all). Only the kinds that were already folded into storage live are held back — see
-          // `isAlreadyStoredKind`. Phase order (`template` before the fold, the rest after) is moot
-          // here because there is no fold to sit between them; seq order is what remains.
+          // all).
           //
-          // NO baseline row is written: this seed is the state AFTER floor 0, not before it.
-          //
-          // RESIDUAL, and the price of having no pre-floor-0 snapshot to replay FROM: this seed is
-          // re-read from the column each publish, so it comes back carrying the operations the LAST
-          // publish applied. Every kind that can reach a floor-0 replay is idempotent against that
-          // — `set`/`delete`, and `patch`, whose ops all resolve to set-or-remove-at-path — EXCEPT
-          // `increment` (a card `inc`/`dec`), which would advance again on a SECOND floor-0-rooted
-          // publish of the same save. Fixing that needs a stable pre-operation seed, i.e. widening
-          // the baseline row to record that floor 0's fold is already included.
+          // That seed is PERSISTED here, as a fold-marked baseline row, and never derived again: it
+          // is read from `floors.variables`, the same column this publish writes floor 0's snapshot
+          // back to, so re-deriving it next time would hand the next publish this publish's OUTPUT
+          // and re-apply floor 0's operations on top. `set`/`delete`/`patch` survive that
+          // (idempotent); `increment` — a card `inc`/`dec` — advanced again every publish. Every
+          // later publish takes the fold-marked branch above instead.
           replayIndex = 1
-          const first0 = cloneJson(first.variables)
-          for (const operation of operations)
-            if (operation.floor === first.floor && !isAlreadyStoredKind(operation.kind))
-              applyStoredOperation(first0, operation)
-          seed = first0
-          unfoldableFirst = { floor: first.floor, variables: cloneJson(first0) }
+          markerToPersist = { variables: cloneJson(first.variables), foldedThrough: first.floor }
+          seed = applyFloorOperations(first.variables, first.floor)
+          unfoldableFirst = { floor: first.floor, variables: cloneJson(seed) }
         }
       }
     }
@@ -632,6 +705,19 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
           `INSERT OR IGNORE INTO floor_state_baselines (chat_id, variables, created_at)
            VALUES (?, ?, ?)`
         ).run(chatId, JSON.stringify(seed), new Date().toISOString())
+      else if (markerToPersist)
+        // OR IGNORE, like the marker-less write above: the row was absent when this publish read it,
+        // and a concurrent writer that got there first is authoritative — never overwrite a seed.
+        db.prepare(
+          `INSERT OR IGNORE INTO floor_state_baselines
+            (chat_id, variables, created_at, folded_through)
+           VALUES (?, ?, ?, ?)`
+        ).run(
+          chatId,
+          JSON.stringify(markerToPersist.variables),
+          new Date().toISOString(),
+          markerToPersist.foldedThrough
+        )
       const update = db.prepare('UPDATE floors SET variables = ? WHERE chat_id = ? AND floor = ?')
       for (const snapshot of suffix)
         update.run(JSON.stringify(snapshot.variables), chatId, snapshot.floor)
