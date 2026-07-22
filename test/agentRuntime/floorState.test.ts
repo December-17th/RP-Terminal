@@ -461,10 +461,15 @@ describe('FloorState', () => {
   // OWNER DECISION (supersedes the pinned `BASELINE_NOT_FOUND` throw). A save written before
   // floor-state baselines existed can hold legacy `vars_ops` rows with no `floor_state_baselines`
   // row, so floor 0 has no pre-floor snapshot to replay FROM — and its stored variables already
-  // contain the model fold and the applied operation, so re-deriving from them would double-apply.
-  // Replay now SKIPS floor 0 instead of refusing the whole chat (the renderer's Re-evaluate button
-  // and every card write route through here): floor 0's stored variables seed floors 1..N.
-  it('skips an unreplayable floor 0 of a legacy save and replays the rest from its stored state', () => {
+  // contain the model fold and the applied legacy operation, so re-folding them would double-apply.
+  // Replay therefore skips floor 0's MODEL FOLD instead of refusing the whole chat (the renderer's
+  // Re-evaluate button and every card write route through here).
+  //
+  // CHARACTERIZATION UPDATED (was: floor 0 skipped ENTIRELY, suffix `[1]`). Skipping the whole floor
+  // also skipped its OPERATIONS, which are NOT in the stored column — FloorState owns it now — so a
+  // journaled floor-0 write was recorded and never applied. Floor 0 is now republished from its
+  // stored variables plus its non-legacy operations; only the fold is skipped.
+  it('skips only the model fold of an unreplayable floor 0 and replays the rest from its stored state', () => {
     floor(db, 0, { stat_data: { gold: 5 } })
     floor(
       db,
@@ -480,14 +485,14 @@ describe('FloorState', () => {
 
     const suffix = state.replay('chat', 0)
 
-    // Floor 0 stands exactly as stored — never re-derived, so the legacy patch is not applied twice.
+    // Floor 0's VALUE stands exactly as stored — the legacy patch is not applied a second time.
     expect(variablesAt(db, 0)).toEqual({ stat_data: { gold: 5 } })
-    expect(suffix.map((snapshot) => snapshot.floor)).toEqual([1])
+    expect(suffix.map((snapshot) => snapshot.floor)).toEqual([0, 1])
     expect(variablesAt(db, 1)).toEqual({
       stat_data: { gold: 7 },
       delta_data: [{ path: 'gold', old: 5, new: 7 }]
     })
-    // No baseline row is invented: this seed is the state AFTER floor 0, not before it.
+    // No baseline row is invented: this seed is the state AFTER floor 0's fold, not before it.
     expect(
       (
         db.prepare('SELECT COUNT(*) AS n FROM floor_state_baselines').get() as { n: number }
@@ -495,7 +500,10 @@ describe('FloorState', () => {
     ).toBe(0)
   })
 
-  it('replays nothing (and announces nothing) when the skipped floor 0 is the only floor', () => {
+  // CHARACTERIZATION UPDATED (was: 'replays nothing (and announces nothing)' — suffix `[]`, no
+  // refresh). An empty suffix meant the publish wrote NO snapshot at all, so a card write to the only
+  // floor of such a save vanished silently. Floor 0 is now republished and announced.
+  it('republishes the unfoldable floor 0 when it is the only floor', () => {
     floor(db, 0, { stat_data: { gold: 5 } })
     db.prepare(
       `INSERT INTO vars_ops (chat_id, floor, seq, kind, payload)
@@ -504,9 +512,79 @@ describe('FloorState', () => {
     const refresh = vi.fn()
     const state = createFloorState({ db: db as never, onStateRefresh: refresh })
 
-    expect(state.replay('chat', 0)).toEqual([])
-    expect(refresh).not.toHaveBeenCalled()
+    expect(state.replay('chat', 0)).toEqual([{ floor: 0, variables: { stat_data: { gold: 5 } } }])
+    expect(refresh).toHaveBeenCalledWith({ chatId: 'chat', fromFloor: 0, throughFloor: 0 })
     expect(variablesAt(db, 0)).toEqual({ stat_data: { gold: 5 } })
+  })
+
+  // The bug the two cases above used to hide: a legacy save's floor 0 is unfoldable, but its journal
+  // is not — an operation against it has NOT reached the stored column, and dropping it is silent
+  // data loss (a card write via `pluginService.pluginVars` returning the OLD value).
+  it('persists a card write on floor 0 of a one-floor save that has no baseline', () => {
+    floor(
+      db,
+      0,
+      { stat_data: { gold: 5 } },
+      "<UpdateVariable>\n_.add('gold', 2);\n</UpdateVariable>"
+    )
+    const state = createFloorState({ db: db as never })
+
+    const suffix = state.append('chat', 0, 'card', [
+      { kind: 'set', path: 'variables.stat_data.choice', value: 'mage' }
+    ])
+
+    // `choice` landed; `gold` stayed 5 — the stored variables already carry that `_.add`, and the
+    // skipped fold is what stops it being applied twice.
+    expect(variablesAt(db, 0)).toEqual({ stat_data: { gold: 5, choice: 'mage' } })
+    expect(suffix.map((snapshot) => snapshot.floor)).toEqual([0])
+  })
+
+  it('applies a card write on floor 0 without replaying a legacy vars_ops row on top of it', () => {
+    // A whole-stat_data `replace` is the visible probe: re-applying it would drop `keptByALaterWrite`
+    // (and the card write below with it), where re-applying a `patch` of the same values could not
+    // be told apart from not applying it at all.
+    floor(db, 0, { stat_data: { gold: 5, keptByALaterWrite: true } })
+    db.prepare(
+      `INSERT INTO vars_ops (chat_id, floor, seq, kind, payload)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run('chat', 0, 0, 'replace', JSON.stringify({ gold: 5 }))
+    const state = createFloorState({ db: db as never })
+
+    state.append('chat', 0, 'card', [
+      { kind: 'set', path: 'variables.stat_data.choice', value: 'mage' }
+    ])
+
+    expect(variablesAt(db, 0)).toEqual({
+      stat_data: { gold: 5, keptByALaterWrite: true, choice: 'mage' }
+    })
+    // The legacy row is still imported into the journal — held back from replay, not discarded.
+    expect(state.list('chat').map((operation) => operation.kind)).toEqual(['legacy-replace', 'set'])
+  })
+
+  it('replays floors 1..N of a legacy save after applying floor 0 operations', () => {
+    floor(db, 0, { stat_data: { gold: 5 } })
+    floor(db, 1, { stat_data: { gold: 5 } }, "<UpdateVariable>\n_.add('gold', 2);\n</UpdateVariable>")
+    floor(db, 2, { stat_data: { gold: 7 } }, "<UpdateVariable>\n_.add('gold', 3);\n</UpdateVariable>")
+    db.prepare(
+      `INSERT INTO vars_ops (chat_id, floor, seq, kind, payload)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run('chat', 0, 0, 'patch', JSON.stringify([{ op: 'add', path: '/gold', value: 5 }]))
+    const state = createFloorState({ db: db as never })
+
+    const suffix = state.append('chat', 0, 'user', [
+      { kind: 'increment', path: 'variables.stat_data.gold', value: 100 }
+    ])
+
+    expect(suffix.map((snapshot) => snapshot.floor)).toEqual([0, 1, 2])
+    expect(variablesAt(db, 0)).toEqual({ stat_data: { gold: 105 } })
+    expect(variablesAt(db, 1)).toEqual({
+      stat_data: { gold: 107 },
+      delta_data: [{ path: 'gold', old: 105, new: 107 }]
+    })
+    expect(variablesAt(db, 2)).toEqual({
+      stat_data: { gold: 110 },
+      delta_data: [{ path: 'gold', old: 107, new: 110 }]
+    })
   })
 
   // A card's `combat` bundle picks which system an `<rpt-combat-start>` cue opens, and only the

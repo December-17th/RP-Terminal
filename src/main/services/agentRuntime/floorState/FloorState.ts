@@ -226,6 +226,20 @@ const applyStoredOperation = (
 }
 
 /**
+ * Was this operation ALREADY folded into the floor's stored `variables` column by the live path that
+ * wrote it?
+ *
+ * Exactly the two kinds `pendingLegacy` synthesises from the legacy `vars_ops` table: those rows were
+ * applied to the floor snapshot as they happened, by the (now deleted) `varsOpsService`, and are
+ * imported into the journal only as evidence. Every other kind — `set`/`delete`/`increment`/`patch`,
+ * whatever the source — is journaled BEFORE it reaches storage, because FloorState owns that column
+ * now; replay is what applies them. `applyStoredOperation` is the mirror of this split: it is the one
+ * place that understands `legacy-patch` / `legacy-replace`.
+ */
+const isAlreadyStoredKind = (kind: StoredOperation['kind']): boolean =>
+  kind === 'legacy-patch' || kind === 'legacy-replace'
+
+/**
  * Pure suffix calculator. It mutates neither its floor nor operation inputs. The model fold is
  * `foldModelTurn` (services/floorFold.ts) — the same function the live turn path folds with.
  *
@@ -422,6 +436,24 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
   }
 
   /**
+   * The next free `seq` for one (chat, floor) — where the journal appends.
+   *
+   * Counts the rows already in `floor_operations` AND the legacy `vars_ops` rows that the very same
+   * call is about to import (`pendingLegacy` numbers those from the same high-water mark), so an
+   * addition can never collide with a legacy row on the (chat_id, floor, seq) primary key. Every
+   * writer — `append`, `appendPatch`, `incorporateAgent`, `journal` — allocates through here so the
+   * four can never disagree about what "next" means.
+   */
+  const nextSeq = (chatId: string, floor: number): number => {
+    const stored = readStored(chatId)
+    return (
+      [...stored, ...pendingLegacy(chatId, stored)]
+        .filter((operation) => operation.floor === floor)
+        .reduce((max, operation) => Math.max(max, operation.seq), -1) + 1
+    )
+  }
+
+  /**
    * Write the transcript COLUMNS for the given floors (user text / response text / swipes). Shared by
    * `publish` (called inside its replay transaction) and by the no-refold `updateTranscript` path, so
    * the two can never disagree about which columns a transcript update touches. The caller supplies
@@ -488,8 +520,12 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
     )
     let seed: Record<string, unknown>
     // The index replay actually starts at. Normally `startIndex`; the legacy-save fallback below is
-    // the ONE case that moves it forward, past a floor 0 that cannot be re-derived.
+    // the ONE case that moves it forward, past a floor 0 whose model fold cannot be re-derived.
     let replayIndex = startIndex
+    // Floor 0's snapshot on that fallback, computed here instead of by `computeFloorSuffix` because
+    // it is the one floor that must NOT be re-folded. Prepended to the suffix so floor 0 is
+    // republished, validated and announced exactly like every other floor.
+    let unfoldableFirst: ReplaySnapshot | undefined
     if (startIndex > 0) {
       seed = allFloors[startIndex - 1].variables
     } else {
@@ -514,23 +550,46 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
         if (modelFold || mvu.commands.length || mvu.patches.length || previouslyAppliedOperation) {
           // LEGACY-SAVE FALLBACK — a save written before floor-state baselines existed has no
           // pre-floor-0 snapshot, and floor 0's STORED variables already contain that floor's model
-          // fold (and any `vars_ops` applied live), so re-deriving floor 0 from them would apply the
-          // same changes a SECOND time. Instead of refusing the whole replay (which would break the
-          // renderer's Re-evaluate button and every card write on such a save), SKIP floor 0: its
-          // stored variables are the true post-floor-0 state, so they seed floor 1 and floors 1..N
-          // replay normally. Floor 0 never re-derives — an operation journaled against floor 0 of
-          // such a save is recorded but never folded in — and NO baseline row is written, because
-          // this seed is the state AFTER floor 0, not before it.
+          // fold (and any `vars_ops` applied live), so re-FOLDING floor 0 would apply the same
+          // changes a SECOND time. Instead of refusing the whole replay (which would break the
+          // renderer's Re-evaluate button and every card write on such a save), skip floor 0's MODEL
+          // FOLD — and only that. Its stored variables ARE the true post-fold state, so they seed
+          // floor 0's own operation phase; floors 1..N then replay normally from the result.
+          //
+          // The operations still have to be applied, or a journaled write to floor 0 of such a save
+          // is recorded and silently lost (on a one-floor save, lost with no snapshot written at
+          // all). Only the kinds that were already folded into storage live are held back — see
+          // `isAlreadyStoredKind`. Phase order (`template` before the fold, the rest after) is moot
+          // here because there is no fold to sit between them; seq order is what remains.
+          //
+          // NO baseline row is written: this seed is the state AFTER floor 0, not before it.
+          //
+          // RESIDUAL, and the price of having no pre-floor-0 snapshot to replay FROM: this seed is
+          // re-read from the column each publish, so it comes back carrying the operations the LAST
+          // publish applied. Every kind that can reach a floor-0 replay is idempotent against that
+          // — `set`/`delete`, and `patch`, whose ops all resolve to set-or-remove-at-path — EXCEPT
+          // `increment` (a card `inc`/`dec`), which would advance again on a SECOND floor-0-rooted
+          // publish of the same save. Fixing that needs a stable pre-operation seed, i.e. widening
+          // the baseline row to record that floor 0's fold is already included.
           replayIndex = 1
+          const first0 = cloneJson(first.variables)
+          for (const operation of operations)
+            if (operation.floor === first.floor && !isAlreadyStoredKind(operation.kind))
+              applyStoredOperation(first0, operation)
+          seed = first0
+          unfoldableFirst = { floor: first.floor, variables: cloneJson(first0) }
         }
       }
     }
-    const suffix = computeFloorSuffix(
-      allFloors.slice(replayIndex),
-      operations,
-      seed,
-      dependencies.resolveCombatMode?.(chatId) ?? combatModeResolver?.(chatId) ?? 'grid'
-    )
+    const suffix = [
+      ...(unfoldableFirst ? [unfoldableFirst] : []),
+      ...computeFloorSuffix(
+        allFloors.slice(replayIndex),
+        operations,
+        seed,
+        dependencies.resolveCombatMode?.(chatId) ?? combatModeResolver?.(chatId) ?? 'grid'
+      )
+    ]
     for (const snapshot of suffix) {
       const warning = dependencies.validateSnapshot?.(snapshot)
       if (warning)
@@ -577,8 +636,8 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
       for (const snapshot of suffix)
         update.run(JSON.stringify(snapshot.variables), chatId, snapshot.floor)
     })()
-    // Empty only on the legacy-save fallback above when floor 0 is the ONLY floor: nothing was
-    // republished, so there is nothing to announce.
+    // Defensive: `fromFloor` was found in `allFloors`, and the legacy-save fallback contributes its
+    // own floor-0 snapshot, so every path above yields at least one republished floor.
     if (suffix.length)
       dependencies.onStateRefresh?.({
         chatId,
@@ -611,15 +670,11 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
       if (!Array.isArray(operations) || operations.length === 0)
         throw new FloorStateError('INVALID_OPERATION', 'At least one floor operation is required')
       for (const operation of operations) validateOperation(operation, source)
-      const stored = readStored(chatId)
-      const legacy = pendingLegacy(chatId, stored)
-      const maxSeq = [...stored, ...legacy]
-        .filter((operation) => operation.floor === floor)
-        .reduce((max, operation) => Math.max(max, operation.seq), -1)
+      const seq = nextSeq(chatId, floor)
       const additions = operations.map(
         (operation, index): StoredOperation => ({
           floor,
-          seq: maxSeq + index + 1,
+          seq: seq + index,
           source,
           kind: operation.kind,
           path: operation.path,
@@ -642,15 +697,10 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
         )
       if (!isJsonValue(patch))
         throw new FloorStateError('INVALID_OPERATION', 'JSON Patch must be JSON-compatible')
-      const stored = readStored(chatId)
-      const legacy = pendingLegacy(chatId, stored)
-      const maxSeq = [...stored, ...legacy]
-        .filter((operation) => operation.floor === floor)
-        .reduce((max, operation) => Math.max(max, operation.seq), -1)
       return publish(chatId, floor, [
         {
           floor,
-          seq: maxSeq + 1,
+          seq: nextSeq(chatId, floor),
           source,
           kind: 'patch',
           path: 'variables.stat_data',
@@ -667,18 +717,14 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
       if (!Array.isArray(operations) || operations.length === 0)
         throw new FloorStateError('INVALID_OPERATION', 'At least one floor operation is required')
       for (const operation of operations) validateOperation(operation, 'agent', true)
-      const stored = readStored(chatId)
-      const legacy = pendingLegacy(chatId, stored)
-      const maxSeq = [...stored, ...legacy]
-        .filter((operation) => operation.floor === floor)
-        .reduce((max, operation) => Math.max(max, operation.seq), -1)
+      const seq = nextSeq(chatId, floor)
       return publish(
         chatId,
         floor,
         operations.map(
           (operation, index): StoredOperation => ({
             floor,
-            seq: maxSeq + index + 1,
+            seq: seq + index,
             source: 'agent',
             kind: operation.kind,
             path: operation.path,
@@ -707,11 +753,7 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
     ): void {
       if (!Array.isArray(operations) || operations.length === 0) return
       for (const operation of operations) validateOperation(operation, source)
-      const stored = readStored(chatId)
-      const legacy = pendingLegacy(chatId, stored)
-      const maxSeq = [...stored, ...legacy]
-        .filter((operation) => operation.floor === floor)
-        .reduce((max, operation) => Math.max(max, operation.seq), -1)
+      const seq = nextSeq(chatId, floor)
       db.transaction(() => {
         const insert = db.prepare(
           `INSERT INTO floor_operations
@@ -722,7 +764,7 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
           insert.run(
             chatId,
             floor,
-            maxSeq + index + 1,
+            seq + index,
             source,
             operation.kind,
             operation.path,
