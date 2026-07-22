@@ -120,7 +120,11 @@ export interface DirectorAssets {
   actors: Map<string, Set<string>>
 }
 
-export const collectDirectorAssets = (profileId: string, lorebookIds: string[]): DirectorAssets => {
+export const collectDirectorAssets = (
+  profileId: string,
+  lorebookIds: string[],
+  genericActors: string[]
+): DirectorAssets => {
   const locations = new Set<string>()
   const actors = new Map<string, Set<string>>()
   for (const lorebookId of [...new Set(lorebookIds)].sort()) {
@@ -141,15 +145,20 @@ export const collectDirectorAssets = (profileId: string, lorebookIds: string[]):
       }
     }
   }
+  for (const actor of genericActors) {
+    const name = actor.trim()
+    if (name && !actors.has(name)) actors.set(name, new Set())
+  }
   return { locations: [...locations].sort(), actors }
 }
 
 export const buildDirectorInput = (
   profileId: string,
   lorebookIds: string[],
-  rawNarratorResponse: string
+  rawNarratorResponse: string,
+  genericActors: string[] = []
 ): { rawResponse: string; assetVocabulary: { locations: string[]; actors: Record<string, string[]> } } => {
-  const assets = collectDirectorAssets(profileId, lorebookIds)
+  const assets = collectDirectorAssets(profileId, lorebookIds, genericActors)
   return {
     rawResponse: rawNarratorResponse,
     assetVocabulary: {
@@ -177,9 +186,10 @@ const renderActors = (actors: Map<string, Set<string>>): string => {
 export const buildDirectorPrompt = (
   profileId: string,
   lorebookIds: string[],
-  rawNarratorResponse: string
+  rawNarratorResponse: string,
+  genericActors: string[] = []
 ): string => {
-  const assets = collectDirectorAssets(profileId, lorebookIds)
+  const assets = collectDirectorAssets(profileId, lorebookIds, genericActors)
   return DIRECTOR_PROMPT.replace('{{AVAILABLE_LOCATIONS}}', renderLocations(assets.locations))
     .replace('{{ACTORS_AND_EXPRESSIONS}}', renderActors(assets.actors))
     .replace('{{RAW_NARRATOR_RESPONSE}}', rawNarratorResponse)

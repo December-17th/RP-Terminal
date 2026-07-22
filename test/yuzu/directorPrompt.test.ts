@@ -76,4 +76,10 @@ describe('Yuzu scene-director prompt', () => {
     expect(actors).toBe('- 无表情角色\n- 枫\n  - 惊讶\n- 柚子\n  - 微笑\n  - 担忧')
     expect(actors).not.toContain('neutral')
   })
+
+  it('lists relationship actors without portrait assets as expressionless choices', () => {
+    const prompt = buildDirectorPrompt('p', ['first'], '正文', [' 无立绘角色 ', '无立绘角色'])
+    expect(prompt).toContain('- 无立绘角色')
+    expect(prompt).not.toContain('无立绘角色\n  -')
+  })
 })

@@ -11,7 +11,7 @@ const floors = Array.from({ length: 3 }, (_, i) => ({
   floor: i,
   user_message: { content: `player action ${i}` },
   response: { content: `ai reply ${i}` },
-  variables: {}
+  variables: i === 2 ? { stat_data: { 关系列表: { 无立绘角色: {} } } } : {}
 }))
 const appendedFloors = vi.hoisted(() => [] as any[])
 
@@ -209,6 +209,7 @@ describe('Yuzu Classic-narrator then scene-director path', () => {
     expect(directorPrompt).toContain(RAW)
     expect(directorPrompt).toContain('- 教室')
     expect(directorPrompt).toContain('- 柚子\n  - 微笑')
+    expect(directorPrompt).toContain('- 无立绘角色')
     expect(mockFloor.updateActiveFloorResponse).toHaveBeenCalledWith('prof', 'c1', 3, ANNOTATED)
     expect(floor?.response.content).toBe(ANNOTATED)
     expect(floor?.swipes?.[floor.swipe_id ?? 0]).toBe(ANNOTATED)
