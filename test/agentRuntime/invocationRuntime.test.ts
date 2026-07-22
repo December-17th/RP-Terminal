@@ -149,6 +149,25 @@ describe('InvocationRuntime', () => {
     expect(execute.mock.calls[1][0].corrective).toMatchObject({ failure: { code: 'SCRIPT_FAILED' } })
   })
 
+  it('re-preprocesses a fresh snapshot after a source restart', async () => {
+    const { runtime, execute, setRevision } = setup(['A'], (name) => processedAgent(name))
+    execute.mockImplementationOnce(async () => {
+      setRevision(2)
+      runtime.invalidateSources('c', 12)
+      return success('stale')
+    })
+
+    await expect(
+      runtime.run({ profileId: 'p', chatId: 'c', floor: 12, agent: 'A' })
+    ).resolves.toMatchObject({ status: 'succeeded', sourceRestarts: 1 })
+
+    expect(execute).toHaveBeenCalledTimes(2)
+    // The abandoned snapshot preprocessed to { selected: 1 }; the restart must re-run the
+    // preprocessor against the fresh snapshot rather than reuse the stale processed input.
+    expect(execute.mock.calls[0][0].input).toEqual({ selected: 1 })
+    expect(execute.mock.calls[1][0].input).toEqual({ selected: 2 })
+  })
+
   it('returns validated model passthrough with a warning after post retries are exhausted', async () => {
     const { runtime, execute } = setup(
       ['A'],

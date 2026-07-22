@@ -481,7 +481,12 @@ export const createInvocationRuntime = ({
         const hasPreprocessor =
           resolvedAgent.effective.formatVersion === 2 &&
           resolvedAgent.effective.processing?.preprocess !== undefined
-        if (!hasPreprocessor || rawInput === undefined || processedInput === undefined) {
+        // Preprocess is per-source-snapshot: ordinary/corrective retries reuse the same snapshot
+        // object (identity match) and its processed input; a source restart resolves a fresh
+        // snapshot object, so the identity differs and the preprocessor re-runs against it.
+        if (!hasPreprocessor || processedInput === undefined || rawInput !== source.input) {
+          const stalePreprocessWarning = processingWarnings.findIndex((w) => w.phase === 'preprocess')
+          if (stalePreprocessWarning >= 0) processingWarnings.splice(stalePreprocessWarning, 1)
           rawInput = source.input
           const preprocessing = await runPreprocessor(resolvedAgent.effective, rawInput)
           processedInput = preprocessing.value

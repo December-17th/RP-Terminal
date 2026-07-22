@@ -132,7 +132,7 @@ export const runScript = <T = unknown>(
       `(function(){` +
       `var input=${safeJson(job.input)};` +
       (job.processorMode
-        ? `Math.random=function(){return __rng();};var __Date=Date;Date=function(){return arguments.length?new __Date(...arguments):new __Date(0);};Date.now=function(){return 0;};Date.parse=__Date.parse;Date.UTC=__Date.UTC;Date.prototype=__Date.prototype;`
+        ? `Math.random=function(){return __rng();};(function(){var __D=Date;Date=function(){return arguments.length?new __D(...arguments):new __D(0);};Date.now=function(){return 0;};Date.parse=__D.parse;Date.UTC=__D.UTC;Date.prototype=__D.prototype;Date.prototype.constructor=Date;})();`
         : `var rng=function(){return __rng();};Math.random=rng;var emit=function(e){__emit(e);};`) +
       `var log=function(){__log.apply(null,Array.prototype.slice.call(arguments));};` +
       (job.processorMode
