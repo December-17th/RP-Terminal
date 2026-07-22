@@ -3,7 +3,8 @@
 // Type-only import — the shared engine never pulls a runtime quickjs variant; the host injects one via
 // `initEngine(loader)` (main → wasmfile variant; renderer → embedded singlefile variant).
 import type { QuickJSContext, QuickJSHandle, QuickJSWASMModule } from 'quickjs-emscripten'
-import { toParts, getPath, setPath } from './objectPath'
+import merge from 'lodash/merge'
+import { toParts, getPath, setPath, isPlainObject } from './objectPath'
 import { SANDBOX_LIB_JS } from './sandboxLib'
 
 /**
@@ -333,13 +334,48 @@ const installBridge = (vm: QuickJSContext, ctx: TemplateContext): void => {
   })
   reg('setvar', (key: any, value: any, opt: any) => {
     const store = storeFor(opt)
+    // ST-Prompt-Template `{ merge: true }`: DEEP-merge `value` into what's already at `key` instead of
+    // replacing it. Load-bearing for the multi-entry pattern real cards use — several world-info entries
+    // each contributing their own sub-key of ONE shared variable (a per-character visuals map, say). With
+    // a plain replace only the last entry to render survives.
+    //
+    // Upstream's docs pin the semantic to lodash by name — "Whether to use merge to set the variable
+    // (_.merge)" — so this calls the REAL `_.merge` rather than RPT's `deepMerge`. The two differ where
+    // it counts: `_.merge` merges arrays ELEMENT-WISE and keeps the target's extra elements
+    // (`[1,2,3] ← [9]` is `[9,2,3]`, `[{a:1}] ← [{c:3}]` is `[{a:1,c:3}]`) and SKIPS `undefined` source
+    // values, while `deepMerge` replaces arrays wholesale and would write the `undefined` through.
+    // `deepMerge` stays the semantic for RPT's own engines (MVU init-var layering); this one call site
+    // mirrors upstream, because a card author wrote against upstream.
+    const doMerge = !!(opt && opt.merge)
     if (key == null) {
+      // Keyless = "replace the entire variable tree" (upstream's wording). Under `merge` the tree is the
+      // merge target instead — including lodash's array-onto-object index splat, which is what
+      // `_.merge(store, [7,8])` genuinely does.
       if (value && typeof value === 'object') {
-        for (const k of Object.keys(store)) delete store[k]
-        Object.assign(store, value)
+        if (doMerge) merge(store, value)
+        else {
+          for (const k of Object.keys(store)) delete store[k]
+          Object.assign(store, value)
+        }
       }
     } else {
-      setPath(store, key, value)
+      // Deliberately raw `getPath`, NOT `getvar`'s stat_data read-fallback: merge must read from exactly
+      // where the write lands. Merging into `stat_data.<key>` instead would put the mutation in a
+      // fold-owned root that build-time capture skips (assemble.ts FOLD_OWNED_ROOT_KEYS) while the
+      // journaled top-level path resolved to nothing — the write would vanish on replay. A plain
+      // `setvar` has always written top-level here; merge stays symmetric with it.
+      //
+      // A merge needs a live container to merge INTO; anything else (missing path, scalar) is upstream's
+      // "otherwise replaced" and takes the ordinary `setPath`, which also creates the intermediates.
+      const current = doMerge ? getPath(store, key) : undefined
+      if (
+        doMerge &&
+        (isPlainObject(current) || Array.isArray(current)) &&
+        value &&
+        typeof value === 'object'
+      )
+        merge(current, value)
+      else setPath(store, key, value)
       noteWrite(store, key, 'set')
     }
     return undefined
