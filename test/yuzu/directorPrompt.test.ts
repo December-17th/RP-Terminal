@@ -30,24 +30,16 @@ vi.mock('../../src/main/services/worldAssetService', () => ({
 import { buildDirectorPrompt } from '../../src/main/services/yuzu/directorPrompt'
 
 describe('Yuzu scene-director prompt', () => {
+  // The frozen prompt lives in a tracked fixture, NOT in the implementation plan under
+  // docs/superpowers/plans/. All of /docs/** is gitignored (.gitignore:34), so reading the plan
+  // here passed locally and failed in CI with ENOENT. Keep the expected text in test/fixtures/.
   it('matches the complete prompt frozen in the implementation plan', () => {
-    const plan = fs.readFileSync(
-      path.join(
-        __dirname,
-        '..',
-        '..',
-        'docs',
-        'superpowers',
-        'plans',
-        '2026-07-21-yuzu-block-director-poc-plan.md'
-      ),
+    const frozen = fs.readFileSync(
+      path.join(__dirname, '..', 'fixtures', 'yuzu-director-prompt.txt'),
       'utf8'
     )
-    const section = plan.slice(plan.indexOf('## Standalone scene-director prompt'))
-    const frozen = section.match(/```text\n([\s\S]*?)\n```/)?.[1]
-    expect(frozen).toBeDefined()
     expect(buildDirectorPrompt('p', ['first'], '原始回复。')).toBe(
-      frozen!
+      frozen
         .replace('{{AVAILABLE_LOCATIONS}}', '- 天台\n- 教室')
         .replace('{{ACTORS_AND_EXPRESSIONS}}', '- 枫\n  - 惊讶\n- 柚子\n  - 微笑')
         .replace('{{RAW_NARRATOR_RESPONSE}}', '原始回复。')
