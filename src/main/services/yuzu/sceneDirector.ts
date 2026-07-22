@@ -34,25 +34,24 @@ export const runYuzuSceneDirector = async (
     // with the Assets coverage grid so the roster shape is read in exactly one place; tolerant of a
     // malformed stat_data (yields no names rather than throwing).
     const genericActors = rosterFromStatData(floor.variables?.stat_data)
-    const input = buildDirectorInput(
-      gen.profileId,
-      gen.lorebookIds,
-      floor.response.content,
-      genericActors
-    )
-    const prompt = buildDirectorPrompt(
-      gen.profileId,
-      gen.lorebookIds,
-      floor.response.content,
-      genericActors
-    )
+    // Exactly one of input / prompt is used per run: the portable branch supplies raw `input` to the
+    // agent's own processors; the legacy branch renders the self-contained director prompt.
     const outcome = await invocationRuntime().run({
       profileId: gen.profileId,
       chatId: gen.chatId,
       floor: floor.floor,
       agent: agent.name,
       options: {
-        ...(portableProcessing ? { input } : {}),
+        ...(portableProcessing
+          ? {
+              input: buildDirectorInput(
+                gen.profileId,
+                gen.lorebookIds,
+                floor.response.content,
+                genericActors
+              )
+            }
+          : {}),
         required: false,
         maxSteps: 1,
         ...(!portableProcessing ? { maxRetryAttempts: 0 } : {}),
@@ -62,18 +61,25 @@ export const runYuzuSceneDirector = async (
       },
       ...(!portableProcessing
         ? {
-            promptOverride: [{ role: 'system' as const, content: [{ type: 'text' as const, text: prompt }] }],
+            promptOverride: [
+              {
+                role: 'system' as const,
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: buildDirectorPrompt(
+                      gen.profileId,
+                      gen.lorebookIds,
+                      floor.response.content,
+                      genericActors
+                    )
+                  }
+                ]
+              }
+            ],
             acceptRawTextResult: true
           }
-        : {
-            yssVocabulary: {
-              locations: new Set(input.assetVocabulary.locations),
-              actors: new Set(Object.keys(input.assetVocabulary.actors)),
-              expressions: new Set(Object.values(input.assetVocabulary.actors).flat()),
-              cgs: new Set<string>(),
-              audio: new Set<string>()
-            }
-          }),
+        : {}),
       restartOnSourceChange: false,
       skipResultIncorporation: true,
       signal: ctx.modelSignal ?? ctx.signal
