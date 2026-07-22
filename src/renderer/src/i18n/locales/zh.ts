@@ -1098,10 +1098,14 @@ const zh: Record<string, string> = {
   'agentRuns.status.failed': '失败',
   'agentRuns.status.cancelled': '已取消',
   'agentRuns.status.degraded': '已降级',
-  // Yuzu 全屏卡片界面 —— 退出控件与失败兜底。
-  'yuzu.surface.exit': '退出',
-  'yuzu.surface.exitTitle': '退出卡片界面，返回经典工作区',
-  'yuzu.surface.loadError': '无法启动此卡片界面，可能未被信任或加载失败——请点击「退出」返回经典工作区。',
+  // Yuzu 全屏卡片界面 —— 应用内兜底。接管只覆盖顶栏以下的区域，因此即使原生卡片视图失败，
+  // 这里指向的退路（顶栏的「RP Terminal」品牌按钮）依然可用。未授权兜底取代了服务网关本会
+  // 绘制的原生错误页，并提供进入「设置 → 脚本」的快捷入口。
+  'yuzu.surface.loadError':
+    '无法启动此卡片界面——请点击顶栏的「RP Terminal」按钮返回世界列表后重试。',
+  'yuzu.surface.untrusted':
+    '该世界的卡片界面需要运行卡片代码，但尚未获得授权。请在「设置 → 脚本」中授权，界面会随即在此加载。',
+  'yuzu.surface.openScripts': '打开脚本设置',
 
   'status.waiting': '等待会话…',
   'status.heading': 'RPG 状态',

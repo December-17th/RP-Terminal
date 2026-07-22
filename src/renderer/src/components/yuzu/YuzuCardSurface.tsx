@@ -1,36 +1,38 @@
 import { useEffect, useState } from 'react'
 import { WcvPanel } from '../workspace/WcvPanel'
+import { useCardScriptsStore } from '../../stores/cardScriptsStore'
+import { useUiStore } from '../../stores/uiStore'
 import { useT } from '../../i18n'
 
 /**
  * MVP Yuzu takeover surface. The card owns the play-area rectangle through the existing, unrestricted
  * card WCV preload. Its explicit generation flag is applied before the page mounts.
  *
- * Failure story (renderer/Yuzu review): the takeover REPLACES the whole workspace (App.tsx), so if it
- * rendered nothing on failure the user would be stranded with no chat UI. Two escapes:
- *   - A rejected `setVnMode` IPC lands in the `error` state — a localized message instead of a blank
- *     surface, with the exit control still present.
- *   - A persistent, unobtrusive exit control in a slim top bar. The card-code WCV is a native
- *     WebContentsView painted OVER the renderer DOM, so an in-rect overlay would be occluded; a
- *     declined trust grant / failed code-serve therefore shows a raw native error page. Reserving the
- *     bar ABOVE the WCV rect keeps the escape reachable even then. `onExit` returns to the classic
- *     workspace (App.tsx suppresses the surface for this chat).
+ * Two localized in-app fallbacks keep the surface from painting a blank or raw native error:
+ * - A rejected `setVnMode` IPC lands in the `loadError` state instead of mounting a blank WCV.
+ * - When the card's script grants are undecided or trust was denied, the main-side card-code serve gate
+ *   (`decided ∧ trusted`) would refuse the WCV, so we show the `untrusted` fallback with a Settings →
+ *   Scripts shortcut instead. The trust state is a reactive subscription to `useCardScriptsStore`:
+ *   granting trust in that panel auto-mounts the WCV here with no re-entry.
  */
 export function YuzuCardSurface({
   profileId,
   chatId,
+  cardId,
   entry,
-  enableVnMode,
-  onExit
+  enableVnMode
 }: {
   profileId: string
   chatId: string
+  cardId: string
   entry: string
   enableVnMode: boolean
-  onExit: () => void
 }): React.ReactElement {
   const t = useT()
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const trusted = useCardScriptsStore((s) => s.trustedByCard[cardId] ?? false)
+  const resolved = useCardScriptsStore((s) => cardId in s.decidedByCard)
+  const decided = useCardScriptsStore((s) => s.decidedByCard[cardId] === true)
 
   useEffect(() => {
     let cancelled = false
@@ -48,22 +50,31 @@ export function YuzuCardSurface({
     }
   }, [profileId, chatId, enableVnMode])
 
+  // Resolve the card's script grants so the trust gate below reflects the persisted decision.
+  useEffect(() => {
+    if (!resolved) void useCardScriptsStore.getState().load(profileId, cardId)
+  }, [profileId, cardId, resolved])
+
   return (
     <div className="yuzu-surface">
-      <div className="yuzu-surface__bar">
-        <button
-          type="button"
-          className="yuzu-surface__exit"
-          onClick={onExit}
-          title={t('yuzu.surface.exitTitle')}
-        >
-          {t('yuzu.surface.exit')}
-        </button>
-      </div>
       <div className="yuzu-surface__body">
         {status === 'error' ? (
           <div className="yuzu-surface__fallback" role="alert">
             {t('yuzu.surface.loadError')}
+          </div>
+        ) : !resolved ? (
+          // Grants not yet resolved — avoid flashing the untrusted state before the decision loads.
+          null
+        ) : !(decided && trusted) ? (
+          <div className="yuzu-surface__fallback" role="alert">
+            <span>{t('yuzu.surface.untrusted')}</span>
+            <button
+              type="button"
+              className="yuzu-surface__settings"
+              onClick={() => useUiStore.getState().openSettings('scripts')}
+            >
+              {t('yuzu.surface.openScripts')}
+            </button>
           </div>
         ) : status === 'ready' ? (
           <WcvPanel slotId={`yuzu:${chatId}`} url={entry} />
