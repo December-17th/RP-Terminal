@@ -915,12 +915,25 @@ details[open] > .stat-group-title::before {
 .yuzu-surface__fallback {
   flex: 1;
   display: flex;
+  flex-direction: column;
+  gap: 16px;
   align-items: center;
   justify-content: center;
   padding: 24px;
   text-align: center;
   color: var(--rpt-app-text-primary);
   background: var(--rpt-app-bg-secondary);
+}
+.yuzu-surface__settings {
+  padding: 8px 16px;
+  border: 1px solid var(--rpt-app-border);
+  border-radius: 6px;
+  background: var(--rpt-app-bg-primary);
+  color: var(--rpt-app-text-primary);
+  cursor: pointer;
+}
+.yuzu-surface__settings:hover {
+  background: var(--rpt-app-bg-tertiary);
 }
 @keyframes rpt-pulse {
   0%,

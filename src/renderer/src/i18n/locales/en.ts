@@ -1133,9 +1133,15 @@ const en: Record<string, string> = {
   'agentRuns.status.failed': 'Failed',
   'agentRuns.status.cancelled': 'Cancelled',
   'agentRuns.status.degraded': 'Degraded',
-  // Yuzu full-card takeover surface — failure fallback. The takeover covers only the region BELOW the
-  // top strip, so the escapes this names stay reachable even when the native card view paints an error.
-  'yuzu.surface.loadError': 'This card view could not be started. It may be untrusted or failed to load — use "Back to worlds" in the top bar, or grant this world access under Settings → Scripts.',
+  // Yuzu full-card takeover surface — in-app fallbacks. The takeover covers only the region BELOW the
+  // top strip, so the escape this names ("RP Terminal" brand button) stays reachable even when the
+  // native card view fails. The untrusted fallback replaces the raw native error the serve gate would
+  // otherwise paint, with a shortcut into Settings → Scripts.
+  'yuzu.surface.loadError':
+    'This card view could not be started. Click "RP Terminal" in the top bar to return to your worlds and try again.',
+  'yuzu.surface.untrusted':
+    "This world's card view runs card code, which has not been granted access yet. Grant it under Settings → Scripts and the view will load right here.",
+  'yuzu.surface.openScripts': 'Open script settings',
 
   'status.waiting': 'Waiting for session...',
   'status.heading': 'RPG Status',

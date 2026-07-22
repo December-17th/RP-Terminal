@@ -373,7 +373,12 @@ generation orthogonal. Cartridge HTML receives the shared
 [WCV environment](../../src/shared/cardEnv.ts) in the
 [main loader](../../src/main/services/wcvManager.ts) before its scripts execute, including Motion for
 text/portrait animation; TavernHelper/MVU globals come from
-[`wcvPreload`](../../src/preload/wcvPreload.ts).
+[`wcvPreload`](../../src/preload/wcvPreload.ts). `YuzuCardSurface` reactively gates the WCV mount on the
+card's persisted `decided ∧ trusted` grant (same gate as §6a): while grants are unresolved it renders
+nothing, and an undecided/denied card gets a localized in-app fallback with a Settings → Scripts shortcut
+(instead of the raw native error page the 403 serve gate would otherwise paint); granting trust there
+auto-mounts the WCV with no re-entry. A rejected `setVnMode` IPC lands in a separate localized error
+fallback.
 
 `world_card` present ⇒ the card is a **World Card** (a complete, one-click-installable world). The schema
 has a `catchall` so future slots round-trip.

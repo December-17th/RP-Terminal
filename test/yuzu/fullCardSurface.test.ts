@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { applyRegexRules } from '../../src/shared/regexTransform'
+import { useCardScriptsStore } from '../../src/renderer/src/stores/cardScriptsStore'
 
 vi.mock('../../src/renderer/src/components/workspace/WcvPanel', () => ({
   WcvPanel: ({ slotId, url }: { slotId: string; url: string }) =>
@@ -20,14 +21,24 @@ const setVnMode = vi.fn(
       resolveVnMode = resolve
     })
 )
+const pluginGetGrants = vi.fn(async () => ({ enabled: true, trusted: true, decided: true }))
+
+// Seed the reactive trust store so the surface's serve gate (`decided ∧ trusted`) is open.
+const seedTrust = (cardId: string, decided: boolean, trusted: boolean): void =>
+  useCardScriptsStore.setState({
+    decidedByCard: { [cardId]: decided },
+    trustedByCard: { [cardId]: trusted }
+  })
 
 beforeEach(() => {
   setVnMode.mockClear()
+  pluginGetGrants.mockClear()
   resolveVnMode = undefined
+  useCardScriptsStore.setState({ enabledByCard: {}, trustedByCard: {}, decidedByCard: {} })
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
-  ;(window as unknown as { api: unknown }).api = { setVnMode }
+  ;(window as unknown as { api: unknown }).api = { setVnMode, pluginGetGrants }
 })
 
 afterEach(() => {
@@ -44,6 +55,7 @@ describe('Yuzu full-card surface MVP', () => {
     ['classic generation', false],
     ['Yuzu generation', true]
   ])('selects %s before mounting the unrestricted WCV', async (_label, enableVnMode) => {
+    seedTrust('w1', true, true)
     const { YuzuCardSurface } =
       await import('../../src/renderer/src/components/yuzu/YuzuCardSurface')
     await act(async () => {
@@ -51,6 +63,7 @@ describe('Yuzu full-card surface MVP', () => {
         createElement(YuzuCardSurface, {
           profileId: 'p1',
           chatId: 'c1',
+          cardId: 'w1',
           entry: 'card-code:yuzu/index.html',
           enableVnMode
         })
@@ -65,6 +78,53 @@ describe('Yuzu full-card surface MVP', () => {
     const wcv = container?.querySelector('[data-testid="wcv"]')
     expect(wcv?.getAttribute('data-slot')).toBe('yuzu:c1')
     expect(wcv?.getAttribute('data-url')).toBe('card-code:yuzu/index.html')
+  })
+
+  const renderSurface = async (cardId: string): Promise<void> => {
+    const { YuzuCardSurface } =
+      await import('../../src/renderer/src/components/yuzu/YuzuCardSurface')
+    await act(async () => {
+      root?.render(
+        createElement(YuzuCardSurface, {
+          profileId: 'p1',
+          chatId: 'c1',
+          cardId,
+          entry: 'card-code:yuzu/index.html',
+          enableVnMode: false
+        })
+      )
+    })
+    await act(async () => resolveVnMode?.())
+  }
+
+  it('shows the untrusted fallback (no WCV) when the card is decided but untrusted', async () => {
+    seedTrust('w1', true, false)
+    await renderSurface('w1')
+
+    expect(container?.querySelector('[data-testid="wcv"]')).toBeNull()
+    expect(container?.querySelector('.yuzu-surface__fallback[role="alert"]')).not.toBeNull()
+    expect(container?.querySelector('.yuzu-surface__settings')).not.toBeNull()
+  })
+
+  it('mounts the WCV without re-entry when trust is granted after render', async () => {
+    seedTrust('w1', true, false)
+    await renderSurface('w1')
+    expect(container?.querySelector('[data-testid="wcv"]')).toBeNull()
+
+    // Granting trust in the Scripts panel flips the reactive store; the WCV must mount in place.
+    await act(async () => {
+      useCardScriptsStore.setState({ trustedByCard: { w1: true } })
+    })
+    expect(container?.querySelector('[data-testid="wcv"]')?.getAttribute('data-slot')).toBe('yuzu:c1')
+  })
+
+  it('renders neither the WCV nor the untrusted fallback while grants are unresolved', async () => {
+    pluginGetGrants.mockImplementation(() => new Promise(() => {})) // never resolves
+    await renderSurface('w1')
+
+    expect(container?.querySelector('[data-testid="wcv"]')).toBeNull()
+    expect(container?.querySelector('.yuzu-surface__fallback')).toBeNull()
+    expect(pluginGetGrants).toHaveBeenCalledWith('p1', 'w1')
   })
 })
 

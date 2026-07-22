@@ -445,10 +445,11 @@ export default function App(): React.ReactElement {
             className="ws-overlay-root"
             style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}
           >
-            {yuzuSurface?.entry && activeChatId ? (
+            {yuzuSurface?.entry && activeChatId && activeCharacter ? (
               <YuzuCardSurface
                 profileId={activeProfile.id}
                 chatId={activeChatId}
+                cardId={activeCharacter.id}
                 entry={yuzuSurface.entry}
                 enableVnMode={yuzuSurface.enable_vn_mode === true}
               />
