@@ -1,13 +1,22 @@
 import type Database from 'better-sqlite3'
-import { applyJsonPatch, applyMvuCommands, parseMvuCommands } from '../../../parsers/mvuParser'
-import { stripThinking } from '../../../parsers/contentParser'
+import { applyJsonPatch, parseMvuCommands } from '../../../parsers/mvuParser'
+import { stripThinking, type RPEvent } from '../../../parsers/contentParser'
+import { foldModelTurn, variablesParentAt } from '../../floorFold'
 import {
   isFullVariablesPath,
   isResultSlotPath,
   isWritableVariablesPath
 } from '../../../../shared/agentRuntime/paths'
 
-export type FloorOperationSource = 'model' | 'card' | 'user' | 'agent'
+/**
+ * Who wrote a journaled operation.
+ *
+ * `'template'` is the ONE pre-fold source: build-time `{{setvar}}` / EJS `setvar()` mutate
+ * `ctx.workingVars` WHILE the prompt for this floor is being assembled — i.e. strictly BEFORE the
+ * model turn is folded on top. Every other source writes after the fold (a card panel, a user edit,
+ * an Agent result all land on a floor that already exists). `computeFloorSuffix` honours that split.
+ */
+export type FloorOperationSource = 'model' | 'card' | 'user' | 'agent' | 'template'
 
 export type FloorStateOperation =
   | { kind: 'set'; path: string; value: unknown }
@@ -27,7 +36,7 @@ interface StoredOperation {
 interface ReplayFloor {
   floor: number
   response: string
-  events: Array<{ type: string; path: string; value: unknown; action: string }>
+  events: RPEvent[]
   variables: Record<string, unknown>
 }
 
@@ -60,11 +69,37 @@ export class FloorStateError extends Error {
   }
 }
 
+/** Resolves which combat system a chat's card opens on an `<rpt-combat-start>` cue. */
+export type CombatModeResolver = (chatId: string) => 'grid' | 'duel'
+
+/**
+ * Process-wide combat-mode resolver — a plain module-level variable ON PURPOSE (no import): every
+ * `createFloorState` caller inherits it, so the mode cannot be lost by a construction site that
+ * forgot to inject one. Production wiring lives in `src/main/index.ts`.
+ *
+ * Forward Replay re-derives `combat_cue` from a floor's response text, and `mode` is a property of
+ * the card's `combat` bundle — which this module cannot see. A registration SETTER rather than an
+ * import for the reason `floorService.onTranscriptCut` / `onTranscriptEdited` use one: resolving a
+ * chat's card means `chatService` + `characterService`, and both of them already reach this module,
+ * so importing them here would close a dependency cycle. Unregistered (tests, a headless harness),
+ * replay falls back to 'grid' exactly as before.
+ */
+let combatModeResolver: CombatModeResolver | null = null
+
+/** Register (or clear, with `null`) the process-wide resolver. See {@link combatModeResolver}. */
+export const setCombatModeResolver = (resolve: CombatModeResolver | null): void => {
+  combatModeResolver = resolve
+}
+
 export interface FloorStateDependencies {
   db: Database.Database
   onStateRefresh?: (refresh: FloorStateRefresh) => void
   validateSnapshot?: (snapshot: ReplaySnapshot) => string | undefined
   beforeCommit?: () => void
+  /** Which combat system a replayed `<rpt-combat-start>` cue opens — a property of the chat's card
+   *  bundle, which this module cannot see. Overrides the registered process-wide resolver; with
+   *  neither, replay defaults to 'grid'. */
+  resolveCombatMode?: CombatModeResolver
 }
 
 const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
@@ -134,26 +169,6 @@ const validateOperation = (
   }
 }
 
-const pathSegments = (path: string): string[] => path.split('.').slice(1)
-
-const parentAt = (
-  variables: Record<string, unknown>,
-  path: string,
-  create: boolean
-): { parent: Record<string, unknown>; key: string } | undefined => {
-  const segments = pathSegments(path)
-  let parent = variables
-  for (const segment of segments.slice(0, -1)) {
-    const next = parent[segment]
-    if (!next || typeof next !== 'object' || Array.isArray(next)) {
-      if (!create) return undefined
-      parent[segment] = {}
-    }
-    parent = parent[segment] as Record<string, unknown>
-  }
-  return { parent, key: segments[segments.length - 1] }
-}
-
 const applyStoredOperation = (
   variables: Record<string, unknown>,
   operation: StoredOperation
@@ -191,7 +206,7 @@ const applyStoredOperation = (
     operation.source,
     operation.source === 'agent'
   )
-  const target = parentAt(variables, operation.path, operation.kind !== 'delete')
+  const target = variablesParentAt(variables, operation.path, operation.kind !== 'delete')
   if (!target) return
   if (operation.kind === 'delete') {
     delete target.parent[target.key]
@@ -210,39 +225,21 @@ const applyStoredOperation = (
   }
 }
 
-const applyModelFold = (variables: Record<string, unknown>, floor: ReplayFloor): void => {
-  for (const event of floor.events) {
-    if (event.type !== 'state' || !event.path) continue
-    const rootedPath = event.path.startsWith('variables.') ? event.path : `variables.${event.path}`
-    if (!isWritableVariablesPath(rootedPath)) continue
-    const target = parentAt(variables, rootedPath, true)!
-    const current = target.parent[target.key]
-    if (event.action === 'add') {
-      target.parent[target.key] = (typeof current === 'number' ? current : 0) + Number(event.value)
-    } else if (event.action === 'remove') {
-      target.parent[target.key] = (typeof current === 'number' ? current : 0) - Number(event.value)
-    } else {
-      target.parent[target.key] = cloneJson(event.value)
-    }
-  }
-  const mvu = parseMvuCommands(stripThinking(floor.response))
-  if (!mvu.commands.length && !mvu.patches.length) return
-  const stat =
-    variables.stat_data && typeof variables.stat_data === 'object'
-      ? (variables.stat_data as Record<string, unknown>)
-      : {}
-  variables.stat_data = stat
-  variables.delta_data = [
-    ...(mvu.commands.length ? applyMvuCommands(stat, mvu.commands) : []),
-    ...(mvu.patches.length ? applyJsonPatch(stat, mvu.patches) : [])
-  ]
-}
-
-/** Pure suffix calculator. It mutates neither its floor nor operation inputs. */
+/**
+ * Pure suffix calculator. It mutates neither its floor nor operation inputs. The model fold is
+ * `foldModelTurn` (services/floorFold.ts) — the same function the live turn path folds with.
+ *
+ * TWO operation phases per floor, mirroring the live turn's write order:
+ *  1. `source: 'template'` — build-time `setvar` writes, applied BEFORE the fold because live they
+ *     happened while the prompt was still being assembled (see `FloorOperationSource`).
+ *  2. everything else — applied AFTER the fold (a card/user/Agent write onto a finished floor).
+ * Within each phase, seq order is preserved.
+ */
 export const computeFloorSuffix = (
   floors: readonly ReplayFloor[],
   operations: readonly StoredOperation[],
-  seed: Record<string, unknown>
+  seed: Record<string, unknown>,
+  combatMode: 'grid' | 'duel' = 'grid'
 ): ReplaySnapshot[] => {
   const state = cloneJson(seed)
   const byFloor = new Map<number, StoredOperation[]>()
@@ -252,11 +249,29 @@ export const computeFloorSuffix = (
     else byFloor.set(operation.floor, [operation])
   }
   return floors.map((floor) => {
-    applyModelFold(state, floor)
-    for (const operation of byFloor.get(floor.floor) ?? []) applyStoredOperation(state, operation)
+    const floorOperations = byFloor.get(floor.floor) ?? []
+    for (const operation of floorOperations)
+      if (operation.source === 'template') applyStoredOperation(state, operation)
+    foldModelTurn(state, { response: floor.response, events: floor.events, combatMode })
+    for (const operation of floorOperations)
+      if (operation.source !== 'template') applyStoredOperation(state, operation)
     return { floor: floor.floor, variables: cloneJson(state) }
   })
 }
+
+/** The `floor_operations` column list — shared by the schema below and the CHECK-constraint rebuild
+ *  in `migrateFloorOperationsSource`, so the two can never disagree about the allowed sources. */
+const FLOOR_OPERATIONS_COLUMNS = `
+  chat_id TEXT NOT NULL,
+  floor INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  source TEXT NOT NULL CHECK(source IN ('model','card','user','agent','template')),
+  kind TEXT NOT NULL CHECK(kind IN ('set','delete','increment','patch','legacy-patch','legacy-replace')),
+  path TEXT NOT NULL,
+  value TEXT,
+  created_at TEXT,
+  legacy_ref TEXT UNIQUE,
+  PRIMARY KEY (chat_id, floor, seq)`
 
 export const FLOOR_OPERATIONS_SCHEMA = `
 CREATE TABLE IF NOT EXISTS floor_state_baselines (
@@ -264,20 +279,47 @@ CREATE TABLE IF NOT EXISTS floor_state_baselines (
   variables TEXT NOT NULL,
   created_at TEXT
 );
-CREATE TABLE IF NOT EXISTS floor_operations (
-  chat_id TEXT NOT NULL,
-  floor INTEGER NOT NULL,
-  seq INTEGER NOT NULL,
-  source TEXT NOT NULL CHECK(source IN ('model','card','user','agent')),
-  kind TEXT NOT NULL CHECK(kind IN ('set','delete','increment','patch','legacy-patch','legacy-replace')),
-  path TEXT NOT NULL,
-  value TEXT,
-  created_at TEXT,
-  legacy_ref TEXT UNIQUE,
-  PRIMARY KEY (chat_id, floor, seq)
+CREATE TABLE IF NOT EXISTS floor_operations (${FLOOR_OPERATIONS_COLUMNS}
 );
 CREATE INDEX IF NOT EXISTS idx_floor_operations_chat_floor
   ON floor_operations(chat_id, floor, seq);`
+
+/**
+ * Forward migration for session DBs created before `'template'` was an allowed operation source.
+ *
+ * SQLite cannot ALTER a CHECK constraint and `CREATE TABLE IF NOT EXISTS` leaves an existing table
+ * alone, so the only faithful path is create-new / copy / drop / rename — inside ONE transaction
+ * (all-or-nothing), the same idiom `db.ts`'s `migrateAgentPacksToVersioned` uses.
+ *
+ * Guarded twice, so it runs at most once per DB and is a no-op on a fresh one:
+ *  · no `floor_operations` row in `sqlite_master` → the table doesn't exist yet; the schema exec
+ *    right after this creates the CURRENT shape.
+ *  · the stored DDL already mentions `'template'` → already the current shape.
+ * After the rename SQLite rewrites only the table NAME in the stored DDL, so the CHECK (and hence
+ * the second guard) survives — a second call is a no-op.
+ */
+export const migrateFloorOperationsSource = (database: Database.Database): void => {
+  const row = database
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'floor_operations'`)
+    .get() as { sql: string | null } | undefined
+  const ddl = row?.sql
+  if (!ddl) return // no table yet — the schema exec creates the current shape
+  if (ddl.includes(`'template'`)) return // already migrated
+  database.transaction(() => {
+    database.exec(`
+      CREATE TABLE floor_operations_new (${FLOOR_OPERATIONS_COLUMNS}
+      );
+      INSERT INTO floor_operations_new
+        (chat_id, floor, seq, source, kind, path, value, created_at, legacy_ref)
+        SELECT chat_id, floor, seq, source, kind, path, value, created_at, legacy_ref
+          FROM floor_operations;
+      DROP TABLE floor_operations;
+      ALTER TABLE floor_operations_new RENAME TO floor_operations;
+      CREATE INDEX IF NOT EXISTS idx_floor_operations_chat_floor
+        ON floor_operations(chat_id, floor, seq);
+    `)
+  })()
+}
 
 interface FloorRow {
   floor: number
@@ -296,6 +338,8 @@ export interface FloorTranscriptUpdate {
 
 export const createFloorState = (dependencies: FloorStateDependencies) => {
   const { db } = dependencies
+  // BEFORE the schema exec: CREATE TABLE IF NOT EXISTS cannot widen an existing CHECK constraint.
+  migrateFloorOperationsSource(db)
   db.exec(FLOOR_OPERATIONS_SCHEMA)
 
   const readFloors = (chatId: string): ReplayFloor[] =>
@@ -377,6 +421,37 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
     return pending
   }
 
+  /**
+   * Write the transcript COLUMNS for the given floors (user text / response text / swipes). Shared by
+   * `publish` (called inside its replay transaction) and by the no-refold `updateTranscript` path, so
+   * the two can never disagree about which columns a transcript update touches. The caller supplies
+   * the transaction.
+   */
+  const applyTranscriptUpdates = (
+    chatId: string,
+    updates: readonly FloorTranscriptUpdate[]
+  ): void => {
+    const statement = db.prepare(
+      `UPDATE floors SET
+         user_content = COALESCE(?, user_content),
+         response_content = COALESCE(?, response_content),
+         swipes = CASE WHEN ? THEN ? ELSE swipes END,
+         swipe_id = CASE WHEN ? THEN ? ELSE swipe_id END
+       WHERE chat_id = ? AND floor = ?`
+    )
+    for (const update of updates)
+      statement.run(
+        update.userContent ?? null,
+        update.responseContent ?? null,
+        Object.prototype.hasOwnProperty.call(update, 'swipes') ? 1 : 0,
+        update.swipes ? JSON.stringify(update.swipes) : null,
+        Object.prototype.hasOwnProperty.call(update, 'swipeId') ? 1 : 0,
+        update.swipeId ?? null,
+        chatId,
+        update.floor
+      )
+  }
+
   const fingerprint = (floors: readonly ReplayFloor[]): string =>
     JSON.stringify(
       floors.map(({ floor, response, events }) => ({
@@ -412,6 +487,9 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
       (a, b) => a.floor - b.floor || a.seq - b.seq
     )
     let seed: Record<string, unknown>
+    // The index replay actually starts at. Normally `startIndex`; the legacy-save fallback below is
+    // the ONE case that moves it forward, past a floor 0 that cannot be re-derived.
+    let replayIndex = startIndex
     if (startIndex > 0) {
       seed = allFloors[startIndex - 1].variables
     } else {
@@ -430,19 +508,29 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
         const previouslyAppliedOperation = [...existing, ...legacy].some(
           (operation) => operation.floor === first.floor
         )
-        if (modelFold || mvu.commands.length || mvu.patches.length || previouslyAppliedOperation) {
-          throw new FloorStateError(
-            'BASELINE_NOT_FOUND',
-            `Cannot replay floor ${first.floor} without its persisted pre-floor baseline`,
-            first.floor
-          )
-        }
-        // A floor with no model changes is itself evidence of the pre-floor state. Persist it now so
-        // subsequent full replays never infer a baseline from a later, operation-folded snapshot.
+        // A floor with no model changes is itself evidence of the pre-floor state, so it seeds the
+        // replay directly (and, below, gets persisted as the baseline).
         seed = first.variables
+        if (modelFold || mvu.commands.length || mvu.patches.length || previouslyAppliedOperation) {
+          // LEGACY-SAVE FALLBACK — a save written before floor-state baselines existed has no
+          // pre-floor-0 snapshot, and floor 0's STORED variables already contain that floor's model
+          // fold (and any `vars_ops` applied live), so re-deriving floor 0 from them would apply the
+          // same changes a SECOND time. Instead of refusing the whole replay (which would break the
+          // renderer's Re-evaluate button and every card write on such a save), SKIP floor 0: its
+          // stored variables are the true post-floor-0 state, so they seed floor 1 and floors 1..N
+          // replay normally. Floor 0 never re-derives — an operation journaled against floor 0 of
+          // such a save is recorded but never folded in — and NO baseline row is written, because
+          // this seed is the state AFTER floor 0, not before it.
+          replayIndex = 1
+        }
       }
     }
-    const suffix = computeFloorSuffix(allFloors.slice(startIndex), operations, seed)
+    const suffix = computeFloorSuffix(
+      allFloors.slice(replayIndex),
+      operations,
+      seed,
+      dependencies.resolveCombatMode?.(chatId) ?? combatModeResolver?.(chatId) ?? 'grid'
+    )
     for (const snapshot of suffix) {
       const warning = dependencies.validateSnapshot?.(snapshot)
       if (warning)
@@ -461,25 +549,7 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
           fromFloor
         )
       }
-      const updateTranscript = db.prepare(
-        `UPDATE floors SET
-           user_content = COALESCE(?, user_content),
-           response_content = COALESCE(?, response_content),
-           swipes = CASE WHEN ? THEN ? ELSE swipes END,
-           swipe_id = CASE WHEN ? THEN ? ELSE swipe_id END
-         WHERE chat_id = ? AND floor = ?`
-      )
-      for (const update of transcriptUpdates)
-        updateTranscript.run(
-          update.userContent ?? null,
-          update.responseContent ?? null,
-          Object.prototype.hasOwnProperty.call(update, 'swipes') ? 1 : 0,
-          update.swipes ? JSON.stringify(update.swipes) : null,
-          Object.prototype.hasOwnProperty.call(update, 'swipeId') ? 1 : 0,
-          update.swipeId ?? null,
-          chatId,
-          update.floor
-        )
+      applyTranscriptUpdates(chatId, transcriptUpdates)
       const insert = db.prepare(
         `INSERT INTO floor_operations
           (chat_id, floor, seq, source, kind, path, value, created_at, legacy_ref)
@@ -498,7 +568,7 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
           operation.legacyRef ?? null
         )
       }
-      if (startIndex === 0)
+      if (replayIndex === 0)
         db.prepare(
           `INSERT OR IGNORE INTO floor_state_baselines (chat_id, variables, created_at)
            VALUES (?, ?, ?)`
@@ -507,11 +577,14 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
       for (const snapshot of suffix)
         update.run(JSON.stringify(snapshot.variables), chatId, snapshot.floor)
     })()
-    dependencies.onStateRefresh?.({
-      chatId,
-      fromFloor,
-      throughFloor: suffix[suffix.length - 1].floor
-    })
+    // Empty only on the legacy-save fallback above when floor 0 is the ONLY floor: nothing was
+    // republished, so there is nothing to announce.
+    if (suffix.length)
+      dependencies.onStateRefresh?.({
+        chatId,
+        fromFloor: suffix[0].floor,
+        throughFloor: suffix[suffix.length - 1].floor
+      })
     return suffix
   }
 
@@ -615,13 +688,76 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
       )
     },
 
+    /**
+     * Record operations for a floor WITHOUT replaying anything — the commit-time journal write.
+     *
+     * `append` / `appendPatch` / `incorporateAgent` all republish the suffix because they mutate a
+     * floor that already exists. This one is for the floor being COMMITTED right now: its variables
+     * were just produced by the live path, so re-deriving them here would be pure risk — a
+     * mid-commit republish would fight the write that is still in flight. All we owe the journal is
+     * the evidence that lets a LATER replay reproduce what the live path already did.
+     *
+     * Operations are validated the same way and appended after any existing seq for that floor.
+     */
+    journal(
+      chatId: string,
+      floor: number,
+      source: FloorOperationSource,
+      operations: readonly FloorStateOperation[]
+    ): void {
+      if (!Array.isArray(operations) || operations.length === 0) return
+      for (const operation of operations) validateOperation(operation, source)
+      const stored = readStored(chatId)
+      const legacy = pendingLegacy(chatId, stored)
+      const maxSeq = [...stored, ...legacy]
+        .filter((operation) => operation.floor === floor)
+        .reduce((max, operation) => Math.max(max, operation.seq), -1)
+      db.transaction(() => {
+        const insert = db.prepare(
+          `INSERT INTO floor_operations
+            (chat_id, floor, seq, source, kind, path, value, created_at, legacy_ref)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`
+        )
+        operations.forEach((operation, index) =>
+          insert.run(
+            chatId,
+            floor,
+            maxSeq + index + 1,
+            source,
+            operation.kind,
+            operation.path,
+            'value' in operation ? JSON.stringify(operation.value) : null,
+            new Date().toISOString()
+          )
+        )
+      })()
+    },
+
     replay(chatId: string, fromFloor: number): ReplaySnapshot[] {
       return publish(chatId, fromFloor, [])
     },
 
-    updateTranscript(chatId: string, updates: readonly FloorTranscriptUpdate[]): ReplaySnapshot[] {
+    /**
+     * Write floor transcript text (and swipes), then re-fold the suffix from that floor.
+     *
+     * `refold: false` writes the columns ONLY — no replay, no snapshot. That is for the one edit
+     * whose text carries no state: Yuzu's Scene Director annotates a response that was ALREADY
+     * folded at commit time, so re-folding it would re-derive the same variables from a
+     * presentation-only rewrite. Every other edit path (UI edit, swipe switch/append, a card's
+     * `setMessage`) must re-fold, because its new text can carry different MVU/rpt-event content.
+     * Returns `[]` on the no-refold path — nothing was republished.
+     */
+    updateTranscript(
+      chatId: string,
+      updates: readonly FloorTranscriptUpdate[],
+      options?: { refold?: boolean }
+    ): ReplaySnapshot[] {
       if (!updates.length)
         throw new FloorStateError('INVALID_OPERATION', 'At least one transcript update is required')
+      if (options?.refold === false) {
+        db.transaction(() => applyTranscriptUpdates(chatId, updates))()
+        return []
+      }
       const fromFloor = Math.min(...updates.map((update) => update.floor))
       return publish(chatId, fromFloor, [], updates)
     },

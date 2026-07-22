@@ -21,6 +21,8 @@ import { PresetParameters, Preset } from '../../types/preset'
 import { GenContext } from './types'
 import { ExecutionRecord } from '../../../shared/executionRecord'
 import { createRecordBuilder } from './executionRecord'
+import { isWritableVariablesPath } from '../../../shared/agentRuntime/paths'
+import type { FloorStateOperation } from '../agentRuntime/floorState/FloorState'
 
 /**
  * prompt.preset composer overrides (context-epochs plan §3): each field, when present, replaces one
@@ -104,6 +106,106 @@ export const matchWorldInfo = (ctx: GenContext): LorebookEntry[] => {
     `lorebook: ${lorebooks.length} book(s) / ${loreEntryCount} entr${loreEntryCount === 1 ? 'y' : 'ies'} → ${matchedEntries.length} matched · ids=[${lorebookIds.join(', ') || 'none'}]`
   )
   return matchedEntries
+}
+
+// ── build-time setvar capture ────────────────────────────────────────────────────────────────────
+//
+// Build-time `{{setvar}}` / EJS `setvar()` write straight into `ctx.workingVars` (the PARITY HAZARD
+// documented on `assemblePrompt`). Those writes reach the STORED floor — but nothing journals them,
+// so Forward Replay, which rebuilds a floor from `previous floor variables → model fold → journaled
+// operations`, silently drops every one of them. Rather than instrument the clean-room template
+// engine, the turn DIFFS `workingVars` across assembly and journals the difference as `'template'`
+// operations, which replay applies BEFORE the model fold (FloorState.computeFloorSuffix) — the live
+// order (assembly first, model turn second).
+
+/** Root keys the MODEL FOLD owns and re-derives from the response on every replay: journaling them
+ *  as pre-fold operations would be redundant at best and would fight the fold at worst
+ *  (`combat_cue` is deleted and re-derived every turn; `stat_data`/`delta_data` are MVU's). */
+const FOLD_OWNED_ROOT_KEYS = new Set(['stat_data', 'delta_data', 'combat_cue'])
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value)
+
+/** The value as it would SURVIVE onto the floor (floor variables are persisted as JSON), or
+ *  `undefined` when JSON cannot represent it — i.e. when the floor would not hold it either. */
+const asStorableJson = (value: unknown): unknown => {
+  try {
+    const text = JSON.stringify(value)
+    return text === undefined ? undefined : JSON.parse(text)
+  } catch {
+    return undefined
+  }
+}
+
+const sameStorable = (a: unknown, b: unknown): boolean =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+
+const collectTemplateWrites = (
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  prefix: string,
+  out: FloorStateOperation[]
+): void => {
+  const root = prefix === 'variables'
+  for (const key of Object.keys(after)) {
+    if (root && FOLD_OWNED_ROOT_KEYS.has(key)) continue
+    const path = `${prefix}.${key}`
+    const previous = before[key]
+    const current = after[key]
+    // Recurse only when BOTH sides are plain objects; otherwise the subtree is set wholesale, so a
+    // freshly-created (even empty) object is never lost to an empty leaf diff.
+    if (isPlainObject(previous) && isPlainObject(current)) {
+      collectTemplateWrites(previous, current, path, out)
+      continue
+    }
+    if (!isWritableVariablesPath(path)) continue
+    const stored = asStorableJson(current)
+    const wasStored = asStorableJson(previous)
+    if (sameStorable(stored, wasStored)) continue
+    if (stored === undefined) {
+      if (wasStored !== undefined) out.push({ kind: 'delete', path })
+      continue
+    }
+    out.push({ kind: 'set', path, value: stored })
+  }
+  for (const key of Object.keys(before)) {
+    if (root && FOLD_OWNED_ROOT_KEYS.has(key)) continue
+    if (Object.prototype.hasOwnProperty.call(after, key)) continue
+    const path = `${prefix}.${key}`
+    if (!isWritableVariablesPath(path)) continue
+    if (asStorableJson(before[key]) === undefined) continue
+    out.push({ kind: 'delete', path })
+  }
+}
+
+/**
+ * Snapshot `workingVars` before assembly, so the post-assembly diff has something to compare with.
+ * A deep JSON clone — assembly mutates the live object in place, by reference, on purpose.
+ *
+ * The fold-owned roots are left OUT of the clone: the diff skips them on both sides anyway, and
+ * `stat_data` is by far the largest thing in a mature session's variables.
+ */
+export const snapshotTemplateVars = (
+  workingVars: Record<string, unknown>
+): Record<string, unknown> => {
+  const capturable: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(workingVars ?? {}))
+    if (!FOLD_OWNED_ROOT_KEYS.has(key)) capturable[key] = value
+  return JSON.parse(JSON.stringify(capturable)) as Record<string, unknown>
+}
+
+/**
+ * The build-time writes assembly made, as journalable floor operations (leaf-level `set`, plus
+ * `delete` for a `delvar`). Fold-owned roots are skipped; so is any path the journal would refuse
+ * (runtime-owned `variables.__rpt`, prototype keys) — capture must never be able to fail a turn.
+ */
+export const captureTemplateWrites = (
+  before: Record<string, unknown>,
+  after: Record<string, unknown>
+): FloorStateOperation[] => {
+  const operations: FloorStateOperation[] = []
+  collectTemplateWrites(before ?? {}, after ?? {}, 'variables', operations)
+  return operations
 }
 
 /**

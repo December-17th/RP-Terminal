@@ -5,19 +5,11 @@ import { getAllFloors, getFloor, saveFloor } from './floorService'
 import { normalizeSwipes } from './swipeHelpers'
 import { collectRenderMarkers } from './promptBuilder'
 import { DeltaCallback } from './apiService'
-import {
-  parseMvuCommands,
-  applyMvuCommands,
-  applyJsonPatch,
-  JsonPatchOp
-} from '../parsers/mvuParser'
-import { stripThinking } from '../parsers/contentParser'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook } from '../types/character'
 import { applyEvent } from './generation/foldState'
 import { resetWriteLoopGuard } from './generation/varsWrite'
-import { listVarsOps, VarsOpRow } from './varsOpsService'
 import { floorStateForChat } from './agentRuntime/floorState'
 import { RunContext } from './generation/runContext'
 import { runClassicTurnDirect } from './generation/classicTurn'
@@ -208,18 +200,18 @@ export const getRenderMarkers = (
  * scratch — enabled by lossless storage. Lets the user re-apply variable updates after a parser
  * change WITHOUT a costly regeneration: no new API call, the narrative is untouched, only the
  * derived state is recomputed. Cumulative (floor N's stat_data = replay of floors 0..N). After each
- * floor's model fold, the floor's journaled CARD writes (`vars_ops` — JSON-Patch + whole-replace)
- * are REPLAYED in seq order, so card/panel writes that are not re-derivable from response text
- * survive re-evaluation (manual-pass issue 02). Returns the updated floors.
+ * floor's model fold, that floor's journaled CARD/USER/AGENT operations are REPLAYED in seq order,
+ * so writes that are not re-derivable from response text survive re-evaluation (manual-pass issue
+ * 02). Returns the updated floors.
  *
  * `fromFloor` (audit P1-4): every stored floor's stat_data IS the replay of floors 0..N, so a
  * mutation at floor K only invalidates K and later — seed from K-1's stored state and replay just
  * the suffix instead of rewriting the whole transcript. Default 0 = the full from-scratch replay
  * (the Re-evaluate button / parser-change path).
  *
- * Real session databases delegate replay to FloorState, which includes general floor-scoped
- * model/card/user/Agent operations and publishes the whole suffix atomically. The legacy fold below
- * remains only for no-database unit seams.
+ * The replay itself belongs to FloorState, which owns the model/card/user/Agent operation journal
+ * and publishes the whole suffix atomically. A chat with no session store (deleted, or not yet
+ * created) has no floors either, so this is a no-op for it.
  */
 export const reevaluateVariables = (
   profileId: string,
@@ -228,59 +220,9 @@ export const reevaluateVariables = (
 ): FloorFile[] => {
   const floors = getAllFloors(profileId, chatId)
   const start = Math.min(Math.max(0, fromFloor), floors.length)
-  const floorState = floorStateForChat(chatId)
-  if (floorState && start < floors.length) {
-    floorState.replay(chatId, floors[start].floor)
-    return getAllFloors(profileId, chatId)
-  }
-  const stat: Record<string, unknown> =
-    start > 0
-      ? JSON.parse(
-          JSON.stringify((floors[start - 1].variables as Record<string, unknown>)?.stat_data ?? {})
-        )
-      : {}
-  const opsByFloor = new Map<number, VarsOpRow[]>()
-  for (const op of listVarsOps(chatId)) {
-    const list = opsByFloor.get(op.floor)
-    if (list) list.push(op)
-    else opsByFloor.set(op.floor, [op])
-  }
-  let cardWrites = 0
-  for (const f of floors.slice(start)) {
-    const mvu = parseMvuCommands(stripThinking(f.response.content))
-    let deltas = [
-      ...(mvu.commands.length ? applyMvuCommands(stat, mvu.commands) : []),
-      ...(mvu.patches.length ? applyJsonPatch(stat, mvu.patches) : [])
-    ]
-    // Replay journaled card writes after the model fold, in seq order (opsByFloor is (floor, seq)-
-    // ordered from listVarsOps). Mirrors live write behavior: a patch overwrites delta_data with its
-    // own deltas (varsWrite.ts); a replace swaps stat_data whole and leaves delta_data untouched.
-    for (const entry of opsByFloor.get(f.floor) ?? []) {
-      cardWrites++
-      if (entry.kind === 'patch') {
-        const d = applyJsonPatch(stat, entry.payload as JsonPatchOp[])
-        if (d.length) deltas = d
-      } else {
-        const p = entry.payload
-        for (const k of Object.keys(stat)) delete stat[k]
-        if (p && typeof p === 'object') Object.assign(stat, JSON.parse(JSON.stringify(p)))
-      }
-    }
-    f.variables = {
-      ...f.variables,
-      stat_data: JSON.parse(JSON.stringify(stat)),
-      delta_data: deltas
-    }
-    saveFloor(profileId, chatId, f)
-  }
-  log(
-    'info',
-    `MVU re-evaluate — replayed ${floors.length - start} floor(s)` +
-      (start > 0 ? ` (from floor ${start})` : '') +
-      `; rebuilt stat_data` +
-      (cardWrites > 0 ? `; replayed ${cardWrites} card write(s)` : '')
-  )
-  return floors
+  if (start >= floors.length) return floors
+  floorStateForChat(chatId)?.replay(chatId, floors[start].floor)
+  return getAllFloors(profileId, chatId)
 }
 
 /** Pure: return a copy of the floor with stat_data replaced and delta_data cleared (a manual whole-doc
@@ -290,27 +232,19 @@ export const withStatData = (floor: FloorFile, statData: unknown): FloorFile => 
   variables: { ...floor.variables, stat_data: statData, delta_data: [] }
 })
 
-/** Replace a floor's stat_data wholesale (the Variables-view editor's write path). Real sessions
- * journal the edit as a user operation and replay later floors atomically; the direct save is the
- * no-database unit-seam fallback. */
+/** Replace a floor's stat_data wholesale (the Variables-view editor's write path). The edit is
+ * journaled as a user operation and later floors are replayed atomically. */
 export const setFloorStatData = (
   profileId: string,
   chatId: string,
   floor: number,
   statData: unknown
 ): FloorFile | null => {
-  const f = getFloor(profileId, chatId, floor)
-  if (!f) return null
-  const floorState = floorStateForChat(chatId)
-  if (floorState) {
-    floorState.append(chatId, floor, 'user', [
-      { kind: 'set', path: 'variables.stat_data', value: statData }
-    ])
-    return getFloor(profileId, chatId, floor)
-  }
-  const updated = withStatData(f, statData)
-  saveFloor(profileId, chatId, updated)
-  return updated
+  if (!getFloor(profileId, chatId, floor)) return null
+  floorStateForChat(chatId)?.append(chatId, floor, 'user', [
+    { kind: 'set', path: 'variables.stat_data', value: statData }
+  ])
+  return getFloor(profileId, chatId, floor)
 }
 
 /**

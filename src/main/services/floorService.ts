@@ -6,6 +6,10 @@ import { withLock } from './asyncLock'
 import { cleanForHistory } from '../../shared/responseView'
 import { agentRunStore } from './agentRuntime/runs/AgentRunStore'
 import { createFloorState } from './agentRuntime/floorState/FloorState'
+// The composition adapter — resolves this chat's session store itself, so the replaying write paths
+// below don't each re-derive it. (The combat-mode resolver is process-wide on FloorState; both this
+// and the bare factory above inherit it.)
+import { floorStateForChat } from './agentRuntime/floorState'
 
 /** Per-chat floor-variable write lock key (agent-packs WP1.5; ADR 0003). Floors are keyed by
  *  `chat_id` in SQLite (PRIMARY KEY (chat_id, floor)), so a chat is the write-serialization scope —
@@ -33,7 +37,10 @@ const varsLockKey = (chatId: string): string => `vars:${chatId}`
  */
 const transcriptEpochs = new Map<string, number>()
 export const transcriptEpoch = (chatId: string): number => transcriptEpochs.get(chatId) ?? 0
-const bumpTranscriptEpoch = (chatId: string): void => {
+/** Exported so the OTHER in-place text-edit entry point — a card's `rpt.chat.setMessage`
+ *  (pluginService) — carries the same staleness fence as the UI edit (`updateFloorFields`) instead of
+ *  a weaker one. Same operation, same guarantees; never duplicate this counter elsewhere. */
+export const bumpTranscriptEpoch = (chatId: string): void => {
   transcriptEpochs.set(chatId, (transcriptEpochs.get(chatId) ?? 0) + 1)
 }
 
@@ -66,7 +73,9 @@ const transcriptEditListeners: TranscriptEditListener[] = []
 export const onTranscriptEdited = (fn: TranscriptEditListener): void => {
   transcriptEditListeners.push(fn)
 }
-const fireTranscriptEdited = (profileId: string, chatId: string, floor: number): void => {
+/** Exported for the same reason as `bumpTranscriptEpoch`: a card text edit (pluginService.setMessage)
+ *  must notify the refill engine exactly as the UI edit path does. */
+export const fireTranscriptEdited = (profileId: string, chatId: string, floor: number): void => {
   for (const fn of transcriptEditListeners) {
     try {
       fn(profileId, chatId, floor)
@@ -246,7 +255,14 @@ const saveFloorRow = (chatId: string, floor: FloorFile): void => {
          swipes = excluded.swipes,
          swipe_id = excluded.swipe_id,
          events = excluded.events,
-         variables = excluded.variables,
+         -- The variables column is DELIBERATELY ABSENT from this UPDATE list. FloorState (the
+         -- floor-operation journal + Forward Replay) is the SOLE writer of a stored floor's variables;
+         -- the INSERT above still seeds the column when the floor is created. An UPDATE here would
+         -- carry whatever snapshot its caller happened to read — every live re-save path (swipe
+         -- restore/append, usage-metrics backfill) round-trips a floor read BEFORE some journaled
+         -- write, so writing the column back would clobber it. Same reasoning as the request COALESCE
+         -- below, one column over.
+
          -- Bulk reads are LEAN (no request), and many writers round-trip such floors back through
          -- saveFloor. A floor without a request must therefore PRESERVE the stored one — nothing
          -- legitimately clears a request; it's only (re)set by a generation persisting a new prompt.
@@ -320,12 +336,9 @@ export const setActiveSwipe = (
   floor.swipes = state.swipes
   floor.swipe_id = swipe_id
   floor.response.content = content
-  const db = getSessionDbByChat(chatId)
-  if (db)
-    createFloorState({ db }).updateTranscript(chatId, [
-      { floor: floorIndex, responseContent: content, swipes: floor.swipes, swipeId: swipe_id }
-    ])
-  else saveFloor(profileId, chatId, floor)
+  floorStateForChat(chatId)?.updateTranscript(chatId, [
+    { floor: floorIndex, responseContent: content, swipes: floor.swipes, swipeId: swipe_id }
+  ])
   refreshChatSummary(chatId)
   bumpTranscriptEpoch(chatId) // active response text changed
   fireTranscriptEdited(profileId, chatId, floorIndex)
@@ -348,17 +361,14 @@ export const addSwipe = (
   floor.swipes = state.swipes
   floor.swipe_id = state.swipe_id
   floor.response.content = content
-  const db = getSessionDbByChat(chatId)
-  if (db)
-    createFloorState({ db }).updateTranscript(chatId, [
-      {
-        floor: floorIndex,
-        responseContent: content,
-        swipes: floor.swipes,
-        swipeId: state.swipe_id
-      }
-    ])
-  else saveFloor(profileId, chatId, floor)
+  floorStateForChat(chatId)?.updateTranscript(chatId, [
+    {
+      floor: floorIndex,
+      responseContent: content,
+      swipes: floor.swipes,
+      swipeId: state.swipe_id
+    }
+  ])
   refreshChatSummary(chatId)
   bumpTranscriptEpoch(chatId) // active response text changed
   fireTranscriptEdited(profileId, chatId, floorIndex)
@@ -373,9 +383,8 @@ export const updateFloorFields = (
   userContent: string | null,
   responseContent: string | null
 ): void => {
-  const db = getSessionDbByChat(chatId)
-  if (db && (userContent !== null || responseContent !== null))
-    createFloorState({ db }).updateTranscript(chatId, [
+  if (userContent !== null || responseContent !== null)
+    floorStateForChat(chatId)?.updateTranscript(chatId, [
       {
         floor: floorIndex,
         ...(userContent !== null ? { userContent } : {}),
@@ -391,7 +400,11 @@ export const updateFloorFields = (
 
 /** Replace only a floor's active assistant text (and its active swipe) without replaying MVU. This is
  * used by Yuzu's post-narrator annotation pass: the narrator response was already folded before the
- * floor commit, and the director is permitted to add presentation directives only. */
+ * floor commit, and the director is permitted to add presentation directives only.
+ *
+ * The write goes through FloorState — the sole writer of a floor's row — with `refold: false`, which
+ * is what encodes "presentation only": the transcript columns are updated and NO suffix is
+ * re-derived, so this floor's `stat_data` is exactly what the commit already folded. */
 export const updateActiveFloorResponse = (
   profileId: string,
   chatId: string,
@@ -399,13 +412,15 @@ export const updateActiveFloorResponse = (
   responseContent: string
 ): FloorFile | null => {
   const floor = getFloor(profileId, chatId, floorIndex)
-  const db = getSessionDbByChat(chatId)
-  if (!floor || !db) return null
+  const floorState = floorStateForChat(chatId)
+  if (!floor || !floorState) return null
   const state = normalizeSwipes(floor.swipes, floor.response.content, floor.swipe_id)
   state.swipes[state.swipe_id] = responseContent
-  db.prepare(
-    'UPDATE floors SET response_content = ?, swipes = ?, swipe_id = ? WHERE chat_id = ? AND floor = ?'
-  ).run(responseContent, JSON.stringify(state.swipes), state.swipe_id, chatId, floorIndex)
+  floorState.updateTranscript(
+    chatId,
+    [{ floor: floorIndex, responseContent, swipes: state.swipes, swipeId: state.swipe_id }],
+    { refold: false }
+  )
   refreshChatSummary(chatId)
   bumpTranscriptEpoch(chatId)
   fireTranscriptEdited(profileId, chatId, floorIndex)

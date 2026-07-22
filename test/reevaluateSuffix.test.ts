@@ -3,82 +3,94 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Suffix replay for reevaluateVariables (perf audit P1-4): a mutation at floor K only invalidates
 // K and later — the replay seeds from K-1's STORED stat_data (which is by construction the replay
 // of floors 0..K-1) and must not rewrite the untouched prefix.
+//
+// Runs on a REAL per-chat session database (`test/mocks/betterSqlite3Node` over `node:sqlite` + the
+// real SESSION_SCHEMA, injected by overriding `getSessionDbByChat`), because the replay itself now
+// belongs to FloorState. The previous in-memory `floorService` mock forced `floorStateForChat` to
+// null and so measured a legacy fold production could never reach.
 
-const floors: any[] = []
-vi.mock('../src/main/services/floorService', () => ({
-  getAllFloors: vi.fn(() => floors),
-  getFloor: vi.fn((_p: string, _c: string, n: number) => floors.find((f) => f.floor === n)),
-  saveFloor: vi.fn((_p: string, _c: string, f: any) => {
-    const i = floors.findIndex((x) => x.floor === f.floor)
-    if (i >= 0) floors[i] = f
-  })
-}))
+let sessionDb: InstanceType<typeof Adapter> | null = null
+
+vi.mock('../src/main/services/sessionDbService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/services/sessionDbService')>()
+  return { ...actual, getSessionDbByChat: () => sessionDb }
+})
 vi.mock('../src/main/services/logService', () => ({ log: vi.fn() }))
-vi.mock('../src/main/services/varsOpsService', () => ({
-  appendVarsOp: vi.fn(),
-  listVarsOps: vi.fn(() => []),
-  deleteVarsOpsFrom: vi.fn()
-}))
 
-import * as floorService from '../src/main/services/floorService'
+import Adapter from './mocks/betterSqlite3Node'
+import { SESSION_SCHEMA } from '../src/main/services/sessionDbService'
 import { reevaluateVariables } from '../src/main/services/generationService'
 
-const mkFloor = (floor: number, resp: string, stat: Record<string, unknown>): any => ({
-  floor,
-  chat_id: 'c',
-  user_message: { content: `u${floor}` },
-  response: { content: resp },
-  variables: { stat_data: stat, delta_data: [] }
-})
+const addFloor = (floor: number, resp: string, statData: Record<string, unknown>): void => {
+  sessionDb!
+    .prepare(
+      `INSERT INTO floors
+        (chat_id, floor, timestamp, user_content, response_content, events, variables)
+       VALUES ('c', ?, '2026-07-22T00:00:00.000Z', ?, ?, '[]', ?)`
+    )
+    .run(floor, `u${floor}`, resp, JSON.stringify({ stat_data: statData, delta_data: [] }))
+}
+
+const setStat = (floor: number, statData: Record<string, unknown>): void => {
+  sessionDb!
+    .prepare('UPDATE floors SET variables = ? WHERE chat_id = ? AND floor = ?')
+    .run(JSON.stringify({ stat_data: statData, delta_data: [] }), 'c', floor)
+}
+
+const stats = (floors: Array<{ variables: unknown }>): unknown[] =>
+  floors.map((f) => (f.variables as any).stat_data)
+
+/** Only a replay that STARTS at floor 0 persists a baseline row — the "prefix was rewritten" probe. */
+const replayedFromZero = (): boolean =>
+  !!sessionDb!.prepare('SELECT 1 FROM floor_state_baselines WHERE chat_id = ?').get('c')
 
 beforeEach(() => {
-  vi.clearAllMocks()
-  floors.length = 0
+  sessionDb = new Adapter(':memory:')
+  sessionDb.exec(SESSION_SCHEMA)
   // Floors whose stored stat_data is exactly what a full replay of their MVU commands yields.
-  floors.push(
-    mkFloor(0, "_.set('hp', 0, 10); // init", { hp: 10 }),
-    mkFloor(1, "<UpdateVariable>_.set('hp', 10, 20);</UpdateVariable>", { hp: 20 }),
-    mkFloor(2, "<UpdateVariable>_.set('hp', 20, 30);</UpdateVariable>", { hp: 30 })
-  )
+  // Floor 0's `_.set` is deliberately UNWRAPPED (no <UpdateVariable> tag), so it contributes no
+  // model fold and its stored variables are themselves the pre-transcript baseline.
+  addFloor(0, "_.set('hp', 0, 10); // init", { hp: 10 })
+  addFloor(1, "<UpdateVariable>_.set('hp', 10, 20);</UpdateVariable>", { hp: 20 })
+  addFloor(2, "<UpdateVariable>_.set('hp', 20, 30);</UpdateVariable>", { hp: 30 })
 })
 
 describe('reevaluateVariables — suffix replay (perf audit P1-4)', () => {
   it('fromFloor seeds from the previous floor and rewrites ONLY the suffix', () => {
     const out = reevaluateVariables('p', 'c', 2)
-    // Only floor 2 was written back.
-    expect(vi.mocked(floorService.saveFloor)).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(floorService.saveFloor).mock.calls[0][2].floor).toBe(2)
     // The suffix replay seeded hp=20 from floor 1's STORED stat, then applied floor 2's command.
-    expect(out[2].variables.stat_data).toEqual({ hp: 30 })
-    // The untouched prefix keeps its stored state.
-    expect(out[0].variables.stat_data).toEqual({ hp: 10 })
-    expect(out[1].variables.stat_data).toEqual({ hp: 20 })
+    expect(stats(out)).toEqual([{ hp: 10 }, { hp: 20 }, { hp: 30 }])
+    // It never restarted at floor 0, so no pre-transcript baseline was inferred/persisted.
+    expect(replayedFromZero()).toBe(false)
   })
 
-  it('default (fromFloor 0) is the full from-scratch replay writing every floor', () => {
+  it('default (fromFloor 0) is the full from-scratch replay covering every floor', () => {
     reevaluateVariables('p', 'c')
-    expect(vi.mocked(floorService.saveFloor)).toHaveBeenCalledTimes(3)
+    expect(replayedFromZero()).toBe(true)
   })
 
   it('an out-of-range fromFloor replays nothing', () => {
     const out = reevaluateVariables('p', 'c', 99)
-    expect(vi.mocked(floorService.saveFloor)).not.toHaveBeenCalled()
     expect(out).toHaveLength(3)
+    expect(stats(out)).toEqual([{ hp: 10 }, { hp: 20 }, { hp: 30 }])
+    expect(replayedFromZero()).toBe(false)
   })
 
   it('INTENDED divergence: suffix replay preserves a manual (un-journaled) edit below fromFloor; full replay wipes it', () => {
-    // The Variables-view debug editor (setFloorStatData) writes stored stat_data WITHOUT journaling.
-    // A card mutation at floor 2 must not revert the user's edit on untouched floor 1 — but the
-    // explicit Re-evaluate button (full replay) recomputes over it, per that editor's contract.
-    floors[1].variables.stat_data = { hp: 999 } // manual edit; replaying f1's command would give 20
-    floors[2].response.content = "<UpdateVariable>_.set('mp', 0, 5);</UpdateVariable>"
+    // The Variables-view debug editor writes stored stat_data; a card mutation at floor 2 must not
+    // revert the user's edit on untouched floor 1 — but the explicit Re-evaluate button (full
+    // replay) recomputes over it, per that editor's contract.
+    setStat(1, { hp: 999 }) // replaying f1's command would give 20
+    sessionDb!
+      .prepare('UPDATE floors SET response_content = ? WHERE chat_id = ? AND floor = ?')
+      .run("<UpdateVariable>_.set('mp', 0, 5);</UpdateVariable>", 'c', 2)
 
     const suffix = reevaluateVariables('p', 'c', 2)
-    expect(suffix[1].variables.stat_data).toEqual({ hp: 999 }) // untouched prefix keeps the edit
-    expect(suffix[2].variables.stat_data).toEqual({ hp: 999, mp: 5 }) // suffix seeded FROM the edit
+    expect(stats(suffix)[1]).toEqual({ hp: 999 }) // untouched prefix keeps the edit
+    expect(stats(suffix)[2]).toEqual({ hp: 999, mp: 5 }) // suffix seeded FROM the edit
 
     const full = reevaluateVariables('p', 'c')
-    expect(full[1].variables.stat_data).toEqual({ hp: 20 }) // full replay recomputes over the edit
-    expect(full[2].variables.stat_data).toEqual({ hp: 20, mp: 5 })
+    expect(stats(full)[1]).toEqual({ hp: 20 }) // full replay recomputes over the edit
+    expect(stats(full)[2]).toEqual({ hp: 20, mp: 5 })
   })
 })

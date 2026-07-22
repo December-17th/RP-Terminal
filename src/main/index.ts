@@ -22,6 +22,11 @@ import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
 import { appExitGuard, runShutdownCleanup, setExitDialogWindow } from './appExit'
 import { initializeInvocationRuntime } from './services/agentRuntime/InvocationRuntimeService'
 import { initializeFloorCommitTriggers } from './services/agentRuntime/triggerRuntime'
+import { setCombatModeResolver } from './services/agentRuntime/floorState'
+import { resolveProfileId } from './services/sessionDbService'
+import { getChat } from './services/chatService'
+import { getCharacter } from './services/characterService'
+import { getRpExt } from './types/character'
 
 // A packaged Windows ZIP is self-contained: RP Terminal records, Electron preferences, browser
 // storage, and caches all live below rp-terminal-data beside the executable. macOS retains Electron's
@@ -193,6 +198,26 @@ app.whenReady().then(() => {
     app.quit()
     return
   }
+  // Forward Replay re-derives `combat_cue` from a floor's response text, but WHICH combat system the
+  // cue opens ('grid' / 'duel') is a card-bundle property FloorState cannot see — the live turn reads
+  // it off `ctx.card` (generation/foldState.ts). Registered here, at the composition root, because
+  // chatService and characterService both import floorState; an import the other way would cycle.
+  // Unwired, replay would silently downgrade a duel card's cue to 'grid' on every re-fold.
+  setCombatModeResolver((chatId) => {
+    try {
+      const profileId = resolveProfileId(chatId)
+      if (!profileId) return 'grid'
+      const chat = getChat(profileId, chatId)
+      const card = chat ? getCharacter(profileId, chat.character_id) : null
+      const bundle = card
+        ? (getRpExt(card)?.combat as { mode?: 'grid' | 'duel' } | undefined)
+        : undefined
+      return bundle?.mode === 'duel' ? 'duel' : 'grid'
+    } catch (err: any) {
+      logService.log('error', 'Combat-mode resolution failed', err?.message || String(err))
+      return 'grid'
+    }
+  })
   initializeInvocationRuntime()
   // Evaluate declarative cadence triggers at the new-floor commit boundary (execution-plan M3).
   initializeFloorCommitTriggers()

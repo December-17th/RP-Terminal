@@ -99,7 +99,12 @@ const mockRecordStore = vi.hoisted(() => ({ saveExecutionRecord: vi.fn() }))
 vi.mock('../../src/main/services/executionRecordStore', () => mockRecordStore)
 const mockFloorState = vi.hoisted(() => {
   const setBaseline = vi.fn()
-  return { setBaseline, floorStateForChat: vi.fn(() => ({ setBaseline, append: vi.fn(), replay: vi.fn() })) }
+  const journal = vi.fn()
+  return {
+    setBaseline,
+    journal,
+    floorStateForChat: vi.fn(() => ({ setBaseline, journal, append: vi.fn(), replay: vi.fn() }))
+  }
 })
 vi.mock('../../src/main/services/agentRuntime/floorState', () => ({
   floorStateForChat: mockFloorState.floorStateForChat
@@ -179,6 +184,31 @@ describe('classicTurn off-port gen side channels (Finding 4)', () => {
     expect(appended[0].variables.probeVar).toBe('planted-at-build')
     // Identity: the persisted variables ARE the shared gen.workingVars foldState mutated in place.
     expect(appended[0].variables).toBe(capturedGen().workingVars)
+  })
+
+  // Reaching the floor is not enough: nothing can re-derive a build-time write from the response, so
+  // unless the turn JOURNALS it, Forward Replay rebuilds the floor without it.
+  it('(a2) the same build-time {{setvar}} mutation is journaled as a pre-fold template operation', async () => {
+    presetState.macro = '{{setvar::probeVar::planted-at-build}}'
+
+    await runClassicTurnDirect(turnCtx())
+
+    expect(mockFloorState.journal).toHaveBeenCalledTimes(1)
+    const [chatId, floorNumber, source, operations] = mockFloorState.journal.mock.calls[0]
+    expect({ chatId, floorNumber, source }).toEqual({
+      chatId: 'chat1',
+      floorNumber: 1,
+      source: 'template'
+    })
+    expect(operations).toEqual([
+      { kind: 'set', path: 'variables.probeVar', value: 'planted-at-build' }
+    ])
+  })
+
+  it('(a2) a turn with no build-time variable write journals nothing', async () => {
+    await runClassicTurnDirect(turnCtx())
+
+    expect(mockFloorState.journal).not.toHaveBeenCalled()
   })
 
   it('(b) gen.executionRecord stamped at assembly is the exact object persistFloor stores', async () => {

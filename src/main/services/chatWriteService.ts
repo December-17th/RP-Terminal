@@ -4,10 +4,10 @@
 // WCV IPC handlers so BOTH transports — the WCV IPC and the inline window.api — call ONE implementation
 // (SP3 parity by construction). Transport-agnostic: takes explicit (profileId, chatId); the caller does its
 // own post-mutation refresh (WCV pushes to its panels; the inline renderer reloads its store) via the
-// `afterChatMutation` re-fold below.
+// `afterChatMutation` read-back below. Every write here goes through FloorState, which re-folds and
+// republishes the affected suffix inside the mutation itself.
 import * as floorService from './floorService'
 import * as chatService from './chatService'
-import * as generationService from './generationService'
 import { chatIndexMap } from '../../shared/thRuntime/shapes'
 import type { FloorFile } from '../types/chat'
 import { floorStateForChat, type FloorTranscriptUpdate } from './agentRuntime/floorState'
@@ -40,9 +40,10 @@ export function setChatMessages(profileId: string, chatId: string, messages: unk
     else floors[slot.floorIdx].response.content = text
     touched.add(slot.floorIdx)
   }
-  const floorState = floorStateForChat(chatId)
-  if (floorState && touched.size) {
-    floorState.updateTranscript(
+  // A deleted chat has no session store, so `floorStateForChat` is null and the edit is dropped —
+  // exactly what the old fallback did (its `saveFloor` no-ops on the same missing store).
+  if (touched.size)
+    floorStateForChat(chatId)?.updateTranscript(
       chatId,
       [...touched].map(
         (fi): FloorTranscriptUpdate => ({
@@ -52,9 +53,6 @@ export function setChatMessages(profileId: string, chatId: string, messages: unk
         })
       )
     )
-  } else {
-    for (const fi of touched) floorService.saveFloor(profileId, chatId, floors[fi])
-  }
   return touched.size
 }
 
@@ -128,31 +126,21 @@ export function saveChat(profileId: string, chatId: string, chat: unknown): Save
     })
     if (changedFrom === null || f.floor < changedFrom) changedFrom = f.floor
   })
-  const floorState = floorStateForChat(chatId)
-  if (floorState && updates.length) floorState.updateTranscript(chatId, updates)
-  else
-    for (const update of updates) {
-      const changed = floors.find((floor) => floor.floor === update.floor)
-      if (changed) floorService.saveFloor(profileId, chatId, changed)
-    }
+  if (updates.length) floorStateForChat(chatId)?.updateTranscript(chatId, updates)
   return { ok: true, changedFrom }
 }
 
 /**
- * Re-fold the model's `<UpdateVariable>` into stat_data after a card mutation (same engine as the
- * Re-evaluate button). Returns the rebuilt latest floor so the caller can push its variables to whatever
- * UI it owns (WCV panels / the renderer store). `fromFloor` bounds the replay to the changed suffix
- * (audit P1-4) — stored stat_data below it is already the replay of the unchanged prefix.
+ * Read back the latest floor after a card mutation, so the caller can push its variables to whatever UI
+ * it owns (WCV panels / the renderer store). The re-fold itself already happened INSIDE the mutation:
+ * every write above goes through FloorState, which republishes the affected suffix atomically. The
+ * `_fromFloor` argument is retained for the callers that still bound their own suffix reasoning on it
+ * (chatIpc `chat-save`, wcvIpc), but the replay window is no longer chosen here.
  */
 export function afterChatMutation(
   profileId: string,
   chatId: string,
-  fromFloor = 0
+  _fromFloor = 0
 ): FloorFile | null {
-  if (floorStateForChat(chatId)) {
-    const floors = floorService.getAllFloors(profileId, chatId)
-    return floors[floors.length - 1] ?? null
-  }
-  const rebuilt = generationService.reevaluateVariables(profileId, chatId, fromFloor)
-  return rebuilt[rebuilt.length - 1] ?? null
+  return floorService.getAllFloors(profileId, chatId).at(-1) ?? null
 }

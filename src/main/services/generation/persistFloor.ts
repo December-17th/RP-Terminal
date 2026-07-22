@@ -7,7 +7,8 @@ import { RPEvent } from '../../parsers/contentParser'
 import { FloorMetrics } from '../../../shared/usageTypes'
 import { FloorFile, YuzuGateTrace } from '../../types/chat'
 import { GenContext } from './types'
-import { floorStateForChat } from '../agentRuntime/floorState'
+import { floorStateForChat, type FloorStateOperation } from '../agentRuntime/floorState'
+import { log } from '../logService'
 
 /**
  * Persist this turn's globals + the finished floor. Moved verbatim out of `generate()`
@@ -24,6 +25,10 @@ export const persistFloor = (
     events: RPEvent[]
     variables: Record<string, unknown>
     metrics: FloorMetrics
+    /** Build-time `{{setvar}}` writes captured across prompt assembly (assemble.ts
+     *  `captureTemplateWrites`). Already present in `variables` — journaled here so Forward Replay,
+     *  which cannot re-derive them from the response, can reproduce them pre-fold. */
+    templateWrites?: readonly FloorStateOperation[]
     /** Optional display-only plot block (plot-recall data layer); persisted only when present. */
     plot_block?: string
     /** Project Yuzu WP-S2 (ADR 0009 §3): the VN acceptance-gate trace; persisted only for VN floors. */
@@ -60,6 +65,22 @@ export const persistFloor = (
     floorStateForChat(ctx.chatId)?.setBaseline(ctx.chatId, ctx.floorStateBaseline)
   }
   appendFloor(ctx.profileId, ctx.chatId, floor)
+
+  // Journal this turn's build-time setvar writes against the floor that just landed. Rows only — no
+  // replay: `floor.variables` is already the live result, and re-deriving it here would swap the
+  // card's combat mode for replay's default. BEST-EFFORT: the floor is durable at this point, so a
+  // journal failure costs future replay fidelity, never the turn.
+  if (args.templateWrites?.length) {
+    try {
+      floorStateForChat(ctx.chatId)?.journal(ctx.chatId, floor.floor, 'template', args.templateWrites)
+    } catch (error) {
+      log(
+        'error',
+        `Could not journal ${args.templateWrites.length} build-time setvar write(s) for floor ${floor.floor}`,
+        error
+      )
+    }
+  }
 
   // Persist the forensic Execution Record for this generation (issue 09). The assemble stage stamped it
   // onto the shared `gen`; it is stored WITHOUT its `wire` (that duplicates the floor's `request` just

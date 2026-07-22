@@ -1,7 +1,6 @@
-import { getFloor, saveFloor } from '../floorService'
+import { getFloor } from '../floorService'
 import { applyJsonPatch, JsonPatchOp } from '../../parsers/mvuParser'
 import { log } from '../logService'
-import { appendVarsOp } from '../varsOpsService'
 import { FloorFile } from '../../types/chat'
 import { floorStateForChat } from '../agentRuntime/floorState'
 
@@ -63,9 +62,11 @@ export const registerWriteSignature = (
  * instead of only displaying it (a button, checkbox, or manual edit). Reuses the same
  * `applyJsonPatch` engine as the model's `<UpdateVariable>`, so author/user writes fold in
  * identically. These writes are not re-derivable from response text, so on success the applied
- * `ops` are JOURNALED to `vars_ops` (varsOpsService) and REPLAYED after the floor's model fold by
- * `reevaluateVariables`, so an MVU re-evaluate no longer discards them. Returns the updated floor
- * (or null if the floor is gone / there are no ops / the write was a no-op or a suppressed runaway
+ * `ops` are JOURNALED as a floor operation (FloorState `appendPatch`, source 'card') and REPLAYED
+ * after the floor's model fold, so an MVU re-evaluate no longer discards them. The local
+ * `applyJsonPatch` above runs on a DETACHED copy of the floor — it only computes the deltas the
+ * no-op/runaway guards need; FloorState owns the persisted state. Returns the updated floor (or
+ * null if the floor is gone / there are no ops / the write was a no-op or a suppressed runaway
  * loop — none of those cases are journaled, they changed nothing). Targets a specific floor — the
  * caller passes the latest.
  */
@@ -105,15 +106,7 @@ export const applyVariableOps = (
       )
     return null
   }
-  const floorState = floorStateForChat(chatId)
-  if (floorState) {
-    floorState.appendPatch(chatId, floor, 'card', ops)
-  } else {
-    f.variables = { ...f.variables, stat_data: sd, delta_data: deltas }
-    saveFloor(profileId, chatId, f)
-    // Compatibility fallback for database-free unit seams.
-    appendVarsOp(chatId, floor, 'patch', ops)
-  }
+  floorStateForChat(chatId)?.appendPatch(chatId, floor, 'card', ops)
   log(
     'info',
     `variable write-back — floor ${floor}: ${changed.map((d) => d.path).join(', ')}` +
@@ -123,7 +116,8 @@ export const applyVariableOps = (
 }
 
 /** Card whole-replace of the latest floor's stat_data (TH replaceVariables fast path / Mvu.replaceMvuData
- *  via wcv-host-set-vars). Persists and journals a 'replace' vars_op so it survives MVU re-evaluation. */
+ *  via wcv-host-set-vars). Journals a floor operation (source 'card') that sets `variables.stat_data`
+ *  wholesale, so the write survives MVU re-evaluation. */
 export const replaceVariablesFromCard = (
   profileId: string,
   chatId: string,
@@ -132,15 +126,8 @@ export const replaceVariablesFromCard = (
 ): FloorFile | null => {
   const f = getFloor(profileId, chatId, floor)
   if (!f) return null
-  const floorState = floorStateForChat(chatId)
-  if (floorState) {
-    floorState.append(chatId, floor, 'card', [
-      { kind: 'set', path: 'variables.stat_data', value: statData }
-    ])
-  } else {
-    f.variables = { ...f.variables, stat_data: statData }
-    saveFloor(profileId, chatId, f)
-    appendVarsOp(chatId, floor, 'replace', statData)
-  }
+  floorStateForChat(chatId)?.append(chatId, floor, 'card', [
+    { kind: 'set', path: 'variables.stat_data', value: statData }
+  ])
   return getFloor(profileId, chatId, floor)
 }
