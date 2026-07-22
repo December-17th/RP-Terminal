@@ -9,7 +9,7 @@ import { createFloorState } from './agentRuntime/floorState/FloorState'
 // The composition adapter — resolves this chat's session store itself, so the replaying write paths
 // below don't each re-derive it. (The combat-mode resolver is process-wide on FloorState; both this
 // and the bare factory above inherit it.)
-import { floorStateForChat } from './agentRuntime/floorState'
+import { floorStateForChat, type FloorTranscriptUpdate } from './agentRuntime/floorState'
 
 /** Per-chat floor-variable write lock key (agent-packs WP1.5; ADR 0003). Floors are keyed by
  *  `chat_id` in SQLite (PRIMARY KEY (chat_id, floor)), so a chat is the write-serialization scope —
@@ -37,10 +37,11 @@ const varsLockKey = (chatId: string): string => `vars:${chatId}`
  */
 const transcriptEpochs = new Map<string, number>()
 export const transcriptEpoch = (chatId: string): number => transcriptEpochs.get(chatId) ?? 0
-/** Exported so the OTHER in-place text-edit entry point — a card's `rpt.chat.setMessage`
- *  (pluginService) — carries the same staleness fence as the UI edit (`updateFloorFields`) instead of
- *  a weaker one. Same operation, same guarantees; never duplicate this counter elsewhere. */
-export const bumpTranscriptEpoch = (chatId: string): void => {
+/** DELIBERATELY not exported: an in-place text edit bumps this counter as one of the four guarantees
+ *  `editFloorTranscript` owns (below), and a caller that can reach the bump on its own can also reach
+ *  three of the four. The truncation path (`deleteFloorAndSubsequent`) is the only other bumper, and it
+ *  lives in this module. Never duplicate this counter elsewhere. */
+const bumpTranscriptEpoch = (chatId: string): void => {
   transcriptEpochs.set(chatId, (transcriptEpochs.get(chatId) ?? 0) + 1)
 }
 
@@ -73,9 +74,9 @@ const transcriptEditListeners: TranscriptEditListener[] = []
 export const onTranscriptEdited = (fn: TranscriptEditListener): void => {
   transcriptEditListeners.push(fn)
 }
-/** Exported for the same reason as `bumpTranscriptEpoch`: a card text edit (pluginService.setMessage)
- *  must notify the refill engine exactly as the UI edit path does. */
-export const fireTranscriptEdited = (profileId: string, chatId: string, floor: number): void => {
+/** Not exported for the same reason as `bumpTranscriptEpoch`: firing this seam is one of the four
+ *  guarantees of `editFloorTranscript`, not a step a caller assembles for itself. */
+const fireTranscriptEdited = (profileId: string, chatId: string, floor: number): void => {
   for (const fn of transcriptEditListeners) {
     try {
       fn(profileId, chatId, floor)
@@ -322,6 +323,45 @@ export const saveFloor = (
  *  `saveFloor` serializes on. */
 export { varsLockKey }
 
+/**
+ * THE transcript-edit operation: the one way an EXISTING floor's text changes.
+ *
+ * Four things must happen together, and every edit surface owes all four — the UI edit
+ * (`updateFloorFields`), a swipe switch/append (`setActiveSwipe`/`addSwipe`), Yuzu's presentation-only
+ * annotation (`updateActiveFloorResponse`), and a card's `rpt.chat.setMessage` (pluginService):
+ *  1. the text is written through FloorState — the sole writer of a floor's row — which re-folds the
+ *     suffix, because new text can carry different `<UpdateVariable>` / rpt-event content;
+ *  2. the denormalized launcher summary is recomputed (§B3): the last floor's preview may have moved;
+ *  3. the transcript epoch is bumped, so an in-flight memory-maintain that COMPOSED from the old text
+ *     drops its batch instead of filling tables from a transcript that no longer reads as it did;
+ *  4. the edit listeners fire with the edited floor, so the refill engine aborts its run and clamps its
+ *     resume row back to before that floor.
+ * They used to be four statements re-assembled at each call site, where a caller could quietly omit
+ * one. The individual steps are module-private now; this is the only assembly of them.
+ *
+ * `refold: false` is the ONE legitimate variation (see `FloorState.updateTranscript`): write the
+ * columns, re-derive no suffix. It exists for text that carries no state — the Scene Director
+ * annotating a response the floor commit already folded — and is declared by the caller, never
+ * inferred. Everything else must re-fold.
+ *
+ * Returns false, having done NOTHING, when the edit carries neither user nor response text: an edit
+ * that changed no text must not replay, must not bump the epoch, and must not wake the refill engine.
+ */
+export const editFloorTranscript = (
+  profileId: string,
+  chatId: string,
+  edit: FloorTranscriptUpdate,
+  options?: { refold?: boolean }
+): boolean => {
+  if (edit.userContent === undefined && edit.responseContent === undefined) return false
+  floorStateForChat(chatId)?.updateTranscript(chatId, [edit], options)
+  refreshChatSummary(chatId)
+  bumpTranscriptEpoch(chatId)
+  // Once per edit, even when both fields changed — a single floor changed, so a single signal.
+  fireTranscriptEdited(profileId, chatId, edit.floor)
+  return true
+}
+
 /** Switch a floor's active swipe; keeps response.content in sync. Returns the updated floor. */
 export const setActiveSwipe = (
   profileId: string,
@@ -336,12 +376,13 @@ export const setActiveSwipe = (
   floor.swipes = state.swipes
   floor.swipe_id = swipe_id
   floor.response.content = content
-  floorStateForChat(chatId)?.updateTranscript(chatId, [
-    { floor: floorIndex, responseContent: content, swipes: floor.swipes, swipeId: swipe_id }
-  ])
-  refreshChatSummary(chatId)
-  bumpTranscriptEpoch(chatId) // active response text changed
-  fireTranscriptEdited(profileId, chatId, floorIndex)
+  // The active response text changed, so this is a full transcript edit like any other.
+  editFloorTranscript(profileId, chatId, {
+    floor: floorIndex,
+    responseContent: content,
+    swipes: floor.swipes,
+    swipeId: swipe_id
+  })
   return floor
 }
 
@@ -361,17 +402,13 @@ export const addSwipe = (
   floor.swipes = state.swipes
   floor.swipe_id = state.swipe_id
   floor.response.content = content
-  floorStateForChat(chatId)?.updateTranscript(chatId, [
-    {
-      floor: floorIndex,
-      responseContent: content,
-      swipes: floor.swipes,
-      swipeId: state.swipe_id
-    }
-  ])
-  refreshChatSummary(chatId)
-  bumpTranscriptEpoch(chatId) // active response text changed
-  fireTranscriptEdited(profileId, chatId, floorIndex)
+  // The active response text changed, so this is a full transcript edit like any other.
+  editFloorTranscript(profileId, chatId, {
+    floor: floorIndex,
+    responseContent: content,
+    swipes: floor.swipes,
+    swipeId: state.swipe_id
+  })
   return floor
 }
 
@@ -383,47 +420,39 @@ export const updateFloorFields = (
   userContent: string | null,
   responseContent: string | null
 ): void => {
-  if (userContent !== null || responseContent !== null)
-    floorStateForChat(chatId)?.updateTranscript(chatId, [
-      {
-        floor: floorIndex,
-        ...(userContent !== null ? { userContent } : {}),
-        ...(responseContent !== null ? { responseContent } : {})
-      }
-    ])
-  if (userContent !== null || responseContent !== null) {
-    refreshChatSummary(chatId) // last-floor text may have changed (B3)
-    bumpTranscriptEpoch(chatId)
-    fireTranscriptEdited(profileId, chatId, floorIndex) // fire once even when both fields changed
-  }
+  // Either field, both, or neither — `editFloorTranscript` no-ops on the last case.
+  editFloorTranscript(profileId, chatId, {
+    floor: floorIndex,
+    ...(userContent !== null ? { userContent } : {}),
+    ...(responseContent !== null ? { responseContent } : {})
+  })
 }
 
 /** Replace only a floor's active assistant text (and its active swipe) without replaying MVU. This is
  * used by Yuzu's post-narrator annotation pass: the narrator response was already folded before the
  * floor commit, and the director is permitted to add presentation directives only.
  *
- * The write goes through FloorState — the sole writer of a floor's row — with `refold: false`, which
- * is what encodes "presentation only": the transcript columns are updated and NO suffix is
- * re-derived, so this floor's `stat_data` is exactly what the commit already folded. */
+ * It is still the shared transcript-edit operation (`editFloorTranscript`) — the summary, the epoch and
+ * the edit listeners all apply, because the stored text really did change — carrying the one declared
+ * variation, `refold: false`: the transcript columns are updated and NO suffix is re-derived, so this
+ * floor's `stat_data` is exactly what the commit already folded. */
 export const updateActiveFloorResponse = (
   profileId: string,
   chatId: string,
   floorIndex: number,
   responseContent: string
 ): FloorFile | null => {
+  // Null here already covers "this chat has no session store": `getFloor` returns null for it too.
   const floor = getFloor(profileId, chatId, floorIndex)
-  const floorState = floorStateForChat(chatId)
-  if (!floor || !floorState) return null
+  if (!floor) return null
   const state = normalizeSwipes(floor.swipes, floor.response.content, floor.swipe_id)
   state.swipes[state.swipe_id] = responseContent
-  floorState.updateTranscript(
+  editFloorTranscript(
+    profileId,
     chatId,
-    [{ floor: floorIndex, responseContent, swipes: state.swipes, swipeId: state.swipe_id }],
+    { floor: floorIndex, responseContent, swipes: state.swipes, swipeId: state.swipe_id },
     { refold: false }
   )
-  refreshChatSummary(chatId)
-  bumpTranscriptEpoch(chatId)
-  fireTranscriptEdited(profileId, chatId, floorIndex)
   return {
     ...floor,
     response: { ...floor.response, content: responseContent },

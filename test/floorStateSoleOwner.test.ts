@@ -10,7 +10,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  *  2. The two writers that used to reach the column outside the journal now go through FloorState:
  *     `pluginService.pluginVars` (a card/script variable write — journaled, so a later replay
  *     re-applies it) and `pluginService.setMessage` (a card text edit — re-folded, epoch-bumped and
- *     listener-announced exactly like the UI edit path `floorService.updateFloorFields`).
+ *     listener-announced exactly like the UI edit path `floorService.updateFloorFields`, because both
+ *     now call the ONE transcript-edit operation, `floorService.editFloorTranscript`).
  */
 
 vi.mock('better-sqlite3', () => import('./mocks/betterSqlite3Node'))
@@ -47,9 +48,11 @@ vi.mock('../src/main/services/chatService', () => ({
 import Adapter from './mocks/betterSqlite3Node'
 import { SESSION_SCHEMA } from '../src/main/services/sessionDbService'
 import {
+  addSwipe,
   getFloor,
   onTranscriptEdited,
   saveFloor,
+  setActiveSwipe,
   transcriptEpoch,
   updateActiveFloorResponse,
   updateFloorFields
@@ -206,6 +209,61 @@ describe('FloorState is the sole writer of floors.variables', () => {
     expect(variablesAt('coerce', 0)).toEqual({ stat_data: { label: 7, debt: -3 } })
   })
 
+  // A LIVE no-op must stay a no-op on replay. The journal's fall-through is an ABSOLUTE `set`, so
+  // journaling an op that wrote nothing turns "leave this alone" into "pin this value".
+  it('journals nothing for an insert onto a key that already exists', () => {
+    seedFloor('insert', 0, { stat_data: { gold: 1 } })
+    seedFloor(
+      'insert',
+      1,
+      { stat_data: { gold: 3 } },
+      "<UpdateVariable>\n_.add('gold', 2);\n</UpdateVariable>"
+    )
+
+    // `insert` = write only if absent. gold exists, so applyOp leaves it and returns what is there.
+    const kept = pluginVars('p', 'insert', {
+      op: 'insert',
+      scope: 'message',
+      messageId: 1,
+      key: 'stat_data.gold',
+      value: 99
+    })
+    expect(kept.value).toBe(3)
+    expect(journalRows('insert')).toBe(0)
+    expect((variablesAt('insert', 1).stat_data as { gold: number }).gold).toBe(3)
+
+    // The model fold underneath moves the base to 1 + 10. A journaled `set 3` would replay over that
+    // newer value with the stale one — the exact inversion of "do not overwrite an existing key".
+    updateFloorFields(
+      'p',
+      'insert',
+      1,
+      null,
+      "<UpdateVariable>\n_.add('gold', 10);\n</UpdateVariable>"
+    )
+
+    expect((variablesAt('insert', 1).stat_data as { gold: number }).gold).toBe(11)
+  })
+
+  it('journals a write that really wrote, and nothing for a set/del that changed nothing', () => {
+    seedFloor('noop', 0, { stat_data: { gold: 7 } })
+
+    // Rewriting the value already stored, and deleting a key that is not there.
+    expect(pluginVars('p', 'noop', { op: 'set', key: 'stat_data.gold', value: 7 }).value).toBe(7)
+    expect(pluginVars('p', 'noop', { op: 'del', key: 'stat_data.missing' }).value).toBeUndefined()
+    expect(journalRows('noop')).toBe(0)
+
+    // The SAME insert whose existing-key form journals nothing does journal on an absent key.
+    expect(pluginVars('p', 'noop', { op: 'insert', key: 'stat_data.silver', value: 2 }).value).toBe(
+      2
+    )
+    expect(harness.db.prepare('SELECT kind, path, value FROM floor_operations').get()).toMatchObject(
+      { kind: 'set', path: 'variables.stat_data.silver', value: '2' }
+    )
+    expect(journalRows('noop')).toBe(1)
+    expect(variablesAt('noop', 0)).toEqual({ stat_data: { gold: 7, silver: 2 } })
+  })
+
   it('journals a nested delete, and a write through an array without flattening the array', () => {
     seedFloor('paths', 0, { stat_data: { party: [{ hp: 3 }], flag: true } })
 
@@ -298,5 +356,29 @@ describe('FloorState is the sole writer of floors.variables', () => {
     expect(journalRows('yuzu')).toBe(0)
     expect(transcriptEpoch('yuzu')).toBe(epochBefore + 1)
     expect(edits).toEqual([0])
+  })
+
+  // Every in-place text edit IS the same operation, so the swipe paths carry the memory-maintain
+  // staleness fence and the refill engine's edit signal exactly as the UI / card edits do.
+  it('carries the epoch bump and the edit listener through the swipe paths too', () => {
+    seedFloor('swipe', 0, { stat_data: { gold: 1 } }, 'first')
+    const edits: number[] = []
+    onTranscriptEdited((_profileId, chatId, floor) => {
+      if (chatId === 'swipe') edits.push(floor)
+    })
+    const epochBefore = transcriptEpoch('swipe')
+
+    expect(addSwipe('p', 'swipe', 0, 'second')?.response.content).toBe('second')
+    expect(getFloor('p', 'swipe', 0)?.swipes).toEqual(['first', 'second'])
+    expect(setActiveSwipe('p', 'swipe', 0, 0)?.response.content).toBe('first')
+    expect(getFloor('p', 'swipe', 0)?.response.content).toBe('first')
+
+    expect(transcriptEpoch('swipe')).toBe(epochBefore + 2)
+    expect(edits).toEqual([0, 0])
+
+    // An edit carrying NO text is the one case that does none of the four.
+    updateFloorFields('p', 'swipe', 0, null, null)
+    expect(transcriptEpoch('swipe')).toBe(epochBefore + 2)
+    expect(edits).toEqual([0, 0])
   })
 })
