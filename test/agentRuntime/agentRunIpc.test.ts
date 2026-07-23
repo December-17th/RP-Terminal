@@ -64,7 +64,9 @@ vi.mock('../../src/main/services/chatService', () => ({
 }))
 
 vi.mock('../../src/main/services/floorService', () => ({
-  getAllFloors: (_profileId: string, chatId: string) => hoisted.floors.get(chatId) ?? []
+  getAllFloors: (_profileId: string, chatId: string) => hoisted.floors.get(chatId) ?? [],
+  getLatestFloor: (_profileId: string, chatId: string) =>
+    (hoisted.floors.get(chatId) ?? []).at(-1) ?? null
 }))
 
 vi.mock('electron', () => ({

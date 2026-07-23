@@ -157,6 +157,18 @@ export const getAllFloors = (_profileId: string, chatId: string, _count?: number
   return rows.map(rowToFloor)
 }
 
+/** The latest floor only — replaces `getAllFloors(...).at(-1)` at latest-only call sites, avoiding
+ *  the O(chat-length) materialization of every floor just to take the last. Lean projection (no
+ *  `request`); returns null on an empty chat, mirroring `.at(-1)` on `[]`. */
+export const getLatestFloor = (_profileId: string, chatId: string): FloorFile | null => {
+  const db = getSessionDbByChat(chatId)
+  if (!db) return null
+  const row = db
+    .prepare(`SELECT ${LEAN_COLUMNS} FROM floors WHERE chat_id = ? ORDER BY floor DESC LIMIT 1`)
+    .get(chatId) as FloorRow | undefined
+  return row ? rowToFloor(row) : null
+}
+
 /** Full floors INCLUDING each stored `request` — only for paths that genuinely consume every
  *  request (usage-metrics backfill). Everything else uses the lean `getAllFloors`. */
 export const getAllFloorsWithRequests = (_profileId: string, chatId: string): FloorFile[] => {

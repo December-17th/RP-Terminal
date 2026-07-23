@@ -22,7 +22,7 @@ vi.mock('../src/main/services/agentRuntime/InvocationRuntimeService', () => ({
 const mockChat = vi.hoisted(() => ({ getChatTableTemplateId: vi.fn(() => 'tmpl') }))
 vi.mock('../src/main/services/chatService', () => mockChat)
 
-const mockFloors = vi.hoisted(() => ({ getAllFloors: vi.fn(() => []) }))
+const mockFloors = vi.hoisted(() => ({ getLatestFloor: vi.fn(() => null) }))
 vi.mock('../src/main/services/floorService', () => mockFloors)
 
 const mockTemplate = vi.hoisted(() => ({ getTableTemplateById: vi.fn() }))
@@ -130,7 +130,7 @@ beforeEach(() => {
     }
   ])
   mockNotes.readNotes.mockReturnValue('')
-  mockFloors.getAllFloors.mockReturnValue([])
+  mockFloors.getLatestFloor.mockReturnValue(null)
   mockRuntime.run.mockResolvedValue({
     invocationId: 'recall-1',
     status: 'succeeded',
@@ -190,9 +190,10 @@ describe('runMemoryRecallAgent', () => {
     gen.floors[0].variables = { stat_data: { hp: 1 } }
     gen.lastFloor = gen.floors[0]
     gen.workingVars = { stat_data: { hp: 1 } }
-    mockFloors.getAllFloors.mockReturnValue([
-      { ...gen.floors[0], variables: { stat_data: { hp: 12 } } }
-    ])
+    mockFloors.getLatestFloor.mockReturnValue({
+      ...gen.floors[0],
+      variables: { stat_data: { hp: 12 } }
+    })
 
     await runMemoryRecallAgent(makeCtx(), gen)
 
