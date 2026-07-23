@@ -48,6 +48,7 @@ const h = vi.hoisted(() => ({
   afterChatMutation: vi.fn(() => null),
   getExtensionSettings: vi.fn(() => ({})),
   getAllFloors: vi.fn(() => [{ floor: 12, variables: { stat_data: {} } }]),
+  getLatestFloor: vi.fn(() => ({ floor: 12, variables: { stat_data: {} } })),
   runAgent: vi.fn(),
   runPlan: vi.fn(),
   cancelInvocation: vi.fn(() => true),
@@ -94,7 +95,10 @@ vi.mock('../src/main/services/chatCardVarsService', () => ({
   getChatCardVars: vi.fn(),
   setChatCardVars: vi.fn()
 }))
-vi.mock('../src/main/services/floorService', () => ({ getAllFloors: h.getAllFloors }))
+vi.mock('../src/main/services/floorService', () => ({
+  getAllFloors: h.getAllFloors,
+  getLatestFloor: h.getLatestFloor
+}))
 vi.mock('../src/main/services/agentRuntime/cardAgentEvents', () => ({
   onCardFloorCommitted: (listener: typeof h.floorListener) => {
     h.floorListener = listener
@@ -167,6 +171,7 @@ beforeEach(() => {
   })
   h.deleteChatMessages.mockReturnValue(true)
   h.getAllFloors.mockReturnValue([{ floor: 12, variables: { stat_data: {} } }])
+  h.getLatestFloor.mockReturnValue({ floor: 12, variables: { stat_data: {} } })
   const run = Object.assign(
     Promise.resolve({
       invocationId: 'inv-1',

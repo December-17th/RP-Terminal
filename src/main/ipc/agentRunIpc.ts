@@ -109,7 +109,7 @@ const ensureAgentSession = (
     senderId: sender.id,
     runtime: invocationRuntime(),
     tools: liveCardToolRegistry(),
-    latestFloor: () => floorService.getAllFloors(scope.profileId, scope.chatId).at(-1)?.floor,
+    latestFloor: () => floorService.getLatestFloor(scope.profileId, scope.chatId)?.floor,
     sendTool: agentToolRequestSender(
       (channel, payload) => sender.send(channel, payload),
       (payload) => ({ ...(payload as object), scope })

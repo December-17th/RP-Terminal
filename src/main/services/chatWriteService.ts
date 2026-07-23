@@ -138,5 +138,5 @@ export function saveChat(profileId: string, chatId: string, chat: unknown): Save
  * earliest changed floor read it from `SaveChatResult.changedFrom` (to skip a no-op echo, and to log).
  */
 export function afterChatMutation(profileId: string, chatId: string): FloorFile | null {
-  return floorService.getAllFloors(profileId, chatId).at(-1) ?? null
+  return floorService.getLatestFloor(profileId, chatId) ?? null
 }

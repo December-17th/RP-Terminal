@@ -278,7 +278,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       senderId: sender.id,
       runtime: invocationRuntime(),
       tools: liveCardToolRegistry(),
-      latestFloor: () => floorService.getAllFloors(scope.profileId, scope.chatId).at(-1)?.floor,
+      latestFloor: () => floorService.getLatestFloor(scope.profileId, scope.chatId)?.floor,
       sendTool: agentToolRequestSender((channel, payload) => sender.send(channel, payload)),
       toolAuthority: 'sender',
       cancelInvocationsOnClose: true,
@@ -454,8 +454,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.handle('wcv-host-get-vars', (e) => {
     const ctx = wcvManager.contextFor(e.sender.id)
     if (!ctx) return {}
-    const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-    return floors[floors.length - 1]?.variables?.stat_data ?? {}
+    return floorService.getLatestFloor(ctx.profileId, ctx.chatId)?.variables?.stat_data ?? {}
   })
 
   // --- Residue Host channels that still cross IPC (hand-written both sides; names from the spec's
@@ -623,16 +622,14 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     statData: (e) => {
       const ctx = wcvManager.contextFor(e.sender.id)
       if (!ctx) return {}
-      const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-      return floors[floors.length - 1]?.variables?.stat_data ?? {}
+      return floorService.getLatestFloor(ctx.profileId, ctx.chatId)?.variables?.stat_data ?? {}
     },
     // Write JSONPatch ops to the latest floor's stat_data via the same bridge the model uses,
     // then push the result to the host renderer (native panels) and any sibling WCVs.
     applyVariableOps: (e, ops) => {
       const ctx = wcvManager.contextFor(e.sender.id)
       if (!ctx) return null
-      const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-      const latest = floors[floors.length - 1]
+      const latest = floorService.getLatestFloor(ctx.profileId, ctx.chatId)
       if (!latest) return null
       const floor = generationService.applyVariableOps(ctx.profileId, ctx.chatId, latest.floor, ops)
       // null = the write changed nothing (no-op). Don't push/broadcast — that re-fires the card's own MVU
@@ -650,8 +647,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     setVariables: (e, statData) => {
       const ctx = wcvManager.contextFor(e.sender.id)
       if (!ctx) return null
-      const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-      const latest = floors[floors.length - 1]
+      const latest = floorService.getLatestFloor(ctx.profileId, ctx.chatId)
       if (!latest) return null
       const floor = generationService.replaceVariablesFromCard(
         ctx.profileId,
@@ -702,8 +698,7 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     getFloorVars: (e) => {
       const ctx = wcvManager.contextFor(e.sender.id)
       if (!ctx) return {}
-      const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
-      return floorLocalVars(floors[floors.length - 1]?.variables)
+      return floorLocalVars(floorService.getLatestFloor(ctx.profileId, ctx.chatId)?.variables)
     },
     // Persist the whole per-chat KV object (replaceVariables / updateVariablesWith with type:'chat').
     setChatVars: (e, vars) => {

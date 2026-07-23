@@ -12,7 +12,7 @@ import { agentLabStore } from '../services/agentRuntime/lab/AgentLabStore'
 import { agentLabReplay } from '../services/agentRuntime/lab/replay'
 import { agentLabLiveRun } from '../services/agentRuntime/lab/liveRun'
 import { agentRunStore } from '../services/agentRuntime/runs/AgentRunStore'
-import { getAllFloors } from '../services/floorService'
+import { getLatestFloor } from '../services/floorService'
 import { resolveProfileId } from '../services/sessionDbService'
 import { gate } from './ipcGuards'
 
@@ -28,7 +28,7 @@ const stringArg = (value: unknown): string | null =>
 /** Resolve the latest committed floor for a chat, verifying profile ownership. */
 const latestFloor = (profileId: string, chatId: string): number | null => {
   if (resolveProfileId(chatId) !== profileId) return null
-  return getAllFloors(profileId, chatId).at(-1)?.floor ?? null
+  return getLatestFloor(profileId, chatId)?.floor ?? null
 }
 
 const runRefFor = (

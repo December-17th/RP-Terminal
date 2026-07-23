@@ -25,7 +25,7 @@ import {
   MEMORY_MAINTENANCE_AGENT_NAME,
   memoryMaintenanceBridge
 } from '../services/agentRuntime/memoryMaintenanceSlot'
-import { getAllFloors } from '../services/floorService'
+import { getLatestFloor } from '../services/floorService'
 import { resolveProfileId } from '../services/sessionDbService'
 import { gate } from './ipcGuards'
 
@@ -383,7 +383,7 @@ export const registerAgentCatalogIpc = (ipcMain: IpcMain): void => {
         if (resolveProfileId(chatId) !== profileId) {
           return { ok: false, error: 'INVALID_REQUEST', code: 'INVALID_REQUEST' }
         }
-        const floor = getAllFloors(profileId, chatId).at(-1)?.floor
+        const floor = getLatestFloor(profileId, chatId)?.floor
         if (floor === undefined) {
           return {
             ok: false,
@@ -455,7 +455,7 @@ export const registerAgentCatalogIpc = (ipcMain: IpcMain): void => {
         const agentName = stringArg(rawAgent)
         if (!profileId || !chatId || !agentName) return { ok: false, code: 'INVALID_REQUEST' }
         if (resolveProfileId(chatId) !== profileId) return { ok: false, code: 'INVALID_REQUEST' }
-        const floor = getAllFloors(profileId, chatId).at(-1)?.floor
+        const floor = getLatestFloor(profileId, chatId)?.floor
         if (floor === undefined) return { ok: false, code: 'NO_COMMITTED_FLOOR' }
         const catalogAgent = new AgentCatalog(profileId).get(agentName)
         if (!catalogAgent) return { ok: false, code: 'AGENT_NOT_FOUND' }

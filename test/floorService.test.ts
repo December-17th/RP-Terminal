@@ -54,6 +54,7 @@ import {
   getAllFloorsWithRequests,
   getFloorRequest,
   getFloorCount,
+  getLatestFloor,
   updateActiveFloorResponse
 } from '../src/main/services/floorService'
 import { FloorFile } from '../src/main/types/chat'
@@ -108,6 +109,37 @@ describe('floorService — lean floor projections (perf audit P0-2)', () => {
     seam.countRow = { n: 7 }
     expect(getFloorCount('p1', 'c1')).toBe(7)
     expect(lastSql()).toMatch(/SELECT COUNT\(\*\)/)
+  })
+
+  it('getLatestFloor fetches ONLY the last floor with a lean, single-row query', () => {
+    seam.lastFloorRow = {
+      floor: 5,
+      chat_id: 'c1',
+      timestamp: 't',
+      user_content: 'u',
+      user_timestamp: 't',
+      response_content: 'a',
+      response_model: 'm',
+      response_provider: 'p',
+      swipes: JSON.stringify(['a']),
+      swipe_id: 0,
+      events: '[]',
+      variables: JSON.stringify({ stat_data: { hp: 9 } }),
+      metrics: null,
+      plot_block: null
+    }
+    const latest = getLatestFloor('p1', 'c1')
+    expect(latest?.floor).toBe(5)
+    expect(latest?.variables).toEqual({ stat_data: { hp: 9 } })
+    // ORDER BY floor DESC LIMIT 1, and lean (no `request` column / no SELECT *).
+    expect(lastSql()).toMatch(/ORDER BY floor DESC LIMIT 1/)
+    expect(lastSql()).not.toMatch(/SELECT \*/)
+    expect(lastSql()).not.toMatch(/\brequest\b/)
+  })
+
+  it('getLatestFloor returns null on an empty chat (mirrors `.at(-1)` on `[]`)', () => {
+    seam.lastFloorRow = undefined
+    expect(getLatestFloor('p1', 'c1')).toBeNull()
   })
 
   it('the upsert preserves a stored request when the incoming floor has none', () => {

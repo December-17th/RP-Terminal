@@ -22,6 +22,7 @@ vi.mock('../src/main/services/chatCardVarsService', () => ({
 }))
 vi.mock('../src/main/services/floorService', () => ({
   getAllFloors: vi.fn(() => []),
+  getLatestFloor: vi.fn(() => null),
   saveFloor: vi.fn()
 }))
 vi.mock('../src/main/services/generationService', () => ({
