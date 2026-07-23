@@ -96,6 +96,39 @@ export const deleteCharacterLorebook = (profileId: string, characterId: string):
  * Returns entries sorted by insertion_order (lower = earlier). Pure aside from the
  * injectable `rng` (defaults to Math.random) — pass a fixed rng to test the roll.
  */
+/**
+ * ST-style regex key support. A key is a regex when it is slash-delimited
+ * `/pattern/flags`: it starts with `/`, has a closing unescaped `/`, and everything
+ * after the final `/` is flags drawn from JS RegExp's `g i m s u y`. Internal `/` in
+ * the pattern must be escaped (`\/`). A key that looks slash-delimited but fails to
+ * compile falls back to plaintext matching of the whole key string. Regex keys test
+ * the untransformed scan text — their own `i` flag governs case, so `case_sensitive`
+ * does not apply to them.
+ */
+const parseRegexKey = (key: string): RegExp | null => {
+  // Body: escaped chars (\.) or any char that is not an unescaped `/` or `\`.
+  const m = /^\/((?:\\.|[^/\\])*)\/([a-z]*)$/.exec(key)
+  if (!m) return null
+  const [, pattern, flags] = m
+  if (flags && !/^[gimsuy]*$/.test(flags)) return null
+  try {
+    return new RegExp(pattern, flags)
+  } catch {
+    return null // invalid pattern → caller falls back to literal
+  }
+}
+
+// Parse each unique key string once. Value `null` = "not a valid regex key, use literal".
+// Cached RegExps may carry `g`/`y` state, so lastIndex is reset before every `.test()`.
+const regexKeyCache = new Map<string, RegExp | null>()
+const getRegexKey = (key: string): RegExp | null => {
+  const cached = regexKeyCache.get(key)
+  if (cached !== undefined) return cached
+  const re = parseRegexKey(key)
+  regexKeyCache.set(key, re)
+  return re
+}
+
 /** Does an entry qualify for this scan text (constant, or keyword + optional secondary)? */
 const entryQualifies = (entry: LorebookEntry, scanText: string): boolean => {
   if (entry.constant) return true
@@ -103,6 +136,11 @@ const entryQualifies = (entry: LorebookEntry, scanText: string): boolean => {
   const hits = (keys: string[]): boolean =>
     keys.some((k) => {
       if (!k) return false
+      const re = getRegexKey(k)
+      if (re) {
+        re.lastIndex = 0 // guard against g/y-flag lastIndex state across calls
+        return re.test(scanText) // untransformed: the regex's own flags govern case
+      }
       const needle = entry.case_sensitive ? k : k.toLowerCase()
       return haystack.includes(needle)
     })

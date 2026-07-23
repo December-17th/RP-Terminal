@@ -92,6 +92,11 @@ iframe-`rpt`/`MessageScriptFrame` path is **retired**; the column below applies 
   `MESSAGE_SENT`, `replaceTavernRegexes` (regex write), `registerMacroLike`, general mid-history message
   insert / per-message swipe edits, and the **audio** API. Most are graceful stubs or low-value; see
   [docs/rpt-api.md](rpt-api.md) §6 and [th-parity-status.md](superpowers/specs/2026-06-23-th-parity-status.md).
+- **Lorebook key matching:** ST regex keys (`/pattern/flags`, flags `gimsuy`) match; `case_sensitive`
+  is ignored for a regex key (its own flags govern case), and an invalid regex-looking key falls back to
+  literal matching (WP-L2, `lorebookService.entryQualifies`). **Recorded deviation:** RPT matches keys
+  as plain substrings — it behaves as ST `matchWholeWords: off` (no word-boundary option), which is what
+  CJK cards need. The imported `matchWholeWords` field is preserved under `extra.st_source` but not honored.
 
 ## 5. Where RPT is AHEAD (its own design)
 

@@ -223,6 +223,57 @@ describe('saveLorebookById id minting', () => {
   })
 })
 
+describe('regex keys', () => {
+  it('a slash-delimited regex primary key matches, and non-matching text does not', () => {
+    const lb = book([{ keys: ['/龙(族|人)/'], content: 'dragonkin lore' }])
+    expect(matchEntries(lb, '一位龙族战士登场')).toHaveLength(1)
+    expect(matchEntries(lb, '一位龙人使者登场')).toHaveLength(1)
+    expect(matchEntries(lb, '一位精灵法师登场')).toHaveLength(0)
+  })
+
+  it('the regex i flag matches case-insensitively and case_sensitive is ignored for that key', () => {
+    const lb = book([{ keys: ['/aria/i'], content: 'x', case_sensitive: true }])
+    // case_sensitive:true would block a literal lowercase key, but the regex i flag governs.
+    expect(matchEntries(lb, 'ARIA waves')).toHaveLength(1)
+    expect(matchEntries(lb, 'aria waves')).toHaveLength(1)
+  })
+
+  it('a regex secondary key gates a selective entry', () => {
+    const lb = book([
+      { keys: ['king'], secondary_keys: ['/thr[o0]ne/'], content: 'x', selective: true }
+    ])
+    expect(matchEntries(lb, 'the king walks')).toHaveLength(0)
+    expect(matchEntries(lb, 'the king on the thr0ne')).toHaveLength(1)
+  })
+
+  it('an invalid-regex-looking key falls back to literal matching and does not throw', () => {
+    const lb = book([{ keys: ['/foo(/'], content: 'x' }])
+    // '/foo(/' fails to compile, so it matches literally (including the slashes).
+    expect(() => matchEntries(lb, 'nothing here')).not.toThrow()
+    expect(matchEntries(lb, 'the /foo(/ marker')).toHaveLength(1)
+    expect(matchEntries(lb, 'plain foo text')).toHaveLength(0)
+  })
+
+  it('a regex key triggers a recursion pass', () => {
+    const lb = book([
+      { keys: ['/dragon/i'], content: 'The dragon guards gold.' },
+      { keys: ['gold'], content: 'Gold is treasure.' }
+    ])
+    const out = matchAcross([lb], 'a DRAGON appears', () => 0, 2)
+    expect(out.map((e) => e.content).sort()).toEqual([
+      'Gold is treasure.',
+      'The dragon guards gold.'
+    ])
+  })
+
+  it('a g-flagged regex key matches consistently across consecutive matchAcross calls', () => {
+    // A cached g-flagged RegExp carries lastIndex; without a reset the 2nd call would miss.
+    const lb = book([{ keys: ['/spark/g'], content: 'x' }])
+    expect(matchAcross([lb], 'a spark flies', () => 0, 0)).toHaveLength(1)
+    expect(matchAcross([lb], 'a spark flies', () => 0, 0)).toHaveLength(1)
+  })
+})
+
 describe('matchAcross', () => {
   it('merges matches from several books, ordered by insertion_order', () => {
     const a = book([{ keys: ['x'], content: 'A', insertion_order: 30 }])
