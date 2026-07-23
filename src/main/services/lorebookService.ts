@@ -9,6 +9,7 @@ import {
   listFilesSync
 } from './storageService'
 import { Lorebook, LorebookEntry, LorebookSchema } from '../types/character'
+import { bumpAssemblyEpochForLorebook } from './assemblyEpochService'
 
 /**
  * Lorebooks are file-based, id-keyed artifacts: `lorebooks/<id>.json`. A card's
@@ -62,6 +63,9 @@ export const saveLorebookById = (profileId: string, id: string, lorebook: Lorebo
     entries: (lorebook.entries || []).map((e) => (e.id ? e : { ...e, id: randomUUID() }))
   }
   writeJsonSyncAtomic(lorebookPath(profileId, id), LorebookSchema.parse(withIds))
+  // ADR 0023: the book's content just changed, so every chat that references it (by explicit selection,
+  // or on the default selection when this is the character's embedded book) has stale stored prompts.
+  bumpAssemblyEpochForLorebook(profileId, id)
 }
 
 export const deleteLorebookById = (profileId: string, id: string): void => {

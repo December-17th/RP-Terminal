@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS floors (
   request TEXT,
   metrics TEXT,
   plot_block TEXT,
+  assembly_epoch INTEGER,
   PRIMARY KEY (chat_id, floor)
 );
 
@@ -161,6 +162,19 @@ CREATE INDEX IF NOT EXISTS idx_memory_retrieval_embeddings_chat
   ON memory_retrieval_embeddings(chat_id);
 `
 
+/**
+ * Forward migrations for an EXISTING session store (SESSION_SCHEMA's `CREATE TABLE IF NOT EXISTS`
+ * never adds columns to a store born before a new field). A fresh store already has these folded
+ * inline, so each check is a no-op there. Mirrors db.ts's `addColumnIfMissing` idiom for the central DB.
+ */
+const migrateSessionDb = (db: Database.Database): void => {
+  const cols = db.prepare('PRAGMA table_info(floors)').all() as Array<{ name: string }>
+  // ADR 0023 (Assembly Epoch): the chat epoch a floor was assembled under (NULL = legacy/stale).
+  if (!cols.some((c) => c.name === 'assembly_epoch')) {
+    db.exec('ALTER TABLE floors ADD COLUMN assembly_epoch INTEGER')
+  }
+}
+
 // ---- pure helpers (unit-tested) --------------------------------------------------------------
 
 /** The per-session STORE directory for a chat — one folder per save (§B1). */
@@ -223,6 +237,7 @@ export const getSessionDb = (profileId: string, chatId: string): Database.Databa
   db.pragma('journal_mode = WAL')
   // foreign_keys intentionally left OFF (see file header / plan review C5).
   db.exec(SESSION_SCHEMA)
+  migrateSessionDb(db)
   handles.set(key, db)
   for (const evictKey of keysToEvict([...handles.keys()], HANDLE_CAP)) {
     const victim = handles.get(evictKey)

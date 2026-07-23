@@ -1,7 +1,8 @@
 import { getLorebookById } from './lorebookService'
 import { getChat, getChatLorebookIds, truncateFloors } from './chatService'
 import { getCharacter } from './characterService'
-import { getAllFloors, getFloor, saveFloor } from './floorService'
+import { getAllFloors, getFloor, getFloorCount, saveFloor } from './floorService'
+import { bumpAssemblyEpoch } from './assemblyEpochService'
 import { normalizeSwipes } from './swipeHelpers'
 import { collectRenderMarkers } from './promptBuilder'
 import { DeltaCallback } from './apiService'
@@ -244,6 +245,10 @@ export const setFloorStatData = (
   floorStateForChat(chatId)?.append(chatId, floor, 'user', [
     { kind: 'set', path: 'variables.stat_data', value: statData }
   ])
+  // ADR 0023: a user variable edit to a floor below the latest changes what later floors assembled
+  // from (variables seed the next prompt), so the chat's stored prompts are now stale. A latest-floor
+  // edit does not bump (that floor's own variables never fed its own prompt).
+  if (floor < getFloorCount(profileId, chatId) - 1) bumpAssemblyEpoch(profileId, chatId)
   return getFloor(profileId, chatId, floor)
 }
 

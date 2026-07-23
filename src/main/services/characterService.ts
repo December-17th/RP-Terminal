@@ -20,6 +20,7 @@ import { parseStPng, extractAppendedZip } from '../parsers/stPngParser'
 import { importAssetsZip } from './worldAssetService'
 import { installCartridgeCode, deleteCardCode } from './cardCodeService'
 import { deleteChatFully, chatIdsForCharacter } from './chatDeleteService'
+import { bumpAssemblyEpochForCharacter } from './assemblyEpochService'
 import type { CharacterAgentResolutions } from '../../shared/characterImport'
 
 const getAvatarsDir = (): string => path.join(getAppDir(), 'avatars')
@@ -238,6 +239,9 @@ export const saveCharacter = (
        ON CONFLICT(id) DO UPDATE SET card = excluded.card`
     )
     .run(characterId, profileId, JSON.stringify(parsed), new Date().toISOString())
+  // ADR 0023: the card feeds every assembly for its chats (persona, first_mes, extensions), so a save
+  // makes those chats' stored prompts stale.
+  bumpAssemblyEpochForCharacter(profileId, characterId)
 }
 
 export const deleteCharacter = (profileId: string, characterId: string): void => {
