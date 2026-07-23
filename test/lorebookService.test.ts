@@ -1,9 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterAll } from 'vitest'
+import fs from 'fs'
+import path from 'path'
+import { randomUUID } from 'crypto'
 import {
   matchEntries,
   matchAcross,
-  normalizeLorebookData
+  normalizeLorebookData,
+  saveLorebookById,
+  getLorebookById
 } from '../src/main/services/lorebookService'
+import { getAppDir } from '../src/main/services/storageService'
 import { LorebookSchema } from '../src/main/types/character'
 
 const book = (entries: any[]): ReturnType<typeof LorebookSchema.parse> =>
@@ -109,6 +115,111 @@ describe('normalizeLorebookData', () => {
   it('returns null when there are no usable entries', () => {
     expect(normalizeLorebookData({ entries: {} }, 'f')).toBeNull()
     expect(normalizeLorebookData(null, 'f')).toBeNull()
+  })
+
+  it('preserves the source uid as id (numeric uid stringified)', () => {
+    const lb = normalizeLorebookData(
+      { entries: [{ uid: 7, keys: ['a'], content: 'x' }] },
+      'f'
+    )
+    expect(lb!.entries[0].id).toBe('7')
+  })
+
+  it('falls back to the source id when there is no uid, and leaves id unset when neither is present', () => {
+    const withId = normalizeLorebookData({ entries: [{ id: 'abc', keys: ['a'], content: 'x' }] }, 'f')
+    expect(withId!.entries[0].id).toBe('abc')
+    const none = normalizeLorebookData({ entries: [{ keys: ['a'], content: 'x' }] }, 'f')
+    expect(none!.entries[0].id).toBeUndefined()
+  })
+
+  it('merges the source extensions object into extra', () => {
+    const lb = normalizeLorebookData(
+      { entries: [{ keys: ['a'], content: 'x', extensions: { cw_project_id: 'p1', foo: 42 } }] },
+      'f'
+    )
+    expect(lb!.entries[0].extra).toMatchObject({ cw_project_id: 'p1', foo: 42 })
+  })
+
+  it('captures unconsumed source fields under extra.st_source for a sticky/cooldown/position entry', () => {
+    const lb = normalizeLorebookData(
+      {
+        entries: [
+          {
+            keys: ['a'],
+            content: 'x',
+            sticky: 3,
+            cooldown: 2,
+            position: 1,
+            group: 'g1',
+            match_whole_words: true,
+            scan_depth: 5
+          }
+        ]
+      },
+      'f'
+    )
+    const st = lb!.entries[0].extra!.st_source
+    expect(st).toMatchObject({
+      sticky: 3,
+      cooldown: 2,
+      position: 1,
+      group: 'g1',
+      matchWholeWords: true,
+      scanDepth: 5
+    })
+  })
+
+  it('omits extra entirely (and st_source) for a plain entry with no metadata', () => {
+    const lb = normalizeLorebookData({ entries: [{ keys: ['a'], content: 'x' }] }, 'f')
+    expect(lb!.entries[0].extra).toBeUndefined()
+  })
+
+  it('leaves normalize output otherwise identical to a plain entry (no behavior fields changed)', () => {
+    const lb = normalizeLorebookData(
+      { entries: [{ keys: ['a'], secondary_keys: ['b'], content: 'x', order: 42, selective: true }] },
+      'f'
+    )
+    expect(lb!.entries[0]).toEqual({
+      keys: ['a'],
+      secondary_keys: ['b'],
+      content: 'x',
+      enabled: true,
+      insertion_order: 42,
+      insertion_depth: null,
+      case_sensitive: false,
+      constant: false,
+      selective: true,
+      probability: 100,
+      exclude_recursion: false,
+      prevent_recursion: false,
+      comment: ''
+    })
+  })
+})
+
+describe('saveLorebookById id minting', () => {
+  const profileId = `test-${randomUUID()}`
+  const profileDir = path.join(getAppDir(), 'profiles', profileId)
+  afterAll(() => {
+    fs.rmSync(profileDir, { recursive: true, force: true })
+  })
+
+  it('mints ids for id-less entries once and is stable across re-save', () => {
+    const id = randomUUID()
+    saveLorebookById(profileId, id, LorebookSchema.parse({
+      name: 'B',
+      entries: [{ keys: ['a'], content: 'x' }, { id: 'kept', keys: ['b'], content: 'y' }]
+    }))
+    const first = getLorebookById(profileId, id)!
+    expect(first.entries[0].id).toBeTruthy()
+    expect(first.entries[1].id).toBe('kept')
+    const mintedId = first.entries[0].id
+
+    // Re-saving the already-id'd book changes nothing.
+    saveLorebookById(profileId, id, first)
+    const second = getLorebookById(profileId, id)!
+    expect(second.entries[0].id).toBe(mintedId)
+    expect(second.entries[1].id).toBe('kept')
   })
 })
 

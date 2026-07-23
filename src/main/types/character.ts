@@ -7,6 +7,9 @@ import { AgentDefinitionSchema } from '../../shared/agentRuntime'
  * and object-keyed (standalone world info) sources map onto it.
  */
 export const LorebookEntrySchema = z.object({
+  /** Stable per-entry identity preserved from the source (ST `uid`) or minted once on save
+   * (`saveLorebookById` is the single minting authority). Optional so id-less entries stay parseable. */
+  id: z.string().optional(),
   keys: z.array(z.string()).default([]),
   secondary_keys: z.array(z.string()).default([]),
   content: z.string().default(''),

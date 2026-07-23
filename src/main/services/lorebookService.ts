@@ -54,7 +54,14 @@ export const getLorebookById = (profileId: string, id: string): Lorebook | null 
 
 export const saveLorebookById = (profileId: string, id: string, lorebook: Lorebook): void => {
   ensureDir(lorebooksDir(profileId))
-  writeJsonSyncAtomic(lorebookPath(profileId, id), LorebookSchema.parse(lorebook))
+  // Single minting authority: any entry without a stable id gets one here (idempotent —
+  // re-saving an already-id'd book is a no-op). The renderer editor creates id-less entries
+  // and must not mint its own.
+  const withIds = {
+    ...lorebook,
+    entries: (lorebook.entries || []).map((e) => (e.id ? e : { ...e, id: randomUUID() }))
+  }
+  writeJsonSyncAtomic(lorebookPath(profileId, id), LorebookSchema.parse(withIds))
 }
 
 export const deleteLorebookById = (profileId: string, id: string): void => {
@@ -186,23 +193,68 @@ export const normalizeLorebookData = (raw: any, fallbackName: string): Lorebook 
   const rawEntries = Array.isArray(raw.entries) ? raw.entries : Object.values(raw.entries || {})
   if (!Array.isArray(rawEntries) || rawEntries.length === 0) return null
 
-  const entries = rawEntries.map((e: any) => ({
-    keys: e.keys || e.key || [],
-    secondary_keys: e.secondary_keys || e.keysecondary || [],
-    content: e.content || '',
-    enabled: e.enabled !== false && e.disable !== true,
-    insertion_order: e.insertion_order ?? e.order ?? 100,
-    // ST world-info position 4 = "at depth"; otherwise our default top placement.
-    insertion_depth:
-      e.position === 4 ? (typeof e.depth === 'number' ? e.depth : 4) : (e.insertion_depth ?? null),
-    case_sensitive: e.case_sensitive === true || e.caseSensitive === true,
-    constant: e.constant === true,
-    selective: e.selective === true,
-    probability: typeof e.probability === 'number' ? e.probability : 100,
-    exclude_recursion: e.exclude_recursion === true || e.excludeRecursion === true,
-    prevent_recursion: e.prevent_recursion === true || e.preventRecursion === true,
-    comment: e.comment || e.name || ''
-  }))
+  const entries = rawEntries.map((e: any) => {
+    const entry: any = {
+      keys: e.keys || e.key || [],
+      secondary_keys: e.secondary_keys || e.keysecondary || [],
+      content: e.content || '',
+      enabled: e.enabled !== false && e.disable !== true,
+      insertion_order: e.insertion_order ?? e.order ?? 100,
+      // ST world-info position 4 = "at depth"; otherwise our default top placement.
+      insertion_depth:
+        e.position === 4
+          ? typeof e.depth === 'number'
+            ? e.depth
+            : 4
+          : (e.insertion_depth ?? null),
+      case_sensitive: e.case_sensitive === true || e.caseSensitive === true,
+      constant: e.constant === true,
+      selective: e.selective === true,
+      probability: typeof e.probability === 'number' ? e.probability : 100,
+      exclude_recursion: e.exclude_recursion === true || e.excludeRecursion === true,
+      prevent_recursion: e.prevent_recursion === true || e.preventRecursion === true,
+      comment: e.comment || e.name || ''
+    }
+
+    // Preserve source identity: ST `uid` (or `id`), stringified. Absent → minted on save.
+    const srcId = e.uid ?? e.id
+    if (srcId !== undefined && srcId !== null && srcId !== '') entry.id = String(srcId)
+
+    // Preserve source metadata the normalizer does not consume, so a future timed/groups WP
+    // and lorebook re-export can read it without a re-import.
+    const extra: Record<string, any> = {}
+    if (e.extensions && typeof e.extensions === 'object' && !Array.isArray(e.extensions)) {
+      Object.assign(extra, e.extensions)
+    }
+    const st: Record<string, any> = {}
+    const copyIf = (key: string, ...srcKeys: string[]): void => {
+      for (const k of srcKeys) {
+        if (e[k] !== undefined) {
+          st[key] = e[k]
+          return
+        }
+      }
+    }
+    copyIf('sticky', 'sticky')
+    copyIf('cooldown', 'cooldown')
+    copyIf('delay', 'delay')
+    copyIf('group', 'group')
+    copyIf('groupOverride', 'groupOverride')
+    copyIf('groupWeight', 'groupWeight')
+    copyIf('useGroupScoring', 'useGroupScoring')
+    copyIf('selectiveLogic', 'selectiveLogic')
+    copyIf('matchWholeWords', 'matchWholeWords', 'match_whole_words')
+    copyIf('scanDepth', 'scanDepth', 'scan_depth')
+    copyIf('position', 'position')
+    copyIf('depth', 'depth')
+    copyIf('role', 'role')
+    copyIf('vectorized', 'vectorized')
+    copyIf('automationId', 'automationId')
+    if (Object.keys(st).length > 0) extra.st_source = st
+    if (Object.keys(extra).length > 0) entry.extra = extra
+
+    return entry
+  })
 
   return LorebookSchema.parse({ name: raw.name || fallbackName, entries })
 }
