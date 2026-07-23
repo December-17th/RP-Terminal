@@ -320,4 +320,22 @@ describe('matchAcross', () => {
     const out = matchAcross([recursionBook({ prevent: true })], 'a dragon appears', () => 0, 2)
     expect(out.map((e) => e.content)).toEqual(['The dragon guards gold.'])
   })
+
+  it('recursion feeds RAW unrendered EJS source as scan text (characterization)', () => {
+    // Pins the V8 lore-runtime invariant: retrieval NEVER renders EJS; recursion feeds each fired
+    // entry's content VERBATIM. Entry A's content embeds an EJS-looking token whose ONLY occurrence of
+    // entry B's key ("sigil") is INSIDE the `<%= … %>` token. Because the token is fed raw, "sigil" is
+    // present in the recursion scan text and B fires. If entry content were ever pre-rendered before
+    // recursion, `<%= sigil %>` would collapse to empty, "sigil" would vanish, and B would NOT trigger —
+    // so a future EJS-aware change would flip this assertion deliberately. Content is RPT-authored.
+    const lb = book([
+      { keys: ['gate'], content: 'The gate hums with <%= sigil %>.' },
+      { keys: ['sigil'], content: 'The sigil binds the ward.' }
+    ])
+    const out = matchAcross([lb], 'they open the gate', () => 0, 2)
+    expect(out.map((e) => e.content).sort()).toEqual([
+      'The gate hums with <%= sigil %>.',
+      'The sigil binds the ward.'
+    ])
+  })
 })

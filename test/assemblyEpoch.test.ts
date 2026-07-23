@@ -31,7 +31,13 @@ import {
   stampFloorAssemblyEpoch,
   getFloorAssemblyEpoch
 } from '../src/main/services/assemblyEpochService'
-import { saveFloor, updateFloorFields, addSwipe } from '../src/main/services/floorService'
+import {
+  saveFloor,
+  updateFloorFields,
+  addSwipe,
+  setActiveSwipe
+} from '../src/main/services/floorService'
+import { applyVariableOps } from '../src/main/services/generation/varsWrite'
 import { setChatLorebookIds, setChatMode, setVnMode, truncateFloors } from '../src/main/services/chatService'
 import { setFloorStatData } from '../src/main/services/generationService'
 import { saveChat } from '../src/main/services/chatWriteService'
@@ -196,6 +202,26 @@ describe('assemblyEpochService — transcript/variable edit call sites', () => {
     seedChat('var-latest')
     setFloorStatData(PROFILE, 'var-latest', 2, { gold: 9 })
     expect(getAssemblyEpoch(PROFILE, 'var-latest')).toBe(0)
+  })
+
+  it('bumps on a panel/card variable write (applyVariableOps) below the latest floor, not the latest', () => {
+    seedChat('ops-below')
+    applyVariableOps(PROFILE, 'ops-below', 1, [{ op: 'add', path: '/gold', value: 7 } as never])
+    expect(getAssemblyEpoch(PROFILE, 'ops-below')).toBe(1)
+
+    seedChat('ops-latest')
+    applyVariableOps(PROFILE, 'ops-latest', 2, [{ op: 'add', path: '/gold', value: 7 } as never])
+    expect(getAssemblyEpoch(PROFILE, 'ops-latest')).toBe(0)
+  })
+
+  it('does NOT bump when switching swipes on the LATEST floor (browse-then-swipe stays a Resample)', () => {
+    seedChat('swipe-switch-latest')
+    // Add a 2nd alternate on the latest floor, then switch the active swipe back and forth — all on the
+    // latest floor, so none of it invalidates a stored prompt.
+    addSwipe(PROFILE, 'swipe-switch-latest', 2, 'alt A')
+    setActiveSwipe(PROFILE, 'swipe-switch-latest', 2, 0)
+    setActiveSwipe(PROFILE, 'swipe-switch-latest', 2, 1)
+    expect(getAssemblyEpoch(PROFILE, 'swipe-switch-latest')).toBe(0)
   })
 
   it('bumps when a card save (saveChat) changes a floor below the latest, not the latest only', () => {

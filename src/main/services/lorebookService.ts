@@ -122,25 +122,33 @@ const parseRegexKey = (key: string): RegExp | null => {
   }
 }
 
-// Parse each unique key string once. Value `null` = "not a valid regex key, use literal".
-// Cached RegExps may carry `g`/`y` state, so lastIndex is reset before every `.test()`.
-const regexKeyCache = new Map<string, RegExp | null>()
-const getRegexKey = (key: string): RegExp | null => {
-  const cached = regexKeyCache.get(key)
+// A per-match-call compiled-regex cache: parse each unique key string once WITHIN a single
+// matchEntries/matchAcross call, then discard. Kept out of module scope by design (no module state —
+// V8 lore-runtime spec): the cache is created at the call entry point and threaded through
+// entryQualifies. Value `null` = "not a valid regex key, use literal". Cached RegExps may carry `g`/`y`
+// state, so lastIndex is reset before every `.test()`.
+type RegexKeyCache = Map<string, RegExp | null>
+const getRegexKey = (key: string, cache: RegexKeyCache): RegExp | null => {
+  const cached = cache.get(key)
   if (cached !== undefined) return cached
   const re = parseRegexKey(key)
-  regexKeyCache.set(key, re)
+  cache.set(key, re)
   return re
 }
 
-/** Does an entry qualify for this scan text (constant, or keyword + optional secondary)? */
-const entryQualifies = (entry: LorebookEntry, scanText: string): boolean => {
+/** Does an entry qualify for this scan text (constant, or keyword + optional secondary)? The
+ *  `cache` is the caller's per-call compiled-regex cache (see RegexKeyCache). */
+const entryQualifies = (
+  entry: LorebookEntry,
+  scanText: string,
+  cache: RegexKeyCache
+): boolean => {
   if (entry.constant) return true
   const haystack = entry.case_sensitive ? scanText : scanText.toLowerCase()
   const hits = (keys: string[]): boolean =>
     keys.some((k) => {
       if (!k) return false
-      const re = getRegexKey(k)
+      const re = getRegexKey(k, cache)
       if (re) {
         re.lastIndex = 0 // guard against g/y-flag lastIndex state across calls
         return re.test(scanText) // untransformed: the regex's own flags govern case
@@ -163,8 +171,9 @@ export const matchEntries = (
   rng: () => number = Math.random
 ): LorebookEntry[] => {
   if (!lorebook || lorebook.entries.length === 0) return []
+  const cache: RegexKeyCache = new Map() // per-call; discarded when this match returns
   return lorebook.entries
-    .filter((e) => e.enabled && entryQualifies(e, scanText) && rollPasses(e, rng))
+    .filter((e) => e.enabled && entryQualifies(e, scanText, cache) && rollPasses(e, rng))
     .sort((a, b) => a.insertion_order - b.insertion_order)
 }
 
@@ -183,6 +192,7 @@ export const matchAcross = (
 ): LorebookEntry[] => {
   let pool = lorebooks.flatMap((lb) => lb.entries).filter((e) => e.enabled)
   const fired: LorebookEntry[] = []
+  const cache: RegexKeyCache = new Map() // per-call; shared across this match's recursion passes only
 
   // One pass: qualify each pool entry against `text`, roll, and drop it from the
   // pool whether it fired or not (so it can't double-roll on a later pass).
@@ -194,7 +204,7 @@ export const matchAcross = (
         remaining.push(e)
         continue
       }
-      if (entryQualifies(e, text)) {
+      if (entryQualifies(e, text, cache)) {
         if (rollPasses(e, rng)) passFired.push(e)
       } else {
         remaining.push(e)
