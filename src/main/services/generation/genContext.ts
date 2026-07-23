@@ -4,10 +4,10 @@ import { getCharacter } from '../characterService'
 import { getLorebookById } from '../lorebookService'
 import { getChat, getChatLorebookIds, getChatMode, isYuzuMode } from '../chatService'
 import { getAllFloors, getFloorRequest } from '../floorService'
-import { buildScanText } from '../promptBuilder'
+import { buildScanText, buildPinBlock } from '../promptBuilder'
 import { loadGlobals } from '../templateService'
 import { frozenVarsFor } from '../cacheLayers'
-import { Lorebook } from '../../types/character'
+import { Lorebook, getRpExt } from '../../types/character'
 import { GenContext } from './types'
 
 /**
@@ -76,7 +76,12 @@ export const buildGenContext = (
     ? (modeConfig.scan_depth ?? settings.lorebook?.scan_depth ?? 3)
     : (settings.lorebook?.scan_depth ?? 3)
   const maxRecursion = settings.lorebook?.max_recursion ?? 0
-  const scanText = buildScanText(floors, userAction, scanDepth)
+  // Context pins (WP-L3): append the card-declared variable snapshot to the SCAN TEXT only. This
+  // flows into matchWorldInfo/matchAcross (first pass + recursion) but never into the assembled
+  // prompt — the pin block lives solely on this matcher-input string.
+  const scanText =
+    buildScanText(floors, userAction, scanDepth) +
+    buildPinBlock(workingVars, getRpExt(card)?.pin_paths)
 
   return {
     profileId,
