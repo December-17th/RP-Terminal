@@ -27,6 +27,7 @@ export function RetrievalPanel(): React.ReactElement {
   const [chatId, setChatId] = useState<string>('')
   const [charNames, setCharNames] = useState<Record<string, string>>({})
   const [action, setAction] = useState<string>('')
+  const [extraPins, setExtraPins] = useState<string>('')
   const [result, setResult] = useState<RetrievalPreviewResponse | null>(null)
   const [running, setRunning] = useState(false)
 
@@ -59,12 +60,18 @@ export function RetrievalPanel(): React.ReactElement {
 
   const run = async (): Promise<void> => {
     if (!profileId || !chatId) return
+    // Split the ad-hoc pin input on commas/newlines; the handler dedupes and drops declared paths.
+    const extra = extraPins
+      .split(/[\n,]/)
+      .map((p) => p.trim())
+      .filter(Boolean)
     setRunning(true)
     try {
       const res: RetrievalPreviewResponse = await window.api.retrievalPreview(
         profileId,
         chatId,
-        action
+        action,
+        extra
       )
       setResult(res)
     } finally {
@@ -121,6 +128,16 @@ export function RetrievalPanel(): React.ReactElement {
             onChange={(e) => setAction(e.target.value)}
           />
         </label>
+        <label className="rt-field rt-field-grow">
+          <span className="rt-field-label">{t('debug.retrievalExtraPins')}</span>
+          <input
+            className="rt-input"
+            type="text"
+            value={extraPins}
+            placeholder={t('debug.retrievalExtraPinsPlaceholder')}
+            onChange={(e) => setExtraPins(e.target.value)}
+          />
+        </label>
         <button className="rt-run" onClick={() => void run()} disabled={!chatId || running}>
           {running ? t('debug.retrievalRunning') : t('debug.retrievalRun')}
         </button>
@@ -158,6 +175,7 @@ function RetrievalResult({
 
   return (
     <div className="rt-result">
+      <PinStatus result={result} />
       <div className="rt-meta">
         <span className="rt-meta-item">
           {t('debug.retrievalScanDepth', { n: result.scanDepth })}
@@ -201,6 +219,57 @@ function RetrievalResult({
           {result.pinBlock && <span className="rt-pins">{result.pinBlock}</span>}
         </pre>
       </details>
+    </div>
+  )
+}
+
+function PinStatus({
+  result
+}: {
+  result: Extract<RetrievalPreviewResponse, { ok: true }>
+}): React.ReactElement {
+  const t = useT()
+  const declared = result.pinPaths
+  const extra = result.extraPinPaths
+  const declaredResolved = result.resolvedPins.filter((p) => !p.adhoc)
+  const adhocResolved = result.resolvedPins.filter((p) => p.adhoc)
+  const declaredUnresolved = declared.filter(
+    (p) => !result.resolvedPins.some((r) => r.path === p)
+  )
+  const pairs = (pins: { path: string; value: string }[]): string =>
+    pins.map((p) => `${p.path}=${p.value}`).join(' · ')
+
+  // Card-pin line: (a) none declared, no ad-hoc → identical-by-construction; else declared status.
+  let cardLine: string
+  let cardTone: 'muted' | 'ok' | 'warn'
+  if (declared.length === 0 && extra.length === 0) {
+    cardLine = t('debug.retrievalPinsNoneIdentical')
+    cardTone = 'muted'
+  } else if (declared.length === 0) {
+    cardLine = t('debug.retrievalPinsNoCard')
+    cardTone = 'muted'
+  } else if (declaredResolved.length === 0) {
+    cardLine = t('debug.retrievalPinsNoneResolved', { paths: declaredUnresolved.join(', ') })
+    cardTone = 'warn'
+  } else {
+    cardLine = t('debug.retrievalPinsResolved', {
+      count: declaredResolved.length,
+      declared: declared.length,
+      pairs: pairs(declaredResolved)
+    })
+    cardTone = 'ok'
+  }
+
+  return (
+    <div className="rt-pinstatus">
+      <span className={`rt-pinline rt-pinline-${cardTone}`}>{cardLine}</span>
+      {extra.length > 0 && (
+        <span className="rt-pinline rt-pinline-adhoc">
+          {adhocResolved.length === 0
+            ? t('debug.retrievalPinsAdhocNone', { paths: extra.join(', ') })
+            : t('debug.retrievalPinsAdhocResolved', { pairs: pairs(adhocResolved) })}
+        </span>
+      )}
     </div>
   )
 }

@@ -15,7 +15,8 @@ declare global {
       retrievalPreview: (
         profileId: string,
         chatId: string,
-        userAction?: string
+        userAction?: string,
+        extraPinPaths?: string[]
       ) => Promise<import('../shared/retrievalTrace').RetrievalPreviewResponse>
       importCharacterDialog: (
         profileId: string

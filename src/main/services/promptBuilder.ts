@@ -275,12 +275,25 @@ const renderPinValue = (value: unknown): string | undefined => {
  *   `\n[PINS] location: 王都 | party: 艾莉亚, 尤兹`
  * Returns '' when no pin resolves, so the scan text is byte-identical to the no-pins case.
  */
-export const buildPinBlock = (
+/** One pin path that resolved to a usable scan-text value. `label` = last dot-segment (the pin block
+ *  label); `value` = the rendered scalar/short-array string. */
+export interface ResolvedPin {
+  path: string
+  label: string
+  value: string
+}
+
+/**
+ * The single pin-resolution codepath: for each path, render its current value (scalars, and short
+ * all-scalar arrays; objects / long arrays / missing paths contribute nothing). `buildPinBlock` and the
+ * retrieval diagnostics both read from here so a path resolves identically everywhere.
+ */
+export const resolvePins = (
   vars: Record<string, any>,
   pinPaths: string[] | undefined
-): string => {
-  if (!pinPaths?.length) return ''
-  const parts: string[] = []
+): ResolvedPin[] => {
+  if (!pinPaths?.length) return []
+  const out: ResolvedPin[] = []
   for (const path of pinPaths) {
     const rendered = renderPinValue(getPath(vars, path))
     if (rendered === undefined) {
@@ -289,9 +302,19 @@ export const buildPinBlock = (
       continue
     }
     const label = path.split('.').pop() || path
-    parts.push(`${label}: ${rendered}`)
+    out.push({ path, label, value: rendered })
   }
-  return parts.length ? `\n[PINS] ${parts.join(' | ')}` : ''
+  return out
+}
+
+export const buildPinBlock = (
+  vars: Record<string, any>,
+  pinPaths: string[] | undefined
+): string => {
+  const resolved = resolvePins(vars, pinPaths)
+  return resolved.length
+    ? `\n[PINS] ${resolved.map((r) => `${r.label}: ${r.value}`).join(' | ')}`
+    : ''
 }
 
 /**

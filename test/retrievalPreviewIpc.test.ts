@@ -34,14 +34,22 @@ const PROFILE = 'p-retrieval'
 const CHAR = 'hero'
 const BOOK = 'pinbook'
 const CHAT = 'chat-pin'
+// A second world whose card declares NO pins — used to prove ad-hoc pins fire an entry on their own.
+const PLAIN_CHAR = 'plain'
+const PLAIN_BOOK = 'pinbook2'
+const PLAIN_CHAT = 'chat-plain'
 
 const handlers = new Map<string, (...args: any[]) => unknown>()
 const fakeIpcMain = {
   handle: (ch: string, fn: (...a: any[]) => unknown) => void handlers.set(ch, fn)
 } as unknown as IpcMain
 
-const invoke = (chatId: string, action = ''): RetrievalPreviewResponse =>
-  handlers.get('retrieval-preview')!({}, PROFILE, chatId, action) as RetrievalPreviewResponse
+const invoke = (
+  chatId: string,
+  action = '',
+  extra?: string[]
+): RetrievalPreviewResponse =>
+  handlers.get('retrieval-preview')!({}, PROFILE, chatId, action, extra) as RetrievalPreviewResponse
 
 beforeAll(() => {
   const now = new Date().toISOString()
@@ -83,6 +91,33 @@ beforeAll(() => {
       response: { content: `reply ${i}`, model: 'm', provider: i === 0 ? 'greeting' : 'p' },
       events: [],
       variables: i === 2 ? { location: 'Zephyros' } : {}
+    })
+  }
+
+  // Second world: card declares NO pins; a variable holds a keyword only an ad-hoc pin can surface.
+  getDb()
+    .prepare(
+      'INSERT INTO chats (id, profile_id, character_id, created_at, updated_at, lorebook_ids) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    .run(PLAIN_CHAT, PROFILE, PLAIN_CHAR, now, now, JSON.stringify([PLAIN_BOOK]))
+  saveCharacter(PROFILE, PLAIN_CHAR, RPTerminalCardSchema.parse({ data: { name: 'Plain' } }))
+  saveLorebookById(
+    PROFILE,
+    PLAIN_BOOK,
+    LorebookSchema.parse({
+      name: 'Plain World',
+      entries: [{ keys: ['Aeloria'], content: 'The old realm.', comment: 'Realm' }]
+    })
+  )
+  for (let i = 0; i < 2; i++) {
+    saveFloor(PROFILE, PLAIN_CHAT, {
+      floor: i,
+      chat_id: PLAIN_CHAT,
+      timestamp: now,
+      user_message: { content: i === 0 ? '' : `hi ${i}`, timestamp: now },
+      response: { content: `resp ${i}`, model: 'm', provider: i === 0 ? 'greeting' : 'p' },
+      events: [],
+      variables: i === 1 ? { region: 'Aeloria' } : {}
     })
   }
 
@@ -130,6 +165,42 @@ describe('retrieval-preview IPC', () => {
     const cityBaseline = res.baseline.find((r) => r.comment === 'City')!
     expect(cityBaseline.fired).toBe(false)
     expect(cityBaseline.reason).toBe('none')
+  })
+
+  it('reports the declared pin paths and their resolved values', () => {
+    const res = invoke(CHAT)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.pinPaths).toEqual(['location'])
+    expect(res.extraPinPaths).toEqual([])
+    expect(res.resolvedPins).toEqual([{ path: 'location', value: 'Zephyros' }])
+  })
+
+  it('ad-hoc pins fire an entry under RPT but not baseline on a card with no declared pins', () => {
+    const res = invoke(PLAIN_CHAT, '', ['region'])
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.pinPaths).toEqual([]) // card declares none
+    expect(res.extraPinPaths).toEqual(['region'])
+    expect(res.resolvedPins).toEqual([{ path: 'region', value: 'Aeloria', adhoc: true }])
+    expect(res.pinBlock).toContain('Aeloria')
+
+    const realmRpt = res.rpt.find((r) => r.comment === 'Realm')!
+    expect(realmRpt.fired).toBe(true)
+    expect(realmRpt.matchedKey).toBe('Aeloria')
+    const realmBaseline = res.baseline.find((r) => r.comment === 'Realm')!
+    expect(realmBaseline.fired).toBe(false)
+  })
+
+  it('combines declared + ad-hoc pins with dedupe (declared paths dropped from extra)', () => {
+    // 'location' is declared → removed from extra; the duplicate collapses; 'region' survives.
+    const res = invoke(CHAT, '', ['location', 'region', 'location'])
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.pinPaths).toEqual(['location'])
+    expect(res.extraPinPaths).toEqual(['region'])
+    // 'region' is absent from this chat's vars → resolves to nothing; only the declared pin resolves.
+    expect(res.resolvedPins).toEqual([{ path: 'location', value: 'Zephyros' }])
   })
 
   it('returns { ok: false, code: "not-found" } for an unknown chat', () => {

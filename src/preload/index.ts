@@ -611,8 +611,13 @@ const api = {
   // Open (or focus) the separate Debug window hosting the Logs panel (WP-D1).
   openDebugWindow: () => ipcRenderer.invoke('open-debug-window'),
   // WP-D2: side-effect-free lorebook retrieval dry-run for the Debug window's Retrieval tab.
-  retrievalPreview: (profileId: string, chatId: string, userAction?: string) =>
-    ipcRenderer.invoke('retrieval-preview', profileId, chatId, userAction),
+  // `extraPinPaths` = ad-hoc pin paths to try on top of the card's declared pins (dry-run only).
+  retrievalPreview: (
+    profileId: string,
+    chatId: string,
+    userAction?: string,
+    extraPinPaths?: string[]
+  ) => ipcRenderer.invoke('retrieval-preview', profileId, chatId, userAction, extraPinPaths),
   // Regex
   getRenderRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('get-render-regex', profileId, ctx),

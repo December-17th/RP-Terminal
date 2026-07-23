@@ -34,8 +34,16 @@ export interface RetrievalTraceRow {
   excludedByRecursionFlag?: boolean
 }
 
-/** Successful `retrieval-preview` result: the base scan text + pin block, matcher tuning, and the two
- *  traces (RPT = base + [PINS]; baseline = base only). */
+/** One pin path that resolved to a scan-text value in the dry-run. `adhoc` marks a path that came from
+ *  the viewer's ad-hoc "try pin paths" input rather than the card's declared `pin_paths`. */
+export interface ResolvedPinView {
+  path: string
+  value: string
+  adhoc?: boolean
+}
+
+/** Successful `retrieval-preview` result: the base scan text + pin block, matcher tuning, pin status,
+ *  and the two traces (RPT = base + [PINS]; baseline = base only). */
 export interface RetrievalPreviewOk {
   ok: true
   /** The ST-style scan text (recent turns + pending action) — identical for both traces. */
@@ -44,6 +52,12 @@ export interface RetrievalPreviewOk {
   pinBlock: string
   scanDepth: number
   maxRecursion: number
+  /** The card-declared pin paths (`data.extensions.rp_terminal.pin_paths`), in card order. */
+  pinPaths: string[]
+  /** The ad-hoc pin paths actually used this run (deduped, card-declared paths removed). */
+  extraPinPaths: string[]
+  /** Every pin path (declared + ad-hoc) that resolved to a value, in block order. */
+  resolvedPins: ResolvedPinView[]
   /** RPT retrieval: matched against `baseScanText + pinBlock`. */
   rpt: RetrievalTraceRow[]
   /** ST-keyword baseline: matched against `baseScanText` alone (no pin block). */

@@ -743,6 +743,16 @@ const en: Record<string, string> = {
   'debug.retrievalNoChats': 'No sessions',
   'debug.retrievalAction': 'Pending action',
   'debug.retrievalActionPlaceholder': 'Optional message text to scan (as if just typed)',
+  'debug.retrievalExtraPins': 'Try pin paths',
+  'debug.retrievalExtraPinsPlaceholder': 'Ad-hoc variable paths, comma/newline-separated (dry-run only)',
+  'debug.retrievalPinsNoneIdentical':
+    'No context pins configured on this card — both modes are identical by construction.',
+  'debug.retrievalPinsNoCard': 'No context pins declared on this card.',
+  'debug.retrievalPinsNoneResolved':
+    'Pins declared but none resolved to a value: {{paths}}',
+  'debug.retrievalPinsResolved': 'Pins {{count}}/{{declared}} resolved — {{pairs}}',
+  'debug.retrievalPinsAdhocNone': 'Ad-hoc pins resolved to nothing: {{paths}}',
+  'debug.retrievalPinsAdhocResolved': 'Ad-hoc pins — {{pairs}}',
   'debug.retrievalRun': 'Run dry-run',
   'debug.retrievalRunning': 'Running…',
   'debug.retrievalIdle': 'Pick a session and run a dry-run to compare lorebook retrieval.',

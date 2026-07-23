@@ -1,7 +1,7 @@
 import { IpcMain } from 'electron'
 import { openDebugWindow } from '../services/debugWindowService'
 import { buildGenContext } from '../services/generation/genContext'
-import { buildScanText, buildPinBlock } from '../services/promptBuilder'
+import { buildScanText, buildPinBlock, resolvePins } from '../services/promptBuilder'
 import { matchAcrossTraced } from '../services/lorebookService'
 import { getRpExt } from '../types/character'
 import type { RetrievalPreviewResponse } from '../../shared/retrievalTrace'
@@ -24,7 +24,8 @@ export const registerDebugIpc = (ipcMain: IpcMain): void => {
       _event,
       profileId: string,
       chatId: string,
-      userAction?: string
+      userAction?: string,
+      extraPinPaths?: string[]
     ): RetrievalPreviewResponse => {
       const action = userAction ?? ''
       let ctx
@@ -35,7 +36,19 @@ export const registerDebugIpc = (ipcMain: IpcMain): void => {
         return { ok: false, code: 'not-found' }
       }
       const base = buildScanText(ctx.floors, action, ctx.scanDepth)
-      const pinBlock = buildPinBlock(ctx.workingVars, getRpExt(ctx.card)?.pin_paths)
+      // Card-declared pins, then the viewer's ad-hoc "try pin paths" (trimmed, deduped, and with any
+      // path already declared removed). Dry-run only — the combined list is never persisted to the card.
+      const declared = getRpExt(ctx.card)?.pin_paths ?? []
+      const extra = [
+        ...new Set((Array.isArray(extraPinPaths) ? extraPinPaths : []).map((p) => p.trim()).filter(Boolean))
+      ].filter((p) => !declared.includes(p))
+      const combined = [...declared, ...extra]
+      const pinBlock = buildPinBlock(ctx.workingVars, combined)
+      const resolvedPins = resolvePins(ctx.workingVars, combined).map((r) => ({
+        path: r.path,
+        value: r.value,
+        ...(extra.includes(r.path) ? { adhoc: true as const } : {})
+      }))
       const books = ctx.lorebooks.map((lorebook) => ({ name: lorebook.name, lorebook }))
       // rng: () => 0 → the probability roll always passes (0*100 < probability for any probability > 0),
       // so the viewer shows what WOULD qualify and the two runs are stably comparable.
@@ -47,6 +60,9 @@ export const registerDebugIpc = (ipcMain: IpcMain): void => {
         pinBlock,
         scanDepth: ctx.scanDepth,
         maxRecursion: ctx.maxRecursion,
+        pinPaths: declared,
+        extraPinPaths: extra,
+        resolvedPins,
         rpt: rpt.trace,
         baseline: baseline.trace,
         lorebookNames: ctx.lorebooks.map((lb) => lb.name)
