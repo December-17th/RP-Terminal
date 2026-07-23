@@ -17,6 +17,7 @@ import './services/cardAgentCatalogBridge'
 import './services/agentPresetAssemblyBridge'
 import './services/memoryMaintenanceAgentBridge'
 import { registerIpc } from './ipc'
+import { openDebugWindow } from './services/debugWindowService'
 import { setGuardMainWindow } from './ipc/ipcGuards'
 import { TITLEBAR_OVERLAY_HEIGHT } from './windowChrome'
 import { appExitGuard, runShutdownCleanup, setExitDialogWindow } from './appExit'
@@ -133,6 +134,20 @@ function createWindow(): void {
   // Surface renderer crashes in the main log (cheap, and these are rare/important).
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
     logService.log('error', '[renderer gone]', JSON.stringify(details))
+  })
+
+  // Ctrl/Cmd+Shift+D opens the separate Debug window (WP-D1). Note the limitation: keystrokes focused
+  // INSIDE a WCV (the isolated card view) are handled by that view's webContents and never reach this
+  // one, so the accelerator won't fire while a card panel has focus — the TopStrip button covers that.
+  mainWindow.webContents.on('before-input-event', (_e, input) => {
+    if (
+      input.type === 'keyDown' &&
+      input.shift &&
+      (input.control || input.meta) &&
+      input.key.toLowerCase() === 'd'
+    ) {
+      openDebugWindow()
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {

@@ -732,6 +732,10 @@ const en: Record<string, string> = {
   'logs.clear': 'Clear',
   'logs.empty': 'No activity yet. Send a message to see raw requests, responses and errors.',
 
+  'debug.title': 'Debug',
+  'debug.openWindow': 'Open debug window',
+  'debug.tabLogs': 'Logs',
+
   'common.new': '+ New',
   'common.delete': 'Delete',
   'common.import': 'Import',

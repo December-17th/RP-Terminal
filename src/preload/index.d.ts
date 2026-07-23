@@ -9,6 +9,8 @@ declare global {
         latestVersion: string
       } | null>
       openUpdateRelease: () => Promise<boolean>
+      // Open (or focus) the separate Debug window hosting the Logs panel (WP-D1).
+      openDebugWindow: () => Promise<void>
       importCharacterDialog: (
         profileId: string
       ) => Promise<import('../shared/characterImport').CharacterImportDialogResult | null>

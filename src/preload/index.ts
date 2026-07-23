@@ -608,6 +608,8 @@ const api = {
   // Logs
   getLogs: () => ipcRenderer.invoke('get-logs'),
   clearLogs: () => ipcRenderer.invoke('clear-logs'),
+  // Open (or focus) the separate Debug window hosting the Logs panel (WP-D1).
+  openDebugWindow: () => ipcRenderer.invoke('open-debug-window'),
   // Regex
   getRenderRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('get-render-regex', profileId, ctx),

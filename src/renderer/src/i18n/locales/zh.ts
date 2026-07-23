@@ -707,6 +707,10 @@ const zh: Record<string, string> = {
   'logs.clear': '清空',
   'logs.empty': '暂无活动。发送一条消息以查看原始请求、响应与错误。',
 
+  'debug.title': '调试',
+  'debug.openWindow': '打开调试窗口',
+  'debug.tabLogs': '日志',
+
   'common.new': '+ 新建',
   'common.delete': '删除',
   'common.import': '导入',
