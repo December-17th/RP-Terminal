@@ -45,6 +45,7 @@ import {
   WCV_RESIDUE_CHANNELS
 } from '../../shared/thRuntime/wcvChannelSpec'
 import type { WcvSpecMember } from '../../shared/thRuntime/wcvChannelSpec'
+import { floorLocalVars } from '../../shared/thRuntime/shapes'
 
 // Resolve an overlay id against a card's declared `panel_ui.overlays` (PM-A7). Returns the surface to
 // mount, or null when the id isn't declared by that card (⇒ the request is rejected + warned, main-side).
@@ -693,6 +694,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
     getChatVars: (e) => {
       const ctx = wcvManager.contextFor(e.sender.id)
       return ctx ? getChatCardVars(ctx.profileId, ctx.chatId) : {}
+    },
+    // The latest floor's top-level variables minus the MVU message-scope keys (stat_data/delta_data) — the
+    // ST-Prompt-Template "local variable" bag a lorebook/preset `setvar`/`setLocalVar` writes. The shared
+    // runtime layers the per-chat KV on top of this for chat-scope READS (see VarsHost.getFloorVars); the
+    // omission runs through the SAME pure helper the inline host uses, so the transports can't drift.
+    getFloorVars: (e) => {
+      const ctx = wcvManager.contextFor(e.sender.id)
+      if (!ctx) return {}
+      const floors = floorService.getAllFloors(ctx.profileId, ctx.chatId)
+      return floorLocalVars(floors[floors.length - 1]?.variables)
     },
     // Persist the whole per-chat KV object (replaceVariables / updateVariablesWith with type:'chat').
     setChatVars: (e, vars) => {

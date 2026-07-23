@@ -96,6 +96,33 @@ export function messagesToFloors(
   return out
 }
 
+/**
+ * The MVU message-scope keys inside a floor's `variables` bag. They are the DEFAULT `getVariables()`
+ * scope (`{ stat_data }`), not the local/chat scope, so `floorLocalVars` keeps them out of what a card
+ * reads as `type:'chat'`. (`combat_cue` is also fold-owned — see `generation/assemble.ts` — but it is a
+ * card-readable native surface, so it stays visible; only MVU's own two are message-scope.)
+ */
+const MVU_MESSAGE_SCOPE_KEYS = ['stat_data', 'delta_data'] as const
+
+/**
+ * A floor's `variables` bag → the "local variable" bag, i.e. everything ST-Prompt-Template's
+ * `setvar`/`setLocalVar` writes at build time (`templateEngine.ts` `storeFor()` routes every non-global
+ * scope to the floor vars), MINUS the MVU message-scope keys above.
+ *
+ * Upstream this bag IS the chat-scope bag: SillyTavern keeps local variables in
+ * `chat_metadata.variables` (`public/scripts/variables.js`), which is exactly what TavernHelper's
+ * `getVariables({type:'chat'})` reads. RP Terminal stores them separately (floor variables vs. the
+ * per-chat card KV), so BOTH transports funnel their `getFloorVars` through this ONE pure helper —
+ * otherwise a lorebook `setLocalVar('char_info_visuals', …)` would be invisible to a card that reads
+ * `type:'chat'`, and inline/WCV could omit different keys.
+ */
+export function floorLocalVars(variables: unknown): Record<string, any> {
+  if (!variables || typeof variables !== 'object' || Array.isArray(variables)) return {}
+  const out: Record<string, any> = { ...(variables as Record<string, any>) }
+  for (const k of MVU_MESSAGE_SCOPE_KEYS) delete out[k]
+  return out
+}
+
 /** Floors → the SillyTavern `chat[]` shape (each turn = a user + an assistant message). */
 export function floorsToStChat(
   floors: FloorLike[],

@@ -11,6 +11,7 @@ import { applyRuntimeTheme, getEffectivePlayTheme } from './playTheme'
 import { evalTemplate, evalTemplateDetailed } from '../../../shared/templateEngine'
 import { buildRenderContext } from '../plugin/renderTemplate'
 import { storeRuleToTavernRegex } from '../../../shared/thRuntime/tavernRegex'
+import { floorLocalVars } from '../../../shared/thRuntime/shapes'
 import { categoryForType } from '../../../shared/worldAssets/types'
 import type { AssetType } from '../../../shared/worldAssets/types'
 import { localFirstRemoteAssetUrl } from '../../../shared/worldAssets/remote'
@@ -241,6 +242,11 @@ export function createInlineHost(ctx: CardCtx): Host {
     currentChatId: () => ctx.chatId,
     getScriptVars: () => loadScriptVars(),
     getChatVars: () => loadChatVars(),
+    // The latest floor's top-level variables minus the MVU message-scope keys — the ST-Prompt-Template
+    // "local variable" bag the runtime layers UNDER the per-chat KV for chat-scope reads (see
+    // VarsHost.getFloorVars). Read live from the chat store (no cache): a lorebook EJS entry writes these
+    // during the turn, so a memoized seed would go stale mid-session. Same pure helper as the WCV host.
+    getFloorVars: () => floorLocalVars(latestVars()),
 
     applyVariableOps: async (ops: VarOp[]) => {
       await useChatStore.getState().applyVariableOps(ctx.profileId, ops as any, floorIndex())

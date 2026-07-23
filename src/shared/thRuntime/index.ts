@@ -184,6 +184,20 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
   // bag already has those semantics (the host keys it by character), so both names share that bag.
   const isCardKvScope = (type: unknown): boolean => type === 'script' || type === 'character'
 
+  // What a chat-scope READ sees. Upstream, TavernHelper's `type:'chat'` bag IS ST's local-variable bag
+  // (`chat_metadata.variables`), so a lorebook/preset `setvar`/`setLocalVar` write is visible to a card
+  // reading `{type:'chat'}`. RPT keeps those in two stores — the floor's top-level variables
+  // (`getFloorVars`, minus stat_data/delta_data) and the per-chat card KV (`getChatVars`) — so this merges
+  // them for reads: floor vars are the BASE, the card's own KV is layered ON TOP (the card's writes win on
+  // a key collision, since that bag is the only one chat-scope writes reach).
+  // READ PATH ONLY: every chat-scope write (replaceVariables / updateVariablesWith / insertVariables /
+  // insertOrAssignVariables / deleteVariable / mergeScopedVars) still reads AND writes the card KV alone,
+  // so a read-modify-write can never copy a floor variable into the per-chat KV.
+  const chatScopeVars = (): Record<string, any> => ({
+    ...(host.getFloorVars() || {}),
+    ...(host.getChatVars() || {})
+  })
+
   const mergeScopedVars = (vars: any, opt: any, insertOnly: boolean): Promise<void> | null => {
     const type = opt?.type
     if (!isCardKvScope(type) && type !== 'chat' && type !== 'global') return null
@@ -364,13 +378,14 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
   // --- TavernHelper helpers (bare + namespaced) ---
   const helpers: Record<string, any> = {
     // SYNC getters
-    // type:'script'/'character' ⇒ the card's own KV; 'chat' ⇒ per-chat KV; 'global' ⇒ per-profile globals (a
+    // type:'script'/'character' ⇒ the card's own KV; 'chat' ⇒ the floor's local vars with the per-chat KV
+    // layered on top (chatScopeVars — upstream those are one bag); 'global' ⇒ per-profile globals (a
     // beautification's UI settings live here); any other scope ⇒ the message vars (stat_data).
     getVariables: (opt?: any) =>
       opt && isCardKvScope(opt.type)
         ? host.getScriptVars()
         : opt && opt.type === 'chat'
-          ? host.getChatVars()
+          ? chatScopeVars()
           : opt && opt.type === 'global'
             ? host.getGlobalVarsSync()
             : { stat_data: stat },
@@ -762,9 +777,12 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     })
   }
   const eventSource = { on, emit, makeFirst: on, once: on, removeListener: off }
-  // ST chat metadata variables are the same per-chat KV bag exposed by getVariables({type:'chat'}).
-  // Keep one live object per runtime because legacy cards mutate it in place and then call
-  // getContext().saveMetadata() without awaiting (读者对话渲染's persona/appearance/settings path).
+  // ST chat metadata variables are the per-chat KV bag — deliberately the RAW `getChatVars()` bag, NOT the
+  // merged chat-scope READ view (`chatScopeVars`) that getVariables({type:'chat'}) returns. This object is
+  // a WRITE surface: cards mutate it in place and then call saveMetadata(), which persists the whole thing
+  // back through setChatVars — seeding it with the floor's local variables would copy floor state into
+  // session-vars.json. Keep one live object per runtime because legacy cards mutate it in place and then
+  // call getContext().saveMetadata() without awaiting (读者对话渲染's persona/appearance/settings path).
   // Snapshot on persist so a later in-place mutation cannot change an in-flight host write.
   const chatMetadata = { variables: clone(host.getChatVars?.()) || {} }
   const saveMetadata = async (): Promise<boolean> => {

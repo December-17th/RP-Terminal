@@ -37,6 +37,15 @@ export interface VarsHost {
   setScriptVars(vars: Record<string, any>): Promise<void>
   // Chat-scope variables (TH getVariables({type:'chat'})) — a per-chat card-owned KV, NOT stat_data.
   getChatVars(): Record<string, any>
+  // The floor's top-level variable bag (`floors.variables`) MINUS stat_data/delta_data — i.e. the
+  // ST-Prompt-Template "local variable" scope that build-time `setvar`/`setLocalVar` writes
+  // (templateEngine's storeFor() routes every non-global scope there). SYNC, like the other read-at-boot
+  // getters. WHY it exists: upstream, local variables ARE chat variables — SillyTavern keeps them in
+  // `chat_metadata.variables`, the same bag TavernHelper's `getVariables({type:'chat'})` reads. RPT split
+  // the two stores, so without this a card could not see what a lorebook EJS entry wrote (the
+  // `setLocalVar('char_info_visuals', …)` → portrait-URL case). The runtime layers the per-chat card KV
+  // ON TOP of this for chat-scope READS only; every chat-scope WRITE still targets the card KV alone.
+  getFloorVars(): Record<string, any>
   // Persist the per-chat KV (the full object; mirrors updateVariablesWith({type:'chat'}) returning all).
   setChatVars(vars: Record<string, any>): Promise<void>
   // Global (per-profile) variables — the persistent scope for triggerSlash's /setglobalvar / /getglobalvar.

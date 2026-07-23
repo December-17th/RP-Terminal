@@ -18,6 +18,7 @@ export function createNullHost(ctx?: CardCtx): Host {
     getScriptVars: () => ({}),
     setScriptVars: async () => {},
     getChatVars: () => ({}),
+    getFloorVars: () => ({}),
     setChatVars: async () => {},
     getGlobalVars: async () => ({}),
     setGlobalVar: async () => {},
