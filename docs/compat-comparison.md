@@ -97,6 +97,16 @@ iframe-`rpt`/`MessageScriptFrame` path is **retired**; the column below applies 
   literal matching (WP-L2, `lorebookService.entryQualifies`). **Recorded deviation:** RPT matches keys
   as plain substrings — it behaves as ST `matchWholeWords: off` (no word-boundary option), which is what
   CJK cards need. The imported `matchWholeWords` field is preserved under `extra.st_source` but not honored.
+- **`injection_trigger` under Resample (owner-accepted deviation, ADR 0023 / WP-G1):** RPT regenerate and
+  swipe **Resample** by default — they replay the last floor's stored prompt byte-for-byte and only draw a
+  new model response — whenever the chat's **Assembly Epoch** still matches the floor's stamp. A preset
+  block gated `injection_trigger: ['regenerate']` or `['swipe']` (`src/main/types/preset.ts`) therefore
+  **never fires under a Resample**: the stored prompt predates the trigger, and assembly does not re-run.
+  Such a block still fires normally whenever an assembly-relevant edit (variables/transcript below the
+  latest floor, a referenced lorebook/card/preset save, a lorebook-selection/mode/VN change) bumps the
+  epoch and forces a full reassembly, which passes `generationType='regenerate'` exactly as before. ST
+  re-runs prompt assembly on every re-roll, so these blocks always fire there. Accepted because a re-roll
+  on an unedited chat is intentionally a pure, cache-hitting replay.
 
 ## 5. Where RPT is AHEAD (its own design)
 
