@@ -61,6 +61,7 @@ export const WCV_CHANNEL_SPEC: Record<WcvSpecMember, ChannelSpec> = {
   getScriptVars: { channel: 'wcv-host-script-vars-get-sync', kind: 'sync', fallback: {} },
   setScriptVars: { channel: 'wcv-host-script-vars-set', kind: 'invoke' },
   getChatVars: { channel: 'wcv-host-chat-vars-get-sync', kind: 'sync', fallback: {} },
+  getFloorVars: { channel: 'wcv-host-floor-vars-get-sync', kind: 'sync', fallback: {} },
   setChatVars: { channel: 'wcv-host-chat-vars-set', kind: 'invoke' },
   getGlobalVars: { channel: 'wcv-host-get-global-vars', kind: 'invoke' },
   setGlobalVar: { channel: 'wcv-host-set-global-var', kind: 'invoke' },
