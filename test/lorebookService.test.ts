@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto'
 import {
   matchEntries,
   matchAcross,
+  matchAcrossTraced,
   normalizeLorebookData,
   saveLorebookById,
   getLorebookById
@@ -319,6 +320,110 @@ describe('matchAcross', () => {
   it("prevent_recursion entries don't feed the next pass", () => {
     const out = matchAcross([recursionBook({ prevent: true })], 'a dragon appears', () => 0, 2)
     expect(out.map((e) => e.content)).toEqual(['The dragon guards gold.'])
+  })
+
+  it('matchAcrossTraced().fired is byte-identical to matchAcross across scenarios (parity)', () => {
+    const scenarios: Array<{ books: any[]; scan: string; rec: number }> = [
+      { books: [recursionBook()], scan: 'a dragon appears', rec: 2 },
+      { books: [recursionBook({ exclude: true })], scan: 'a dragon appears', rec: 2 },
+      { books: [recursionBook({ prevent: true })], scan: 'a dragon appears', rec: 2 },
+      {
+        books: [
+          book([{ keys: ['x'], content: 'A', insertion_order: 30 }]),
+          book([
+            { content: 'B-const', constant: true, insertion_order: 10 },
+            { keys: ['x'], content: 'B-key', insertion_order: 20 }
+          ])
+        ],
+        scan: 'x marks',
+        rec: 0
+      },
+      { books: [book([{ keys: ['nope'], content: 'z' }])], scan: 'nothing here', rec: 3 }
+    ]
+    for (const { books, scan, rec } of scenarios) {
+      const plain = matchAcross(books, scan, () => 0, rec)
+      const traced = matchAcrossTraced(
+        books.map((lb, i) => ({ name: `book${i}`, lorebook: lb })),
+        scan,
+        () => 0,
+        rec
+      ).fired
+      expect(traced).toEqual(plain)
+    }
+  })
+
+  it('traces the matched key for a literal and a regex primary key', () => {
+    const lb = book([
+      { keys: ['castle', 'keep'], content: 'the keep', comment: 'Keep' },
+      { keys: ['/龙(族|人)/'], content: 'dragonkin', comment: 'Dragonkin' }
+    ])
+    const { trace } = matchAcrossTraced(
+      [{ name: 'World', lorebook: lb }],
+      'we storm the CASTLE, then meet 一位龙族战士',
+      () => 0,
+      0
+    )
+    const keep = trace.find((r) => r.comment === 'Keep')!
+    expect(keep.bookName).toBe('World')
+    expect(keep.fired).toBe(true)
+    expect(keep.reason).toBe('key')
+    expect(keep.matchedKey).toBe('castle') // first hitting key, not 'keep'
+    expect(keep.recursionPass).toBe(0)
+    const dragon = trace.find((r) => r.comment === 'Dragonkin')!
+    expect(dragon.fired).toBe(true)
+    expect(dragon.matchedKey).toBe('/龙(族|人)/') // regex key reported as its source text
+  })
+
+  it('traces a constant entry with reason "constant" and a non-firing entry with reason "none"', () => {
+    const lb = book([
+      { content: 'always', constant: true, comment: 'Const' },
+      { keys: ['missing'], content: 'never', comment: 'Miss' }
+    ])
+    const { trace } = matchAcrossTraced([{ name: 'W', lorebook: lb }], 'unrelated text', () => 0, 0)
+    const c = trace.find((r) => r.comment === 'Const')!
+    expect(c.reason).toBe('constant')
+    expect(c.fired).toBe(true)
+    const m = trace.find((r) => r.comment === 'Miss')!
+    expect(m.reason).toBe('none')
+    expect(m.fired).toBe(false)
+  })
+
+  it('records the recursion pass a recursively-triggered entry fires on (0 = base)', () => {
+    const lb = book([
+      { keys: ['dragon'], content: 'The dragon guards gold.', comment: 'Dragon' },
+      { keys: ['gold'], content: 'Gold is treasure.', comment: 'Gold' }
+    ])
+    const { trace } = matchAcrossTraced(
+      [{ name: 'W', lorebook: lb }],
+      'a dragon appears',
+      () => 0,
+      2
+    )
+    const dragon = trace.find((r) => r.comment === 'Dragon')!
+    const gold = trace.find((r) => r.comment === 'Gold')!
+    expect(dragon.recursionPass).toBe(0) // fired on the base scan
+    expect(gold.fired).toBe(true)
+    expect(gold.recursionPass).toBe(1) // fired on the first recursion pass
+    expect(gold.matchedKey).toBe('gold')
+  })
+
+  it('reports secondaryMatched for a selective entry', () => {
+    const lb = book([
+      { keys: ['king'], secondary_keys: ['throne'], content: 'x', selective: true, comment: 'K' }
+    ])
+    const hit = matchAcrossTraced(
+      [{ name: 'W', lorebook: lb }],
+      'the king on the throne',
+      () => 0,
+      0
+    ).trace[0]
+    expect(hit.fired).toBe(true)
+    expect(hit.matchedKey).toBe('king')
+    expect(hit.secondaryMatched).toBe(true)
+    const miss = matchAcrossTraced([{ name: 'W', lorebook: lb }], 'the king walks', () => 0, 0)
+      .trace[0]
+    expect(miss.fired).toBe(false)
+    expect(miss.secondaryMatched).toBe(false)
   })
 
   it('recursion feeds RAW unrendered EJS source as scan text (characterization)', () => {

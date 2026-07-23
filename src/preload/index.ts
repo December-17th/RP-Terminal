@@ -610,6 +610,9 @@ const api = {
   clearLogs: () => ipcRenderer.invoke('clear-logs'),
   // Open (or focus) the separate Debug window hosting the Logs panel (WP-D1).
   openDebugWindow: () => ipcRenderer.invoke('open-debug-window'),
+  // WP-D2: side-effect-free lorebook retrieval dry-run for the Debug window's Retrieval tab.
+  retrievalPreview: (profileId: string, chatId: string, userAction?: string) =>
+    ipcRenderer.invoke('retrieval-preview', profileId, chatId, userAction),
   // Regex
   getRenderRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('get-render-regex', profileId, ctx),

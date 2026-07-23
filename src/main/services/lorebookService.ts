@@ -10,6 +10,7 @@ import {
 } from './storageService'
 import { Lorebook, LorebookEntry, LorebookSchema } from '../types/character'
 import { bumpAssemblyEpochForLorebook } from './assemblyEpochService'
+import { RetrievalReason, RetrievalTraceRow } from '../../shared/retrievalTrace'
 
 /**
  * Lorebooks are file-based, id-keyed artifacts: `lorebooks/<id>.json`. A card's
@@ -136,30 +137,58 @@ const getRegexKey = (key: string, cache: RegexKeyCache): RegExp | null => {
   return re
 }
 
-/** Does an entry qualify for this scan text (constant, or keyword + optional secondary)? The
- *  `cache` is the caller's per-call compiled-regex cache (see RegexKeyCache). */
-const entryQualifies = (
+/** The outcome of qualifying one entry against scan text, with the detail the trace viewer needs.
+ *  `qualified` is exactly what the old boolean `entryQualifies` returned; the extra fields are pure
+ *  observation and never change matcher behavior. */
+interface QualifyDetail {
+  qualified: boolean
+  reason: RetrievalReason
+  /** The first primary key that hit (its source string; regex keys report their slash-delimited text). */
+  matchedKey?: string
+  /** For a selective entry: whether a secondary key also matched. */
+  secondaryMatched?: boolean
+}
+
+/** Does an entry qualify for this scan text (constant, or keyword + optional secondary), and by which
+ *  key? The `cache` is the caller's per-call compiled-regex cache (see RegexKeyCache). This is the
+ *  single source of truth for qualification — `entryQualifies` is its boolean projection, so the traced
+ *  and untraced matchers can never diverge. */
+const qualifyDetail = (
   entry: LorebookEntry,
   scanText: string,
   cache: RegexKeyCache
-): boolean => {
-  if (entry.constant) return true
+): QualifyDetail => {
+  if (entry.constant) return { qualified: true, reason: 'constant' }
   const haystack = entry.case_sensitive ? scanText : scanText.toLowerCase()
-  const hits = (keys: string[]): boolean =>
-    keys.some((k) => {
-      if (!k) return false
+  // First key that hits (mirrors the old `.some` short-circuit), returning its source string.
+  const firstHit = (keys: string[]): string | undefined => {
+    for (const k of keys) {
+      if (!k) continue
       const re = getRegexKey(k, cache)
       if (re) {
         re.lastIndex = 0 // guard against g/y-flag lastIndex state across calls
-        return re.test(scanText) // untransformed: the regex's own flags govern case
+        if (re.test(scanText)) return k // untransformed: the regex's own flags govern case
+        continue
       }
       const needle = entry.case_sensitive ? k : k.toLowerCase()
-      return haystack.includes(needle)
-    })
-  if (!hits(entry.keys)) return false
-  if (entry.selective && entry.secondary_keys.length > 0) return hits(entry.secondary_keys)
-  return true
+      if (haystack.includes(needle)) return k
+    }
+    return undefined
+  }
+  const primary = firstHit(entry.keys)
+  if (primary === undefined) return { qualified: false, reason: 'none' }
+  if (entry.selective && entry.secondary_keys.length > 0) {
+    const secondary = firstHit(entry.secondary_keys)
+    if (secondary === undefined)
+      return { qualified: false, reason: 'none', matchedKey: primary, secondaryMatched: false }
+    return { qualified: true, reason: 'key', matchedKey: primary, secondaryMatched: true }
+  }
+  return { qualified: true, reason: 'key', matchedKey: primary }
 }
+
+/** Does an entry qualify for this scan text? Boolean projection of `qualifyDetail` (unchanged behavior). */
+const entryQualifies = (entry: LorebookEntry, scanText: string, cache: RegexKeyCache): boolean =>
+  qualifyDetail(entry, scanText, cache).qualified
 
 /** Probability gate — entries with probability < 100 roll once when they qualify. */
 const rollPasses = (entry: LorebookEntry, rng: () => number): boolean =>
@@ -184,30 +213,94 @@ export const matchEntries = (
  * recursive pass, and `prevent_recursion` entries' content doesn't feed the next
  * pass. Each entry is decided (and probability-rolled) at most once.
  */
-export const matchAcross = (
-  lorebooks: Lorebook[],
+/** One considered entry paired with its source lorebook name (for the trace). */
+interface MatchCandidate {
+  entry: LorebookEntry
+  bookName: string
+}
+
+/** Per-entry trace accumulator, keyed by the entry object. Only allocated on the traced path. */
+type TraceOutcome = {
+  bookName: string
+  entryId?: string
+  comment: string
+  fired: boolean
+  reason: RetrievalReason
+  matchedKey?: string
+  secondaryMatched?: boolean
+  recursionPass: number
+  probability: number
+  excludedByRecursionFlag?: boolean
+}
+
+const entryLabel = (entry: LorebookEntry): string =>
+  entry.comment?.trim() || entry.content.slice(0, 40).trim()
+
+/**
+ * The single matcher core. Operates on book-name-tagged candidates and, when `trace` is provided,
+ * records one outcome per considered entry WITHOUT changing which entries fire or their order. Both the
+ * public `matchAcross` (trace off) and `matchAcrossTraced` (trace on) delegate here, so the trace can
+ * never drift from real matching.
+ */
+const runMatchCore = (
+  candidates: MatchCandidate[],
   scanText: string,
-  rng: () => number = Math.random,
-  maxRecursion = 0
+  rng: () => number,
+  maxRecursion: number,
+  trace: Map<LorebookEntry, TraceOutcome> | null
 ): LorebookEntry[] => {
-  let pool = lorebooks.flatMap((lb) => lb.entries).filter((e) => e.enabled)
+  let pool = candidates
   const fired: LorebookEntry[] = []
   const cache: RegexKeyCache = new Map() // per-call; shared across this match's recursion passes only
 
+  if (trace) {
+    for (const c of candidates) {
+      trace.set(c.entry, {
+        bookName: c.bookName,
+        ...(c.entry.id ? { entryId: c.entry.id } : {}),
+        comment: entryLabel(c.entry),
+        fired: false,
+        reason: 'none',
+        recursionPass: 0,
+        probability: c.entry.probability
+      })
+    }
+  }
+
   // One pass: qualify each pool entry against `text`, roll, and drop it from the
   // pool whether it fired or not (so it can't double-roll on a later pass).
-  const runPass = (text: string, recursive: boolean): LorebookEntry[] => {
+  const runPass = (text: string, recursive: boolean, passIndex: number): LorebookEntry[] => {
     const passFired: LorebookEntry[] = []
-    const remaining: LorebookEntry[] = []
-    for (const e of pool) {
+    const remaining: MatchCandidate[] = []
+    for (const c of pool) {
+      const e = c.entry
       if (recursive && e.exclude_recursion) {
-        remaining.push(e)
+        remaining.push(c)
+        if (trace) trace.get(e)!.excludedByRecursionFlag = true
         continue
       }
-      if (entryQualifies(e, text, cache)) {
-        if (rollPasses(e, rng)) passFired.push(e)
+      const detail = trace ? qualifyDetail(e, text, cache) : null
+      const qualifies = detail ? detail.qualified : entryQualifies(e, text, cache)
+      if (qualifies) {
+        const rolled = rollPasses(e, rng)
+        if (trace) {
+          const o = trace.get(e)!
+          o.reason = detail!.reason
+          if (detail!.matchedKey !== undefined) o.matchedKey = detail!.matchedKey
+          if (detail!.secondaryMatched !== undefined) o.secondaryMatched = detail!.secondaryMatched
+          o.recursionPass = passIndex
+          o.fired = rolled
+        }
+        if (rolled) passFired.push(e)
       } else {
-        remaining.push(e)
+        // Record the (partial) reason for a considered-but-unqualified entry — it may still qualify on a
+        // later pass, which will overwrite these fields. Left as-is if it never qualifies.
+        if (trace && detail) {
+          const o = trace.get(e)!
+          if (detail.matchedKey !== undefined) o.matchedKey = detail.matchedKey
+          if (detail.secondaryMatched !== undefined) o.secondaryMatched = detail.secondaryMatched
+        }
+        remaining.push(c)
       }
     }
     pool = remaining
@@ -220,12 +313,12 @@ export const matchAcross = (
       .map((e) => e.content)
       .join('\n')
 
-  fired.push(...runPass(scanText, false))
+  fired.push(...runPass(scanText, false, 0))
 
   let recursionText = feed(fired)
   let steps = 0
   while (maxRecursion > 0 && steps < maxRecursion && pool.length && recursionText.trim()) {
-    const passFired = runPass(recursionText, true)
+    const passFired = runPass(recursionText, true, steps + 1)
     if (passFired.length === 0) break
     fired.push(...passFired)
     recursionText = feed(passFired)
@@ -233,6 +326,53 @@ export const matchAcross = (
   }
 
   return fired.sort((a, b) => a.insertion_order - b.insertion_order)
+}
+
+export const matchAcross = (
+  lorebooks: Lorebook[],
+  scanText: string,
+  rng: () => number = Math.random,
+  maxRecursion = 0
+): LorebookEntry[] => {
+  const candidates = lorebooks.flatMap((lb) =>
+    lb.entries.filter((e) => e.enabled).map((entry) => ({ entry, bookName: lb.name }))
+  )
+  return runMatchCore(candidates, scanText, rng, maxRecursion, null)
+}
+
+/**
+ * Side-effect-free diagnostic sibling of `matchAcross` (WP-D2). Same matcher, plus a per-considered-entry
+ * trace. `books` carries each lorebook's name so a trace row can name its source. `fired` is byte-identical
+ * to `matchAcross` given the same enabled entries, scan text, rng, and recursion depth.
+ */
+export const matchAcrossTraced = (
+  books: Array<{ name: string; lorebook: Lorebook }>,
+  scanText: string,
+  rng: () => number = Math.random,
+  maxRecursion = 0
+): { fired: LorebookEntry[]; trace: RetrievalTraceRow[] } => {
+  const candidates: MatchCandidate[] = books.flatMap(({ name, lorebook }) =>
+    lorebook.entries.filter((e) => e.enabled).map((entry) => ({ entry, bookName: name }))
+  )
+  const traceMap = new Map<LorebookEntry, TraceOutcome>()
+  const fired = runMatchCore(candidates, scanText, rng, maxRecursion, traceMap)
+  // Emit rows in candidate (book, then entry) order for a stable, readable viewer.
+  const trace: RetrievalTraceRow[] = candidates.map((c) => {
+    const o = traceMap.get(c.entry)!
+    return {
+      bookName: o.bookName,
+      ...(o.entryId ? { entryId: o.entryId } : {}),
+      comment: o.comment,
+      fired: o.fired,
+      reason: o.reason,
+      ...(o.matchedKey !== undefined ? { matchedKey: o.matchedKey } : {}),
+      ...(o.secondaryMatched !== undefined ? { secondaryMatched: o.secondaryMatched } : {}),
+      recursionPass: o.recursionPass,
+      probability: o.probability,
+      ...(o.excludedByRecursionFlag ? { excludedByRecursionFlag: true } : {})
+    }
+  })
+  return { fired, trace }
 }
 
 /**

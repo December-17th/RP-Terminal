@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { LogsPanel } from '../LogsPanel'
+import { RetrievalPanel } from './RetrievalPanel'
 import { useLogStore } from '../../stores/logStore'
 import { applyThemeForScheme } from '../../theme'
 import { useT } from '../../i18n'
@@ -15,7 +16,7 @@ import './debug.css'
  * strip carries a single "Logs" tab today; it is a list so WP-D2 can add "Retrieval" beside it.
  */
 
-type DebugTab = 'logs'
+type DebugTab = 'logs' | 'retrieval'
 
 export function DebugApp(): React.ReactElement {
   const t = useT()
@@ -37,7 +38,10 @@ export function DebugApp(): React.ReactElement {
     return unsub
   }, [])
 
-  const tabs: { id: DebugTab; label: string }[] = [{ id: 'logs', label: t('debug.tabLogs') }]
+  const tabs: { id: DebugTab; label: string }[] = [
+    { id: 'logs', label: t('debug.tabLogs') },
+    { id: 'retrieval', label: t('debug.tabRetrieval') }
+  ]
 
   return (
     <div className="debug-shell">
@@ -57,7 +61,10 @@ export function DebugApp(): React.ReactElement {
           ))}
         </nav>
       </header>
-      <main className="debug-body">{tab === 'logs' && <LogsPanel />}</main>
+      <main className="debug-body">
+        {tab === 'logs' && <LogsPanel />}
+        {tab === 'retrieval' && <RetrievalPanel />}
+      </main>
     </div>
   )
 }

@@ -13,7 +13,12 @@ let seeded: unknown[] = []
 const apiOverrides: Record<string, (...args: unknown[]) => unknown> = {
   getLogs: async () => seeded,
   clearLogs: async () => {},
-  onLog: () => () => {}
+  onLog: () => () => {},
+  // Retrieval tab (WP-D2) picker + dry-run: empty library so the tab renders its idle/empty state.
+  getProfiles: async () => [],
+  getChats: async () => [],
+  getCharacters: async () => [],
+  retrievalPreview: async () => ({ ok: false, code: 'not-found' })
 }
 
 const apiStub = new Proxy(apiOverrides, {
@@ -54,5 +59,18 @@ describe('DebugApp (separate Debug window shell)', () => {
 
     expect(view.getByRole('tab', { name: 'Logs' })).toBeTruthy()
     expect(await view.findByText('Boot complete')).toBeTruthy()
+  })
+
+  it('renders the Retrieval tab when selected', async () => {
+    const { fireEvent } = await import('@testing-library/react')
+    const { useLogStore } = await import('../../src/renderer/src/stores/logStore')
+    useLogStore.setState({ entries: [] })
+    const { DebugApp } = await import('../../src/renderer/src/components/debug/DebugApp')
+    const view = render(<DebugApp />)
+
+    const retrievalTab = view.getByRole('tab', { name: 'Retrieval' })
+    fireEvent.click(retrievalTab)
+    // The idle prompt is shown until a dry-run runs; the Run button is present (disabled, no chat).
+    expect(await view.findByText('Run dry-run')).toBeTruthy()
   })
 })
