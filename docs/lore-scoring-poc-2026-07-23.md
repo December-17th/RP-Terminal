@@ -47,24 +47,41 @@ the real matcher.
 
 ## Params (defaults)
 
-Tuned on the synthetic scenario suite — see `docs/lore-scoring-tuning-2026-07-24.md` (adaptive selection
-raised micro-F1 0.838 → 0.954 and cut hard-negative violations 10 → 3 over the fixed-K baseline).
+Adopted 2026-07-24 from the 8100-combo synthetic grid (best F1 0.919 on the 23-scenario suite), with
+real-floor frontier confirmation (recall 0.081 → 0.208, churn 0.533 → 0.133 vs the earlier
+maxK=4/persistBoost=1 defaults). See `docs/lore-scoring-tuning-persist-2026-07-24.md` (synthetic tuner) and
+`docs/lore-scoring-real-data-persist-2026-07-24.md` (real-floor replay). Adaptive selection had already
+raised micro-F1 0.838 → 0.954 and cut hard-negative violations 10 → 3 over the fixed-K baseline
+(`docs/lore-scoring-tuning-2026-07-24.md`); the wider `maxK`=12 cap trades a little precision for full
+recall on broad-evidence scenarios, and `persistBoost`=1.5 rewards cross-floor cache continuity.
 
-| param      | default | meaning                                                        |
-| ---------- | ------- | -------------------------------------------------------------- |
-| `lambda`   | 0.6     | recency decay base (`lambda ** depth`)                         |
-| `hopDecay` | 0.5     | one-hop link decay on a donor's seed score                     |
-| `pinBoost` | 2.5     | weight for a pin-block key hit                                 |
-| `maxK`     | 4       | ceiling on how many non-constant entries may fire              |
-| `minScore` | 0.6     | absolute score floor (0 disables it)                           |
-| `relCut`   | 0.35    | relative cut: fire only entries ≥ `relCut · topScore` (0 off)  |
+| param         | default | meaning                                                            |
+| ------------- | ------- | ------------------------------------------------------------------ |
+| `lambda`      | 0.6     | recency decay base (`lambda ** depth`)                             |
+| `hopDecay`    | 0.5     | one-hop link decay on a donor's seed score                         |
+| `pinBoost`    | 2.5     | weight for a pin-block key hit                                     |
+| `maxK`        | 12      | ceiling on how many non-constant entries may fire                  |
+| `minScore`    | 0.6     | absolute score floor (0 disables it)                               |
+| `relCut`      | 0.35    | relative cut: fire only entries ≥ `relCut · topScore` (0 off)      |
+| `persistBoost`| 1.5     | multiplier on an entry that fired on the previous floor (1 off)    |
 
 The IPC merges a caller's partial params over these and sanitizes them (non-finite/negative → default;
-`maxK` floored to an int ≥ 0; `relCut` clamped to [0, 1]).
+`maxK` floored to an int ≥ 0; `relCut` clamped to [0, 1]; `persistBoost` clamped to ≥ 1).
+
+### Persistence bonus
+
+`persistBoost` is a hysteresis multiplier applied to the FINAL score of an entry that fired on the
+**previous** floor. The previous-floor fired set is reconstructed by a mirror dry-run and keyed
+`bookName::entryIndex` (`prevFired`); a matching entry's score is multiplied by `persistBoost` before the
+floor/cut/cap selection runs, so a persistently-relevant entry can survive a floor/cut/cap it would
+otherwise fail. Because it multiplies an existing score, it **never resurrects a zero-evidence entry**
+(0 × boost = 0) — the mechanic rewards cache continuity without inventing evidence. Rows where the
+multiplier actually lifted a previous-floor entry above zero are flagged `persisted`.
 
 ## Known limitations
 
 - Lexical only — keys-only evidence, no content-token / BM25 scoring, no slicing.
-- No persistence/sticky bonus, no cooldown, no token budget, no group scoring.
+- Persistence (`persistBoost`) is a cross-floor sticky bonus, but there is still no cooldown, no token
+  budget, and no group scoring.
 - Single hop of spreading activation only.
 - Stateless preview — nothing is journaled; independent of a turn's real retrieval.

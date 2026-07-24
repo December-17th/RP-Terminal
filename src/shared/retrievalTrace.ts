@@ -68,18 +68,20 @@ export interface ScoringParams {
   persistBoost: number
 }
 
-/** Tuned on the synthetic scenario suite (docs/lore-scoring-tuning-2026-07-24.md). Selection is adaptive:
- *  an entry fires iff score > 0 AND score ≥ minScore AND score ≥ relCut·topScore AND fewer than maxK have
- *  fired. A sane floor + relative cut lets `maxK` be a generous ceiling while thin/weak evidence still
- *  fires nothing. Debug-only; real-card validation pending. */
+/** Chosen from the 8100-combo synthetic grid (2026-07-24): best F1 0.919 on the 23-scenario suite, with
+ *  real-floor frontier confirmation (recall 0.081→0.208, churn 0.533→0.133 vs the old maxK=4/persistBoost=1
+ *  defaults). See docs/lore-scoring-tuning-persist-2026-07-24.md and lore-scoring-real-data-persist-2026-07-24.md.
+ *  Selection is adaptive: an entry fires iff score > 0 AND score ≥ minScore AND score ≥ relCut·topScore AND
+ *  fewer than maxK have fired. A sane floor + relative cut lets `maxK` be a generous ceiling while thin/weak
+ *  evidence still fires nothing; persistBoost rewards previous-floor continuity. Debug-only. */
 export const DEFAULT_SCORING_PARAMS: ScoringParams = {
   lambda: 0.6,
   hopDecay: 0.5,
   pinBoost: 2.5,
-  maxK: 4,
+  maxK: 12,
   minScore: 0.6,
   relCut: 0.35,
-  persistBoost: 1
+  persistBoost: 1.5
 }
 
 /** One weighted key-evidence hit contributing to an entry's seed score. `depth` is the lowest scan
