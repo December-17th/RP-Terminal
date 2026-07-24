@@ -228,7 +228,7 @@ describe('retrieval-preview IPC', () => {
     if (!res.ok) return
     expect(Array.isArray(res.scored)).toBe(true)
     // Defaults are applied when no scoring arg is passed.
-    expect(res.scoringParams).toEqual({ lambda: 0.6, hopDecay: 0.5, pinBoost: 2.5, topK: 8 })
+    expect(res.scoringParams).toEqual({ lambda: 0.6, hopDecay: 0.5, pinBoost: 2.5, topK: 4 })
     // The constant entry appears fired in the scorer output (and first).
     const always = res.scored.find((r) => r.comment === 'AlwaysOn')!
     expect(always.constant).toBe(true)

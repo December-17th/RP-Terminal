@@ -60,11 +60,14 @@ export interface ScoringParams {
   topK: number
 }
 
+/** Tuned on the synthetic scenario suite (docs/lore-scoring-tuning-2026-07-23.md): topK lowered 8→4,
+ *  which raised micro-F1 0.775→0.861 and cut hard-negative violations 12→8 by curbing over-firing on
+ *  small books. The other knobs were metric-neutral and kept. Debug-only; real-card validation pending. */
 export const DEFAULT_SCORING_PARAMS: ScoringParams = {
   lambda: 0.6,
   hopDecay: 0.5,
   pinBoost: 2.5,
-  topK: 8
+  topK: 4
 }
 
 /** One weighted key-evidence hit contributing to an entry's seed score. `depth` is the lowest scan

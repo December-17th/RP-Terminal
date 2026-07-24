@@ -42,7 +42,7 @@ the real matcher.
 | `lambda`  | 0.6     | recency decay base (`lambda ** depth`)         |
 | `hopDecay`| 0.5     | one-hop link decay on a donor's seed score     |
 | `pinBoost`| 2.5     | weight for a pin-block key hit                 |
-| `topK`    | 8       | how many non-constant entries are flagged fired |
+| `topK`    | 4       | how many non-constant entries are flagged fired (tuned 8→4, see lore-scoring-tuning-2026-07-23.md) |
 
 The IPC merges a caller's partial params over these and sanitizes them (non-finite/negative → default;
 `topK` floored to an int ≥ 0).
