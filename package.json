@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "tune:lore": "node -e \"require('child_process').execSync('vitest run test/loreScoringTuner.test.ts',{stdio:'inherit',env:Object.assign({},process.env,{TUNE_LORE:'1'})})\"",
+    "tune:lore:real": "node -e \"require('child_process').execSync('vitest run test/loreScoringRealData.test.ts',{stdio:'inherit',env:Object.assign({},process.env,{TUNE_LORE_REAL:'1'})})\"",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
