@@ -340,9 +340,17 @@
 }
 
 .rt-scored-params {
-  margin: 0 0 8px;
+  margin: 0 0 4px;
   font-size: 11px;
   color: var(--rpt-text-secondary);
+}
+
+.rt-legend {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--rpt-text-secondary);
+  opacity: 0.85;
 }
 
 .rt-scored-row {

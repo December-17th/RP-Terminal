@@ -759,6 +759,8 @@ const zh: Record<string, string> = {
   'debug.scoreKeyHitPin': '{{key}} · idf {{idf}} · PIN',
   'debug.scoreLink': '+联动 ← {{from}} ({{n}})',
   'debug.scoreProbFactor': '×p {{n}}',
+  'debug.scoreLegend':
+    '按得分排序；高亮行为将会触发的前 K 条。标签展示证据——关键词·idf·dN（idf = 关键词稀有度，dN = 命中于 N 层之前，PIN = 命中当前固定状态）；+联动 = 被相关已触发条目提升；×p = 作者概率。常驻条目及无有效证据的条目得分为 0。',
 
   'common.new': '+ 新建',
   'common.delete': '删除',

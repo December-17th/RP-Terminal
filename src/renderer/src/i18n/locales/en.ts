@@ -786,6 +786,8 @@ const en: Record<string, string> = {
   'debug.scoreKeyHitPin': '{{key}} · idf {{idf}} · PIN',
   'debug.scoreLink': '+link ← {{from}} ({{n}})',
   'debug.scoreProbFactor': '×p {{n}}',
+  'debug.scoreLegend':
+    'Rows ranked by score; highlighted rows are the top-K that would fire. Chips show evidence — key·idf·dN (idf = key rarity, dN = matched N floors back, PIN = matched current pinned state); +link = boosted by a related fired entry; ×p = author probability. Constants and entries with no in-scope evidence score 0.',
 
   'common.new': '+ New',
   'common.delete': 'Delete',

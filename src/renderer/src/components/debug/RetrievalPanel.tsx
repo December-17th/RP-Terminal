@@ -306,6 +306,7 @@ function ScoredSection({
           topK: p.topK
         })}
       </p>
+      <p className="rt-legend">{t('debug.scoreLegend')}</p>
       {rows.length === 0 ? (
         <p className="rt-group-empty">{t('debug.retrievalGroupEmpty')}</p>
       ) : (

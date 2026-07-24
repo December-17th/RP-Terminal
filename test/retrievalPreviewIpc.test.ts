@@ -88,7 +88,10 @@ beforeAll(() => {
       name: 'Pin World',
       entries: [
         { keys: ['Zephyros'], content: 'The floating city.', comment: 'City' },
-        { constant: true, content: 'Always present.', comment: 'AlwaysOn' }
+        { constant: true, content: 'Always present.', comment: 'AlwaysOn' },
+        // Keyed on a word that appears in the seeded floor MESSAGES ('hello 1' / 'hello 2') — used to
+        // prove the scorer gives a transcript-recency hit (score > 0), not just pin hits.
+        { keys: ['hello'], content: 'A greeting entry.', comment: 'Greeter' }
       ]
     })
   )
@@ -230,9 +233,27 @@ describe('retrieval-preview IPC', () => {
     const always = res.scored.find((r) => r.comment === 'AlwaysOn')!
     expect(always.constant).toBe(true)
     expect(always.fired).toBe(true)
+    // Constants bypass scoring — they report score 0 (this is WHY a constants-only chat shows all-zero
+    // rows; it is correct, not a scorer bug).
+    expect(always.score).toBe(0)
     // The pin-triggered City entry is scored with a pin key hit.
     const city = res.scored.find((r) => r.comment === 'City')!
     expect(city.keyHits.some((h) => h.pin)).toBe(true)
+  })
+
+  it('scores a floor-keyword entry with a transcript-recency hit (score > 0)', () => {
+    const res = invoke(CHAT)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    // It fires in the keyword trace (the matcher scans the same floor text).
+    const trace = res.rpt.find((r) => r.comment === 'Greeter')!
+    expect(trace.fired).toBe(true)
+    // …so the deterministic scorer must give it a non-zero score from a recency (depth) key hit.
+    const greeter = res.scored.find((r) => r.comment === 'Greeter')!
+    expect(greeter.score).toBeGreaterThan(0)
+    expect(greeter.keyHits.length).toBeGreaterThan(0)
+    expect(greeter.keyHits[0].key).toBe('hello')
+    expect(greeter.keyHits[0].depth).not.toBeNull()
   })
 
   it('respects a custom scoring arg (topK cap and sanitized params)', () => {
