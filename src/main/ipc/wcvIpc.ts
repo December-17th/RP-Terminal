@@ -351,6 +351,11 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
   ipcMain.on('wcv-get-chat-scope-sync', (e) => {
     e.returnValue = wcvManager.chatScopeFor(e.sender.id)
   })
+  // A card-authored WCV renders the script action strip in its own DOM. Hydrate it synchronously from the
+  // card-script engine's cached visible list; scope comes only from the calling slot.
+  ipcMain.on('wcv-get-script-buttons-sync', (e) => {
+    e.returnValue = wcvManager.cardButtonsFor(e.sender.id)
+  })
   // A card script in a WCV threw / rejected — surface it to the main log (it'd otherwise only show in the
   // WCV devtools). Includes the calling slot for context.
   ipcMain.on('wcv-card-error', (e, msg) => {

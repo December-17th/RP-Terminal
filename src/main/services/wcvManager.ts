@@ -139,6 +139,23 @@ interface Slot {
 
 let mainWindow: BrowserWindow | null = null
 const slots = new Map<string, Slot>()
+type CardScriptButton = { name: string }
+const scriptButtonsByScope = new Map<string, CardScriptButton[]>()
+
+const scriptButtonScope = (slot: Pick<Slot, 'profileId' | 'chatId' | 'characterId'>): string =>
+  `${slot.profileId}\u0000${slot.chatId}\u0000${slot.characterId}`
+
+const pushScriptButtonsToScope = (source: Slot, buttons: CardScriptButton[]): void => {
+  for (const slot of slots.values()) {
+    if (
+      slot.profileId !== source.profileId ||
+      slot.chatId !== source.chatId ||
+      slot.characterId !== source.characterId
+    )
+      continue
+    slot.view.webContents.send('wcv-script-buttons-changed', buttons)
+  }
+}
 
 // --- Per-card code-serving origins (A2) ---
 // The rpt-card:// handler receives only `req.url` (NOT the sender webContents), so it cannot read slot
@@ -371,7 +388,9 @@ export const pushLorebookChanged = (id: string): void => {
   mainWindow?.webContents.send('wcv-lorebook-changed', { id })
 }
 
-/** Push a card script's action buttons to the renderer toolbar (the menu above the input). */
+/** Cache a card-script engine's visible action buttons and push them to both the renderer toolbar and
+ *  card-authored WCV surfaces in the same session. Other WCVs keep the existing renderer feed but do not
+ *  become the canonical inventory owner. */
 export const pushCardButtons = (
   slotId: string,
   chatId: string,
@@ -379,6 +398,23 @@ export const pushCardButtons = (
   buttons: { name: string; visible: boolean }[]
 ): void => {
   mainWindow?.webContents.send('wcv-card-buttons', { slotId, chatId, characterId, buttons })
+  if (!slotId.startsWith('card-scripts:')) return
+  const source = slots.get(slotId)
+  if (!source) return
+  const visible = buttons
+    .filter((button) => button.visible !== false)
+    .map((button) => ({ name: button.name }))
+  scriptButtonsByScope.set(scriptButtonScope(source), visible)
+  pushScriptButtonsToScope(source, visible)
+}
+
+/** Current visible script-button inventory for a WCV sender. Scope is derived from its bound slot. */
+export const cardButtonsFor = (webContentsId: number): CardScriptButton[] => {
+  for (const slot of slots.values()) {
+    if (slot.view.webContents.id !== webContentsId) continue
+    return (scriptButtonsByScope.get(scriptButtonScope(slot)) ?? []).map((button) => ({ ...button }))
+  }
+  return []
 }
 
 /** Hide without destroying (e.g. while a modal is open over it, or its tab is hidden). */
@@ -481,6 +517,16 @@ export const onSlotDestroyed = (
 export const destroy = (id: string): void => {
   const slot = slots.get(id)
   if (!slot) return
+  if (id.startsWith('card-scripts:')) {
+    scriptButtonsByScope.delete(scriptButtonScope(slot))
+    mainWindow?.webContents.send('wcv-card-buttons', {
+      slotId: id,
+      chatId: slot.chatId,
+      characterId: slot.characterId,
+      buttons: []
+    })
+    pushScriptButtonsToScope(slot, [])
+  }
   slots.delete(id)
   // Notify teardown subscribers BEFORE the webContents is closed (its id is still readable).
   if (slotDestroyListeners.size) {
@@ -512,6 +558,7 @@ export const destroy = (id: string): void => {
 
 export const destroyAll = (): void => {
   for (const id of [...slots.keys()]) destroy(id)
+  scriptButtonsByScope.clear()
   // Belt-and-suspenders: empty the freeze cache + cancel any pending refresh on full teardown.
   freezeController.clear()
 }

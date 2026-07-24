@@ -38,6 +38,7 @@ import { WCV_CHANNELS } from '../shared/thRuntime/wcvChannelSpec'
  */
 const w = window as any
 const DEBUG = typeof location !== 'undefined' && /rptdebug/i.test(location.hash + location.search)
+type CardScriptButton = { name: string }
 
 // --- panel geometry (seam-slicing primitive) ---
 // This page's slot rect in window-content coords + the window content size, so it can draw a
@@ -126,6 +127,34 @@ ipcRenderer.on('wcv-colorscheme', (_e: any, s: 'light' | 'dark') => {
   }
 })
 
+// --- script action buttons (cross-WCV inventory) ---
+// The script engine owns TavernHelper's replaceScriptButtons state. A full-screen card surface runs in a
+// different document, so main snapshots the engine's visible list and pushes replacements here.
+let scriptButtons: CardScriptButton[] = []
+const scriptButtonListeners = new Set<(buttons: readonly CardScriptButton[]) => void>()
+const hydrateScriptButtons = (next: unknown): void => {
+  scriptButtons = Array.isArray(next)
+    ? next
+        .filter((button) => button && typeof button.name === 'string')
+        .map((button) => ({ name: button.name }))
+    : []
+  for (const cb of scriptButtonListeners) {
+    try {
+      cb(scriptButtons)
+    } catch {
+      /* a listener throwing must not break the others */
+    }
+  }
+}
+ipcRenderer.on('wcv-script-buttons-changed', (_e: any, buttons: unknown) =>
+  hydrateScriptButtons(buttons)
+)
+try {
+  scriptButtons = ipcRenderer.sendSync('wcv-get-script-buttons-sync') || []
+} catch {
+  scriptButtons = []
+}
+
 // --- host bridge (IPC) ---
 const rptHost = {
   getVariables: (): Promise<any> => ipcRenderer.invoke('wcv-host-get-vars'),
@@ -143,6 +172,19 @@ const rptHost = {
     ipcRenderer.on('wcv-vars-changed', l)
     return () => ipcRenderer.removeListener('wcv-vars-changed', l)
   },
+  // Full-screen card WCVs can render the active script action strip in their own DOM. Subscription
+  // immediately receives the current visible list; activation reuses TavernHelper's button event route.
+  onScriptButtons: (cb: (buttons: readonly CardScriptButton[]) => void) => {
+    scriptButtonListeners.add(cb)
+    try {
+      cb(scriptButtons)
+    } catch {
+      /* match the live-delivery isolation above */
+    }
+    return () => scriptButtonListeners.delete(cb)
+  },
+  activateScriptButton: (name: string) =>
+    ipcRenderer.send('wcv-button-click', '', String(name ?? '')),
   // The page's current slot geometry (for seam-sliced backgrounds). Synchronous — always the latest
   // value main pushed. `onPanelGeometry` subscribes to changes and returns an unsubscribe.
   getPanelGeometry: (): PanelGeometry => panelGeometry,

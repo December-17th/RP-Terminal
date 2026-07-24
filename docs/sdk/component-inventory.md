@@ -127,6 +127,22 @@ to RPT, so this stays card-agnostic. The poem play-area surfaces use it for `sel
 `stage:cast-changed` (redesign §5.3). Verify: [`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts)
 (`wcv-host-broadcast-event`) → [`wcvManager.notifyEvent`](../../src/main/services/wcvManager.ts).
 
+**WCV-transport-only script action feed:** a card-authored full-screen surface can render the active
+card-script engine's visible TavernHelper buttons inside its own DOM:
+
+- `window.rptHost.onScriptButtons(cb)` immediately calls `cb([{ name }, ...])` with the current complete
+  visible list, calls it again whenever `replaceScriptButtons` changes the list, and returns an unsubscribe.
+- `window.rptHost.activateScriptButton(name)` activates the named button through the existing
+  `eventOn(getButtonEvent(name), handler)` route.
+
+The card owns the strip's markup and styling. The inventory is scoped to the calling WCV's
+profile/chat/card, is cached for late-mounted full-screen surfaces, and clears when the session's card-script
+engine is destroyed. This does not change TavernHelper's per-runtime `getScriptButtons()` semantics. Verify:
+[`wcvPreload.ts`](../../src/preload/wcvPreload.ts) (`wcv-get-script-buttons-sync` /
+`wcv-script-buttons-changed` / `wcv-button-click`) →
+[`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts) →
+[`wcvManager.ts`](../../src/main/services/wcvManager.ts) (`pushCardButtons` / `cardButtonsFor`).
+
 **Full-play-area overlay surfaces** (PM-A7): `requestOverlay(id)` / `closeOverlay()` raise / dismiss a
 surface the active card declares in `panel_ui.overlays` (§4). Because a WCV composites above the DOM only
 _inside_ its slot rectangle, a card surface can't escape its slot — so the app mounts the named overlay as
