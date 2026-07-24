@@ -8,7 +8,8 @@ import path from 'path'
  * with `npm run tune:lore:real` (sets TUNE_LORE_REAL=1). It replays every stored (chat, floor) of the
  * dev data dir and scores retrieval against a next-response PROXY label (an enabled non-constant entry is
  * "relevant" iff one of its primary keys appears in the text of that floor's stored response), then
- * grid-searches params and writes docs/lore-scoring-real-data-2026-07-23.md.
+ * grid-searches params (incl. the persistence axis, with prevFired threaded sequentially per chat) and
+ * writes docs/lore-scoring-real-data-persist-2026-07-24.md.
  *
  * SAFETY (hard rules): the real data dir is COPIED to a fresh temp dir and the storage layer is repointed
  * there (via the retrievalPreviewIpc.test node-adapter + getAppDir mock pattern) — the original dir is
@@ -47,22 +48,25 @@ import type { EntryRef, Scenario } from './fixtures/loreScoring/scenarios'
 import {
   evaluate,
   evaluateKeywordBaseline,
-  microScorer,
-  microKeywordBaseline,
+  microAggregate,
+  type EvalResult,
   type MicroAgg
 } from './fixtures/loreScoring/metrics'
 
 const GRID = {
-  // Report-only: hold λ/hop at the defaults and grid the pin + selection knobs (108 combos).
-  pinBoost: [1.5, 2.5, 4.0],
+  // Report-only: λ/hop AND pinBoost held at the defaults (pinBoost fixed at 2.5 — the keyword-flavored
+  // proxy cannot separate pinBoost values, documented in the prior real-data doc). Grid the selection
+  // knobs + the NEW persistence axis: 4 × 3 × 3 × 3 = 108 combos.
   maxK: [4, 8, 12, 16],
   minScore: [0, 0.3, 0.6],
-  relCut: [0, 0.2, 0.35]
+  relCut: [0, 0.2, 0.35],
+  persistBoost: [1, 1.5, 2]
 }
+const PIN_BOOST = 2.5
 
 const f3 = (n: number): string => (Number.isFinite(n) ? n.toFixed(3) : '—')
 const paramStr = (p: ScoringParams): string =>
-  `pin=${p.pinBoost} maxK=${p.maxK} min=${p.minScore} rel=${p.relCut}`
+  `maxK=${p.maxK} min=${p.minScore} rel=${p.relCut} persist=${p.persistBoost}`
 const refKey = (r: EntryRef): string => `${r.bookName}::${r.entryIndex}`
 
 interface Sample {
@@ -231,8 +235,9 @@ const pinHitCount = (books: Array<{ name: string; lorebook: Lorebook }>, pinText
     fs.cpSync(REAL_DIR, TEMP_DIR, { recursive: true })
   })
 
-  // Generous timeout: the grid (225 combos) × samples × a large real lorebook is CPU-heavy but this file
-  // is env-gated and never runs in the normal suite.
+  // Generous timeout: the grid (108 combos) × samples × a large real lorebook is CPU-heavy — and the
+  // persistence axis threads prevFired sequentially per chat, so each combo re-scores every floor — but
+  // this file is env-gated and never runs in the normal suite.
   it('grid-searches params on real floors and writes the report', { timeout: 600_000 }, () => {
     const { samples, chats, entries, scanDepth, pinsDeclared, varsMode } = collectSamples()
     if (samples.length === 0) {
@@ -241,15 +246,15 @@ const pinHitCount = (books: Array<{ name: string; lorebook: Lorebook }>, pinText
       return
     }
     const scenarios = samples.map((s) => s.scenario) // pinText resolved per floor (see collectSamples)
-    const pinless = samples.map((s) => ({ ...s.scenario, pinText: '' }))
     const chatLabels = [...new Set(samples.map((s) => s.chatLabel))]
 
     // --- Pin-hit analysis: does the resolved location actually match entry keys, per floor? ---
     const pinHitsPerFloor = samples.map((s) => pinHitCount(s.scenario.books, s.scenario.pinText))
     const floorsWithPin = samples.filter((s) => s.scenario.pinText.length > 0).length
     const floorsWithPinHit = pinHitsPerFloor.filter((n) => n > 0).length
+    const pinTotal = pinHitsPerFloor.reduce((a, b) => a + b, 0)
+    const pinsMatter = pinHitsPerFloor.some((n) => n > 0)
 
-    // --- Per-config stats over a chosen scenario list: micro P/R/F1 + fired/floor + floor-to-floor churn ---
     const symDiff = (a: Set<string>, b: Set<string>): number => {
       let d = 0
       for (const x of a) if (!b.has(x)) d++
@@ -263,148 +268,186 @@ const pinHitCount = (books: Array<{ name: string; lorebook: Lorebook }>, pinText
       for (let i = 0; i + 1 < seq.length; i++) sum += symDiff(seq[i], seq[i + 1])
       return sum / (seq.length - 1)
     }
+
+    // --- Sequential prevFired threading. `samples` is already grouped by chat and ordered by floor. For a
+    // given params, replay each chat's floors in order: floor i's fired set (bookName::entryIndex refs)
+    // becomes floor i+1's prevFired UNDER THE SAME PARAMS; the first floor of each chat starts empty. This
+    // is what activates the scorer's persistBoost axis. `e.fired` is already an EntryRef[] so we pass it
+    // straight through (evaluate re-keys it as `${bookName}::${entryIndex}` internally). ---
+    const threadedResults = (scns: Scenario[], p: ScoringParams): EvalResult[] => {
+      const prevByChat: Record<string, EntryRef[]> = {}
+      return scns.map((sc, i) => {
+        const chat = samples[i].chatLabel
+        const prevFired = prevByChat[chat] ?? []
+        const e = evaluate({ ...sc, prevFired }, p)
+        prevByChat[chat] = e.fired
+        return e
+      })
+    }
+
     interface Stats {
       micro: MicroAgg
       firedPerFloor: number
       churn: number
     }
-    const statsAt = (p: ScoringParams, scns: Scenario[]): Stats => {
-      const firedCounts: number[] = []
+    const statsFrom = (results: EvalResult[]): Stats => {
       const byChat: Record<string, Array<Set<string>>> = {}
       for (const l of chatLabels) byChat[l] = []
-      scns.forEach((sc, i) => {
-        const e = evaluate(sc, p)
-        firedCounts.push(e.firedCount)
-        byChat[samples[i].chatLabel].push(new Set(e.fired.map(refKey)))
-      })
+      results.forEach((e, i) => byChat[samples[i].chatLabel].push(new Set(e.fired.map(refKey))))
       return {
-        micro: microScorer(scns, p),
-        firedPerFloor: mean(firedCounts),
+        micro: microAggregate(results),
+        firedPerFloor: mean(results.map((e) => e.firedCount)),
         churn: mean(chatLabels.map((l) => meanChurn(byChat[l])))
       }
     }
+    // Scorer stats at params p, prevFired threaded sequentially per chat.
+    const statsAt = (p: ScoringParams): Stats => statsFrom(threadedResults(scenarios, p))
+    // Keyword baseline (segments+pins, RPT mode) stats — no params, no persistence, but a fired set per
+    // floor so churn is still computable. prevFired is irrelevant to the unranked matcher.
+    const keywordStats = (): Stats =>
+      statsFrom(scenarios.map((sc) => evaluateKeywordBaseline(sc)))
 
-    // --- Grid pinBoost × maxK × minScore × relCut over the PINNED scenarios (λ/hop fixed) ---
+    // --- Grid maxK × minScore × relCut × persistBoost (pinBoost fixed at 2.5; λ/hop at defaults) ---
     const combos: Array<{ params: ScoringParams; micro: MicroAgg }> = []
-    for (const pinBoost of GRID.pinBoost)
-      for (const maxK of GRID.maxK)
-        for (const minScore of GRID.minScore)
-          for (const relCut of GRID.relCut) {
-            const params = { ...DEFAULT_SCORING_PARAMS, pinBoost, maxK, minScore, relCut }
-            combos.push({ params, micro: microScorer(scenarios, params) })
+    for (const maxK of GRID.maxK)
+      for (const minScore of GRID.minScore)
+        for (const relCut of GRID.relCut)
+          for (const persistBoost of GRID.persistBoost) {
+            const params = {
+              ...DEFAULT_SCORING_PARAMS,
+              pinBoost: PIN_BOOST,
+              maxK,
+              minScore,
+              relCut,
+              persistBoost
+            }
+            combos.push({ params, micro: microAggregate(threadedResults(scenarios, params)) })
           }
     combos.sort((a, b) => b.micro.f1 - a.micro.f1 || b.micro.precision - a.micro.precision)
-    const best = combos[0]
+    const gridBest = combos[0]
 
-    // pinBoost sweep at the default selection knobs (does 2.5 hold?).
-    const pinSweep = GRID.pinBoost.map((pinBoost) => ({
-      pinBoost,
-      micro: microScorer(scenarios, { ...DEFAULT_SCORING_PARAMS, pinBoost })
-    }))
-    const bestPinBoost = [...pinSweep].sort((a, b) => b.micro.f1 - a.micro.f1)[0].pinBoost
+    // --- Frontier: minScore/relCut fixed at the current defaults (0.6 / 0.35), sweep maxK × persistBoost.
+    // This is the headline recall-vs-churn deliverable. ---
+    const frontier: Array<{ maxK: number; persistBoost: number; stats: Stats }> = []
+    for (const maxK of GRID.maxK)
+      for (const persistBoost of GRID.persistBoost) {
+        const params = {
+          ...DEFAULT_SCORING_PARAMS,
+          pinBoost: PIN_BOOST,
+          maxK,
+          minScore: 0.6,
+          relCut: 0.35,
+          persistBoost
+        }
+        frontier.push({ maxK, persistBoost, stats: statsAt(params) })
+      }
 
-    // Metrics WITH vs WITHOUT pins at the default params.
-    const withPins = statsAt(DEFAULT_SCORING_PARAMS, scenarios)
-    const withoutPins = statsAt(DEFAULT_SCORING_PARAMS, pinless)
-    const statsBest = statsAt(best.params, scenarios)
-
-    // Three-way keyword baselines (matching the viewer): ST (no pins) and RPT (segments + pins).
-    const kwSt = microKeywordBaseline(pinless)
-    const kwRpt = microKeywordBaseline(scenarios)
-    const kwStFired = mean(samples.map((_, i) => evaluateKeywordBaseline(pinless[i]).firedCount))
-    const kwRptFired = mean(samples.map((s) => evaluateKeywordBaseline(s.scenario).firedCount))
-
-    const pinsMatter = pinHitsPerFloor.some((n) => n > 0)
-    const pinsChangeScorer =
-      withPins.firedPerFloor !== withoutPins.firedPerFloor ||
-      Math.abs(withPins.micro.f1 - withoutPins.micro.f1) > 1e-9 ||
-      Math.abs(withPins.churn - withoutPins.churn) > 1e-9
+    // --- Named comparisons: current defaults vs the synthetic-grid winner vs keyword baseline ---
+    const currentDefaults = { ...DEFAULT_SCORING_PARAMS } // maxK4 min0.6 rel0.35 persist1, pinBoost 2.5
+    const syntheticWinner = { ...DEFAULT_SCORING_PARAMS, maxK: 12, persistBoost: 1.5 } // min0.6 rel0.35
+    const statsDefault = statsAt(currentDefaults)
+    const statsWinner = statsAt(syntheticWinner)
+    const statsKeyword = keywordStats()
 
     // eslint-disable-next-line no-console
     console.log(
       `\nSamples: ${chats} chat(s) × ${samples.length} (chat,floor), ${entries} entries, scanDepth=${scanDepth}, vars=${varsMode}, pinsDeclared=${pinsDeclared}` +
-        `\nPin-hit entries: total=${pinHitsPerFloor.reduce((a, b) => a + b, 0)} mean/floor=${f3(mean(pinHitsPerFloor))} floorsWithPin=${floorsWithPin}/${samples.length} floorsWithPinHit=${floorsWithPinHit}` +
-        `\nScorer @default WITH pins   P=${f3(withPins.micro.precision)} R=${f3(withPins.micro.recall)} F1=${f3(withPins.micro.f1)} fired/floor=${f3(withPins.firedPerFloor)} churn=${f3(withPins.churn)}` +
-        `\nScorer @default WITHOUT pins P=${f3(withoutPins.micro.precision)} R=${f3(withoutPins.micro.recall)} F1=${f3(withoutPins.micro.f1)} fired/floor=${f3(withoutPins.firedPerFloor)} churn=${f3(withoutPins.churn)}` +
-        `\nbestPinBoost=${bestPinBoost} · grid best ${paramStr(best.params)} F1=${f3(best.micro.f1)}` +
-        `\nKeyword ST(no pins) F1=${f3(kwSt.f1)} · RPT(pins) F1=${f3(kwRpt.f1)}`
+        `\nPin-hit entries: total=${pinTotal} mean/floor=${f3(mean(pinHitsPerFloor))} floorsWithPin=${floorsWithPin}/${samples.length} floorsWithPinHit=${floorsWithPinHit}` +
+        `\nCurrent defaults (${paramStr(currentDefaults)}) P=${f3(statsDefault.micro.precision)} R=${f3(statsDefault.micro.recall)} F1=${f3(statsDefault.micro.f1)} fired/floor=${f3(statsDefault.firedPerFloor)} churn=${f3(statsDefault.churn)}` +
+        `\nSynthetic winner (${paramStr(syntheticWinner)}) P=${f3(statsWinner.micro.precision)} R=${f3(statsWinner.micro.recall)} F1=${f3(statsWinner.micro.f1)} fired/floor=${f3(statsWinner.firedPerFloor)} churn=${f3(statsWinner.churn)}` +
+        `\nKeyword (segments+pins) P=${f3(statsKeyword.micro.precision)} R=${f3(statsKeyword.micro.recall)} F1=${f3(statsKeyword.micro.f1)} fired/floor=${f3(statsKeyword.firedPerFloor)} churn=${f3(statsKeyword.churn)}` +
+        `\nGrid best ${paramStr(gridBest.params)} F1=${f3(gridBest.micro.f1)}`
     )
 
-    // --- Markdown report (aggregate numbers + anonymized labels ONLY) ---
-    const gridRow = (rank: string, p: string, m: MicroAgg): string =>
-      `| ${rank} | ${p} | ${f3(m.precision)} | ${f3(m.recall)} | ${f3(m.f1)} |`
+    // --- Markdown report (aggregate numbers + anonymized labels ONLY — no card prose, no entry keys) ---
     const gridHeader = '| Rank | Params | Precision | Recall | F1 |\n|---|---|---|---|---|'
-    const topRows = combos.slice(0, 10).map((c, i) => gridRow(String(i + 1), paramStr(c.params), c.micro))
-    const pinTotal = pinHitsPerFloor.reduce((a, b) => a + b, 0)
+    const topRows = combos
+      .slice(0, 10)
+      .map((c, i) => `| ${i + 1} | ${paramStr(c.params)} | ${f3(c.micro.precision)} | ${f3(c.micro.recall)} | ${f3(c.micro.f1)} |`)
+    const frontierRows = frontier.map(
+      (r) =>
+        `| ${r.maxK} | ${r.persistBoost} | ${f3(r.stats.micro.precision)} | ${f3(r.stats.micro.recall)} | ${f3(r.stats.micro.f1)} | ${f3(r.stats.firedPerFloor)} | ${f3(r.stats.churn)} |`
+    )
+    const cmpRow = (label: string, params: string, s: Stats): string =>
+      `| ${label} | ${params} | ${f3(s.micro.precision)} | ${f3(s.micro.recall)} | ${f3(s.micro.f1)} | ${f3(s.firedPerFloor)} | ${f3(s.churn)} |`
 
-    const doc = `# Lore-scoring real-data evaluation — pin axis active (2026-07-24)
+    const doc = `# Lore-scoring real-data evaluation — persistence axis (2026-07-24)
 
-**Status: PoC — debug window only; diagnostic, NOT a defaults decision.** Rerun of the 2026-07-24 real-data
-evaluation with **context pins now exercised**: the replayed card declares one \`pin_paths\` entry (the
-location variable), resolved **${varsMode === 'per-floor' ? 'per floor (the floor N-1 stat_data snapshot the generation of floor N would have seen)' : 'from the chat current vars (per-floor snapshots unavailable — STATIC pin, weaker signal)'}**.
-The pin block feeds both the scorer and the RPT keyword baseline the same way the live handler does; a
-pinless ST keyword baseline is kept for reference. λ/hop are fixed at defaults; pinBoost × maxK × minScore ×
-relCut are gridded (${combos.length} combos). Proxy label unchanged: an enabled non-constant entry is
-"relevant" for floor N iff one of its primary keys appears in the stored text of response N. Metrics are
-micro-aggregated P/R/F1 vs. the proxy. \`DEFAULT_SCORING_PARAMS\` is NOT changed from these numbers.
+**Status: PoC — debug window only; diagnostic, NOT a defaults decision.** This is the real-floor-data
+replay extended to exercise the **persistence-bonus axis** (\`persistBoost\`) that the scorer gained in
+\`loreScoring.ts\`. \`prevFired\` is threaded **sequentially per chat, in floor order**: the entries that
+fired at floor i (keyed \`bookName::entryIndex\`) become the \`prevFired\` set for floor i+1 of the same
+chat under the same params; the first floor of each chat starts from an empty set.
+
+**The proxy is keyword-flavored and circular.** The label ("an enabled non-constant entry is relevant for
+floor N iff one of its primary keys appears in the stored text of response N") rewards exactly the lexical
+signal the scorer already keys on, so it CANNOT adjudicate a defaults change — it is a smoke test that the
+codepath runs and a rough recall-vs-churn shape, nothing more. \`DEFAULT_SCORING_PARAMS\` is **NOT** changed
+from these numbers.
+
+Context pins are exercised: the replayed card declares one \`pin_paths\` entry (a location variable),
+resolved **${varsMode === 'per-floor' ? 'per floor (the floor N-1 stat_data snapshot the generation of floor N would have seen)' : 'from the chat current vars (per-floor snapshots unavailable — STATIC pin)'}**.
+λ/hop are held at defaults and **pinBoost is fixed at ${PIN_BOOST}** (the proxy cannot separate pinBoost
+values — documented in the prior real-data doc); the grid sweeps maxK × minScore × relCut × persistBoost
+(**${combos.length} combos**). Metrics are micro-aggregated P/R/F1 vs. the proxy; churn is the mean
+floor-to-floor symmetric-difference of the fired set within a chat (same definition as the prior doc, so
+numbers are comparable).
 
 ## Sample size + pin resolution
 
 - Chats replayed (≥4 floors): **${chats}** · (chat, floor) samples: **${samples.length}** · entries: **${entries}**
 - scanDepth: **${scanDepth}** · maxRecursion: **0** · vars mode: **${varsMode}** · pins declared: **${pinsDeclared}**
-- Floors with a resolved pin block: **${floorsWithPin}/${samples.length}**
-- **Pin-hit entries** (entries whose key matches the resolved location): total **${pinTotal}**, mean
-  **${f3(mean(pinHitsPerFloor))}/floor**, floors with ≥1 pin hit **${floorsWithPinHit}/${samples.length}**.
-  ${pinsMatter ? 'The location DOES match entry keys — the pin axis is genuinely exercised.' : '**The location matches ZERO entry keys — the pin axis is still untested in practice.**'}
+- Floors with a resolved pin block: **${floorsWithPin}/${samples.length}** · pin-hit entries: total **${pinTotal}**, mean **${f3(mean(pinHitsPerFloor))}/floor**, floors with ≥1 pin hit **${floorsWithPinHit}/${samples.length}**
+  ${pinsMatter ? '(the location DOES match entry keys — the pin axis is genuinely exercised).' : '(**the location matches ZERO entry keys** — the pin axis is exercised in code only).'}
 
-## Selection+pin grid top 10 (by micro-F1)
+## Recall-vs-churn frontier (maxK × persistBoost, min=0.6 rel=0.35, pin=${PIN_BOOST}) — HEADLINE
+
+| maxK | persistBoost | Precision | Recall | F1 | fired/floor | churn |
+|---|---|---|---|---|---|---|
+${frontierRows.join('\n')}
+
+_Read down a maxK block: raising \`persistBoost\` should hold last-floor entries in place — trading a little
+precision for lower churn (cache stability) at equal-or-better recall. Read across maxK: a larger cap lifts
+recall at the cost of more fires (and more churn). The owner's defaults call is where on this surface the
+recall gain stops being worth the churn/context cost._
+
+## Named comparisons
+
+| Config | Params | Precision | Recall | F1 | fired/floor | churn |
+|---|---|---|---|---|---|---|
+${cmpRow('Current defaults', paramStr(currentDefaults), statsDefault)}
+${cmpRow('Synthetic-grid winner', paramStr(syntheticWinner), statsWinner)}
+${cmpRow('Keyword baseline (segments+pins)', '—', statsKeyword)}
+
+## Grid top 10 (by micro-F1; pinBoost fixed at ${PIN_BOOST})
 
 ${gridHeader}
 ${topRows.join('\n')}
 
-## Scorer with vs. without pins (default params) + keyword baselines
-
-| Config | Params | Precision | Recall | F1 | fired/floor | churn |
-|---|---|---|---|---|---|---|
-| Scorer WITH pins | ${paramStr(DEFAULT_SCORING_PARAMS)} | ${f3(withPins.micro.precision)} | ${f3(withPins.micro.recall)} | ${f3(withPins.micro.f1)} | ${f3(withPins.firedPerFloor)} | ${f3(withPins.churn)} |
-| Scorer WITHOUT pins | ${paramStr(DEFAULT_SCORING_PARAMS)} (pinText ∅) | ${f3(withoutPins.micro.precision)} | ${f3(withoutPins.micro.recall)} | ${f3(withoutPins.micro.f1)} | ${f3(withoutPins.firedPerFloor)} | ${f3(withoutPins.churn)} |
-| grid best | ${paramStr(best.params)} | ${f3(statsBest.micro.precision)} | ${f3(statsBest.micro.recall)} | ${f3(statsBest.micro.f1)} | ${f3(statsBest.firedPerFloor)} | ${f3(statsBest.churn)} |
-| Keyword RPT (segments+pins) | — | ${f3(kwRpt.precision)} | ${f3(kwRpt.recall)} | ${f3(kwRpt.f1)} | ${f3(kwRptFired)} | — |
-| Keyword ST (no pins) | — | ${f3(kwSt.precision)} | ${f3(kwSt.recall)} | ${f3(kwSt.f1)} | ${f3(kwStFired)} | — |
-
-${
-  Math.abs(kwRpt.f1 - kwSt.f1) < 1e-9 && Math.abs(kwRptFired - kwStFired) < 1e-9
-    ? '_Note: the two keyword baselines are identical — the current location is also named in the recent transcript, so appending the pin block adds no new keyword match for the unranked matcher. The pin only matters for the SCORER, which uses it to WEIGHT those entries so they survive the `maxK` cap._'
-    : '_The RPT (with-pins) keyword baseline fires more than the ST (no-pins) one — the pin surfaced entries the transcript alone missed._'
-}
-
-## pinBoost sweep at default selection knobs
-
-| pinBoost | Precision | Recall | F1 |
-|---|---|---|---|
-${pinSweep.map((s) => `| ${s.pinBoost} | ${f3(s.micro.precision)} | ${f3(s.micro.recall)} | ${f3(s.micro.f1)} |`).join('\n')}
-
-## Answers
-
-- **Does the resolved pin match entry keys?** ${pinsMatter ? `YES — ${pinTotal} pin-hit entries total (mean ${f3(mean(pinHitsPerFloor))}/floor, ${floorsWithPinHit}/${samples.length} floors). The location string shares keys (place / realm names) with lorebook entries, so the pin block re-surfaces state-relevant entries.` : 'NO — zero entries matched the location string; the axis is exercised in code but not in effect on this book.'}
-- **Do pins change the fired set / metrics / churn vs. pinless (same params)?** ${pinsChangeScorer ? `YES — WITH pins vs WITHOUT: F1 ${f3(withPins.micro.f1)} vs ${f3(withoutPins.micro.f1)}, fired/floor ${f3(withPins.firedPerFloor)} vs ${f3(withoutPins.firedPerFloor)}, churn ${f3(withPins.churn)} vs ${f3(withoutPins.churn)}. Pinned location entries get a strong weight, so they hold ${withPins.firedPerFloor >= withoutPins.firedPerFloor ? 'their' : ''} \`maxK\` slots across floors as the transcript moves on. ${withPins.churn < withoutPins.churn ? `Notably churn DROPS (${f3(withoutPins.churn)} → ${f3(withPins.churn)}): a stable location re-surfaces the same entries each floor — a cache-stability win, which is the point of pins.` : ''}` : 'NO — identical fired sets/metrics/churn; the pin evidence never changed which entries cleared selection at these params.'}
-- **Does pinBoost matter, and does 2.5 hold?** Best pinBoost on this data = **${bestPinBoost}**. ${bestPinBoost === 2.5 ? 'The default 2.5 is the (tied-)best — it holds.' : `2.5 is${pinSweep.find((s) => s.pinBoost === 2.5)!.micro.f1 >= Math.max(...pinSweep.map((s) => s.micro.f1)) - 1e-9 ? ' tied for' : ' not'} the best here (F1 at pin 1.5/2.5/4.0 = ${pinSweep.map((s) => f3(s.micro.f1)).join(' / ')}); the proxy barely separates pinBoost values, so 2.5 remains a reasonable default.`}
+_Grid best on this data: \`${paramStr(gridBest.params)}\` (F1 ${f3(gridBest.micro.f1)}). This is the proxy's
+own optimum, NOT a recommendation — the proxy rewards fire-everything recall, so its F1 optimum drifts to a
+high maxK / low floor that would blow up real context budget._
 
 ## Limitations
 
-- **Proxy-label bias.** "Relevant = key appears in the stored response" is keyword-flavored and mislabels
-  both directions (needs-without-mention, mentions-without-need). It also under-credits pins: a pinned
-  location that the model KNEW but did not re-name in the response counts as a false positive.
-- **One pin path, one card, one chat.** A single location variable on a single ${entries}-entry book — a
-  smoke signal that the pin codepath runs end-to-end, not a representative measurement.
+- **Proxy is circular.** "Relevant = key appears in the stored response" rewards the exact lexical signal
+  the scorer keys on and mislabels both directions (needs-without-mention, mentions-without-need). It
+  under-credits pins and persistence: an entry the model KNEW but did not re-name counts as a false
+  positive, and a correctly-persisted entry that goes unmentioned for a floor is scored as noise.
+- **Persistence is self-referential here.** \`prevFired\` is the scorer's OWN prior-floor output, not a
+  ground-truth "should have persisted" set — so the churn numbers describe the scorer's self-consistency,
+  which \`persistBoost\` mechanically improves; they do not prove the persisted entries were the right ones.
+- **One pin path, one card, ${chats} chat(s).** A single location variable on a single ${entries}-entry
+  book — a smoke signal that the persistence + pin codepaths run end-to-end, not a representative measure.
 - **No recursion.** maxRecursion=0 (app default) — recursion-lifted retrieval is not measured.
 
-_Diagnostic replay of local dev data; proxy labels are too weak to retune \`DEFAULT_SCORING_PARAMS\`._
+_Diagnostic replay of local dev data; the proxy is too weak (and, for persistence, too circular) to retune
+\`DEFAULT_SCORING_PARAMS\`._
 `
     const outDir = path.join(process.cwd(), 'docs')
     fs.mkdirSync(outDir, { recursive: true })
-    fs.writeFileSync(path.join(outDir, 'lore-scoring-real-data-2026-07-24.md'), doc)
+    fs.writeFileSync(path.join(outDir, 'lore-scoring-real-data-persist-2026-07-24.md'), doc)
     // eslint-disable-next-line no-console
-    console.log(`\nReport written. Pins matter: ${pinsMatter ? 'YES' : 'NO'} · bestPinBoost=${bestPinBoost}.`)
+    console.log(`\nReport written. Pins matter: ${pinsMatter ? 'YES' : 'NO'} · grid best ${paramStr(gridBest.params)}.`)
   })
 })
