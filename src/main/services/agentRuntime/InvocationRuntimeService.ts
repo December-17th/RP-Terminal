@@ -152,11 +152,13 @@ export const createSessionInvocationFloorPort = (
     }
     const db = dependencies.getDb(request.chatId)
     const row = db
-      ?.prepare('SELECT variables FROM floors WHERE chat_id = ? AND floor = ?')
-      .get(request.chatId, request.floor) as { variables: string } | undefined
+      ?.prepare('SELECT variables, response_content FROM floors WHERE chat_id = ? AND floor = ?')
+      .get(request.chatId, request.floor) as
+      | { variables: string; response_content: string | null }
+      | undefined
     if (!row) throw new Error(`Invocation Floor ${request.floor} does not exist`)
     const variables = JSON.parse(row.variables) as Record<string, unknown>
-    const input = request.options?.inputBindings
+    let input: JsonObject = request.options?.inputBindings
       ? Object.fromEntries(
           Object.entries(request.options.inputBindings).map(([key, binding]) => [
             key,
@@ -164,6 +166,22 @@ export const createSessionInvocationFloorPort = (
           ])
         )
       : structuredClone(request.options?.input ?? {})
+    // Triggered-run input enrichment: a floor-commit-triggered formatVersion-2 Agent gets the
+    // committed floor's raw content plus its OWN prior result slot injected, so a preprocess gate can
+    // self-gate on in-game state. The engine does NOT parse the floor text — the card's preprocess
+    // extracts `<tp>` or any card-specific tag. Additive: a same-named inputBinding wins. Manual
+    // "Run now" and formatVersion-1 Agents (including the built-in Memory Maintenance Agent) are
+    // untouched. Shape pinned by `TriggeredRunInputContext`.
+    if (request.triggered && request.agent.effective.formatVersion === 2) {
+      const result = request.agent.effective.result
+      const saveAs = result.mode === 'tools-only' ? undefined : result.saveAs
+      const priorResult = saveAs ? readPath(variables, saveAs) : undefined
+      input = {
+        trigger: { floorId: request.floor, floorContent: row.response_content ?? '' },
+        ...(priorResult !== undefined ? { priorResult } : {}),
+        ...input
+      }
+    }
     const promptValues: Record<string, JsonValue> = {}
     for (const message of request.agent.effective.prompt) {
       for (const segment of message.content) {

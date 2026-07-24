@@ -43,6 +43,29 @@ export type ProcessorOutputContract =
   | { mode: 'text' }
   | { mode: 'json'; schema: JsonSchema }
 
+/**
+ * Reserved fields the Invocation Runtime injects into a formatVersion-2 Agent's preprocess input for a
+ * floor-commit-TRIGGERED run (never a manual "Run now"). A preprocess script reads them off `input`
+ * (e.g. `input.trigger.floorContent`, `input.priorResult`) to self-gate on in-game state. The runtime
+ * NEVER parses the floor text — a card's own preprocess is responsible for extracting `<tp>` or any
+ * card-specific tag out of `floorContent`. Both keys are additive: an inputBinding of the same name
+ * overrides them.
+ */
+export interface TriggeredRunInputContext {
+  trigger: {
+    /** The committed floor that fired the trigger. */
+    floorId: number
+    /** That floor's raw committed response text (the `response_content` column), unparsed. */
+    floorContent: string
+  }
+  /**
+   * The value previously stored at THIS Agent's own `result.saveAs` slot (under
+   * `variables.__rpt.agent_results.*`), or omitted when the Agent has no `saveAs` or never ran. Lets a
+   * gate compare its own "last run marker" against current floor state.
+   */
+  priorResult?: JsonValue
+}
+
 export interface AgentPreprocessor {
   code: string
 }

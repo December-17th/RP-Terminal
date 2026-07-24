@@ -165,7 +165,11 @@ export const createTriggerDispatch = (
       profileId: request.profileId,
       chatId: request.chatId,
       floor: request.floor,
-      agent: request.agent
+      agent: request.agent,
+      // Marks this as a floor-commit-triggered run so the Floor port enriches a formatVersion-2
+      // preprocess input with trigger context (the committed floor's content + this Agent's prior
+      // result slot). Manual "Run now" leaves this unset and its input stays as the caller supplied it.
+      triggered: true as const
     }
     const runRequest: InvocationRequest = options ? { ...identity, options } : { ...identity }
     // Fire-and-forget: the turn never waits here (a blocksNextTurn Agent gates the NEXT turn via the
