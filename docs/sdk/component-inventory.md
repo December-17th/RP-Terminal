@@ -428,6 +428,44 @@ run immediately after card/file import and are disclosed in the bundle summary. 
 [`AgentProcessor.ts`](../../src/main/services/agentRuntime/processing/AgentProcessor.ts), and
 [`InvocationRuntime.ts`](../../src/main/services/agentRuntime/invocation/InvocationRuntime.ts).
 
+**Triggered-run preprocess input enrichment.** For a **floor-commit-triggered** version-2 Agent (NOT a
+manual **Run now**, and NOT a version-1 Agent), the runtime injects trigger context into the preprocess
+input so a gate can self-gate on in-game state — the script reads it as `input.value.trigger` /
+`input.value.priorResult`. The shape (`TriggeredRunInputContext` in
+[`types.ts`](../../src/shared/agentRuntime/types.ts)):
+
+```jsonc
+{
+  "trigger": {
+    "floorId": 7,                          // the committed floor that fired the trigger
+    "floorContent": "…raw response text…"  // that floor's response_content, UNPARSED
+  },
+  "priorResult": <value>                    // omitted when the Agent has no result.saveAs or never ran
+}
+```
+
+The engine does **not** parse `floorContent` — extracting `<tp>` or any card-specific tag is the
+preprocess's job. `priorResult` is whatever this Agent last stored at its own
+`result.saveAs` slot (under `variables.__rpt.agent_results.*`), letting a gate compare its "last run
+marker" against current floor state. Both keys are **additive**: a same-named `inputBindings` entry wins.
+Because the harness always appends the (post-preprocess) input object as a trailing JSON user message —
+and a prompt segment `{ type: "binding", source: { type: "input" } }` injects it inline — the enriched
+fields are visible to the model without extra wiring (whole-object only; there is no per-field input
+path). Verify [`InvocationRuntimeService.ts`](../../src/main/services/agentRuntime/InvocationRuntimeService.ts)
+(`resolveSource`) and [`attemptLog.ts`](../../src/main/services/agentRuntime/harness/attemptLog.ts).
+
+**Preprocess skip gate.** A version-2 `preprocess` may abort the run **before any provider/LLM dispatch**
+by returning the sentinel `{ __rpt_skip: true }` (optionally `{ __rpt_skip: true, reason: "…" }`; the
+reason is logged). The sentinel is detected **before** `inputSchema` validation, so it is exempt from the
+Agent's input contract. A skip is **"not a run"**: no run record forms, so the `onFloorCommitted` cadence
+baseline (`latestRunFloor`) does **not** advance and the Agent re-evaluates on the next committed floor;
+the invocation resolves with a distinct `skipped` status (no failure, no `blocksNextTurn` barrier
+failure). Marker + guard: `PREPROCESS_SKIP_MARKER` / `isPreprocessSkipSignal` in
+[`preprocess.ts`](../../src/shared/agentRuntime/preprocess.ts). Verify
+[`AgentProcessor.ts`](../../src/main/services/agentRuntime/processing/AgentProcessor.ts) (`runPreprocessor`)
+and [`InvocationRuntime.ts`](../../src/main/services/agentRuntime/invocation/InvocationRuntime.ts)
+(`runQueued` skip return).
+
 ---
 
 ## 5. Layer D — Transforming a SillyTavern card → RP Terminal

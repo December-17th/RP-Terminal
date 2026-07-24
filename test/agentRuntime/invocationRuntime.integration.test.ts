@@ -108,6 +108,40 @@ const directorAgent: CatalogAgent = {
   effectiveHash: 'hash:yuzu-director'
 }
 
+const fv2Agent = (name: string, preprocessCode: string): CatalogAgent => {
+  const parsed = parseAgentDefinition({
+    format: 'rpt-agent',
+    formatVersion: 2,
+    name,
+    prompt: [{ role: 'system', content: 'Gate.' }],
+    inputSchema: {
+      type: 'object',
+      properties: { seenFloor: { type: 'string' }, seenPrior: {} },
+      additionalProperties: true
+    },
+    result: { mode: 'text', saveAs: 'variables.__rpt.agent_results.world.progression' },
+    processing: { runtime: 'rpt-processor-v1', preprocess: { code: preprocessCode } },
+    defaults: { maxRetryAttempts: 0, retryDelayMs: 0, notification: 'none' }
+  })
+  if (!parsed.ok) throw new Error(parsed.errors.map((error) => error.message).join('; '))
+  return {
+    ...catalogAgent,
+    id: name,
+    name: parsed.value.name,
+    baseline: parsed.value,
+    effective: parsed.value,
+    effectiveHash: `hash:${name}`
+  }
+}
+
+// Echoes the runtime-injected trigger context back out so the enriched preprocess input is observable.
+const echoTriggerAgent = fv2Agent(
+  'Trigger Echo',
+  'return { seenFloor: input.value.trigger.floorContent, seenPrior: input.value.priorResult ?? null }'
+)
+// Returns the skip sentinel: the run must abort before any provider dispatch.
+const skipGateAgent = fv2Agent('Skip Gate', 'return { __rpt_skip: true, reason: "not due" }')
+
 const settings = {
   api: {
     provider: 'openai',
@@ -177,6 +211,143 @@ describe('InvocationRuntime session integration', () => {
     store.onBeforeDeleteFromFloor((chatId, fromFloor) => runtime.cancelFloors(chatId, fromFloor))
     return { runtime, store }
   }
+
+  const insertFloorWithResponse = (
+    floor: number,
+    responseContent: string,
+    variables: Record<string, unknown> = {}
+  ) => {
+    db.prepare(
+      `INSERT INTO floors
+       (chat_id, floor, timestamp, user_content, response_content, events, variables)
+       VALUES ('chat', ?, 'now', '', ?, '[]', ?)`
+    ).run(floor, responseContent, JSON.stringify(variables))
+  }
+
+  it('enriches a triggered formatVersion-2 preprocess with floor content and the prior result slot', async () => {
+    insertFloorWithResponse(7, 'floor seven body <tp>+1h</tp>', {
+      __rpt: { agent_results: { world: { progression: 'marker-5' } } }
+    })
+    const { runtime, store } = setup(undefined, echoTriggerAgent)
+    const invocation = runtime.run({
+      profileId: 'profile',
+      chatId: 'chat',
+      floor: 7,
+      agent: echoTriggerAgent.name,
+      triggered: true
+    })
+    await vi.waitFor(() => expect(provider.calls).toHaveLength(1))
+    provider.calls[0].succeed('done')
+    await expect(invocation).resolves.toMatchObject({ status: 'succeeded' })
+
+    const run = store.list('chat')[0]
+    expect(run.processing?.rawInput).toEqual({
+      trigger: { floorId: 7, floorContent: 'floor seven body <tp>+1h</tp>' },
+      priorResult: 'marker-5'
+    })
+    // The reshaped input the model actually saw carries the enrichment through.
+    expect(run.processing?.processedInput).toEqual({
+      seenFloor: 'floor seven body <tp>+1h</tp>',
+      seenPrior: 'marker-5'
+    })
+  })
+
+  it('round-trips a prior run result into the next triggered run as priorResult', async () => {
+    // The real gap the enrichment test could not cover: a manually-seeded slot proves `readPath`'s
+    // shape, but not that the enrichment reads the EXACT slot the result incorporation WRITES. Drive a
+    // real run through incorporation, then fire the same Agent again and assert the persisted marker
+    // returns as `priorResult`.
+    insertFloorWithResponse(7, 'floor seven body')
+    const gate = fv2Agent('Progression Gate', 'return input.value')
+    const { runtime, store } = setup(undefined, gate)
+
+    // Run A: no prior marker yet. Its text result is incorporated to the Agent's own saveAs slot.
+    const runA = runtime.run({
+      profileId: 'profile',
+      chatId: 'chat',
+      floor: 7,
+      agent: gate.name,
+      triggered: true
+    })
+    await vi.waitFor(() => expect(provider.calls).toHaveLength(1))
+    provider.calls[0].succeed('progressed-to-floor-7')
+    await expect(runA).resolves.toMatchObject({ status: 'succeeded' })
+
+    // The result is now persisted at `variables.__rpt.agent_results.world.progression` on the floor.
+    const stored = db
+      .prepare('SELECT variables FROM floors WHERE chat_id = ? AND floor = ?')
+      .get('chat', 7) as { variables: string }
+    const priorMarker = (
+      JSON.parse(stored.variables) as {
+        __rpt?: { agent_results?: { world?: { progression?: unknown } } }
+      }
+    ).__rpt?.agent_results?.world?.progression
+    expect(priorMarker).toBe('progressed-to-floor-7')
+
+    // Run B: the same Agent fires again at the committed floor. The runtime must feed the persisted
+    // marker back in as `priorResult` — proving the enrichment reads the exact slot the incorporation
+    // wrote, end to end.
+    const runB = runtime.run({
+      profileId: 'profile',
+      chatId: 'chat',
+      floor: 7,
+      agent: gate.name,
+      triggered: true
+    })
+    await vi.waitFor(() => expect(provider.calls).toHaveLength(2))
+    provider.calls[1].succeed('done')
+    await expect(runB).resolves.toMatchObject({ status: 'succeeded' })
+
+    const records = store.list('chat')
+    expect(records).toHaveLength(2)
+    // Run A saw no prior marker; run B saw the one run A wrote.
+    const rawInputs = records.map((run) => run.processing?.rawInput as { priorResult?: unknown })
+    expect(rawInputs.filter((input) => input?.priorResult === undefined)).toHaveLength(1)
+    const runBInput = rawInputs.find((input) => input?.priorResult !== undefined)
+    expect(runBInput).toMatchObject({
+      trigger: { floorId: 7, floorContent: 'floor seven body' },
+      priorResult: priorMarker
+    })
+  })
+
+  it('skips a triggered run whose preprocess returns the sentinel — no dispatch, no record, no cadence advance', async () => {
+    insertFloorWithResponse(7, 'floor seven body')
+    const { runtime, store } = setup(undefined, skipGateAgent)
+    const invocation = runtime.run({
+      profileId: 'profile',
+      chatId: 'chat',
+      floor: 7,
+      agent: skipGateAgent.name,
+      triggered: true
+    })
+
+    await expect(invocation).resolves.toMatchObject({ status: 'skipped', sourceRestarts: 0 })
+    // Aborted before any provider/LLM dispatch.
+    expect(provider.calls).toHaveLength(0)
+    // No run record formed, so the derived cadence baseline never advanced — a skip is "not a run".
+    expect(store.list('chat')).toEqual([])
+    expect(store.latestRunFloor('chat', skipGateAgent.name)).toBeNull()
+  })
+
+  it('does not enrich a NON-triggered formatVersion-2 run (manual "Run now" input is untouched)', async () => {
+    insertFloorWithResponse(7, 'floor seven body', {
+      __rpt: { agent_results: { world: { progression: 'marker-5' } } }
+    })
+    const passthrough = fv2Agent('Manual Passthrough', 'return input.value')
+    const { runtime, store } = setup(undefined, passthrough)
+    const invocation = runtime.run({
+      profileId: 'profile',
+      chatId: 'chat',
+      floor: 7,
+      agent: passthrough.name,
+      options: { input: { text: 'manual' } }
+    })
+    await vi.waitFor(() => expect(provider.calls).toHaveLength(1))
+    provider.calls[0].succeed('done')
+    await expect(invocation).resolves.toMatchObject({ status: 'succeeded' })
+
+    expect(store.list('chat')[0].processing?.rawInput).toEqual({ text: 'manual' })
+  })
 
   it('deleting floor 12 aborts immediately and erases its Run Record', async () => {
     insertFloor(12)

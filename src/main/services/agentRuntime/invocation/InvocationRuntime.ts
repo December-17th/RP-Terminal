@@ -70,6 +70,9 @@ export interface InvocationFloorPort {
     floor: number
     agent: CatalogAgent
     options?: InvocationOptions
+    /** Floor-commit trigger dispatch (never a manual "Run now"): enriches the preprocess input with
+     *  the triggering floor's content and this Agent's prior result slot. See `TriggeredRunInputContext`. */
+    triggered?: boolean
   }): Promise<InvocationSourceSnapshot>
   isSourceCurrent(
     source: InvocationSourceSnapshot,
@@ -143,6 +146,9 @@ export interface InvocationRequest {
   yssVocabulary?: SceneVocabulary
   /** Main-internal opt-out when a stale presentation result must fail instead of sampling again. */
   restartOnSourceChange?: boolean
+  /** Main-internal: this run was dispatched by the floor-commit trigger (not a manual "Run now"), so
+   *  the Floor port enriches a formatVersion-2 preprocess input with trigger context. */
+  triggered?: boolean
   /** Main-internal read-only result path: record the run but discard every stateful consequence. */
   skipResultIncorporation?: boolean
   /** Authoritative mounted-card implementation scope, injected by the card transport only. */
@@ -174,7 +180,24 @@ export interface InvocationCancellation {
   required: boolean
 }
 
-export type InvocationOutcome = InvocationSuccess | InvocationFailure | InvocationCancellation
+/**
+ * A formatVersion-2 preprocess returned the skip sentinel (see `isPreprocessSkipSignal`): the run was
+ * aborted BEFORE any provider dispatch. Deliberately distinct from `cancelled` (no external cause) and
+ * from `succeeded` (no result, no incorporation). No run record is created, so the floor-commit
+ * cadence (`latestRunFloor`) is NOT advanced — a skip is "not a run".
+ */
+export interface InvocationSkipped {
+  invocationId: string
+  status: 'skipped'
+  sourceRestarts: number
+  required: boolean
+}
+
+export type InvocationOutcome =
+  | InvocationSuccess
+  | InvocationFailure
+  | InvocationCancellation
+  | InvocationSkipped
 
 export interface InvocationPlanRequest {
   profileId: string
@@ -439,7 +462,8 @@ export const createInvocationRuntime = ({
               chatId: item.request.chatId,
               floor: item.request.floor,
               agent: resolvedAgent,
-              options: item.request.options
+              options: item.request.options,
+              ...(item.request.triggered ? { triggered: true } : {})
             }))
           // A detached presentation pass owns a fully captured prompt and cannot incorporate state.
           // Variable-only floor writes are therefore unrelated; transcript edits and deletion still
@@ -489,6 +513,18 @@ export const createInvocationRuntime = ({
           if (stalePreprocessWarning >= 0) processingWarnings.splice(stalePreprocessWarning, 1)
           rawInput = source.input
           const preprocessing = await runPreprocessor(resolvedAgent.effective, rawInput)
+          // Generic self-gate: the preprocess returned the skip sentinel. Abort HERE, before any
+          // prompt render or `harness.execute` — the run record is created inside `execute`, so
+          // returning first means no record forms and `latestRunFloor` (the derived cadence baseline)
+          // never advances. A skip is "not a run": no failure, no barrier failure, no incorporation.
+          if (preprocessing.skip) {
+            return {
+              invocationId: item.invocationId,
+              status: 'skipped',
+              sourceRestarts,
+              required
+            }
+          }
           processedInput = preprocessing.value
           preprocessLogs = preprocessing.logs
           if (preprocessing.warning) processingWarnings.push(preprocessing.warning)
