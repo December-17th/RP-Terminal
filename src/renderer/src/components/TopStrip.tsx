@@ -205,6 +205,15 @@ export function TopStrip({
         <MemoryChip profileId={profileId} />
 
         <button
+          className="tmenu-btn"
+          onClick={() => (window as unknown as { api: { openDebugWindow: () => void } }).api.openDebugWindow()}
+          title={t('debug.openWindow')}
+          aria-label={t('debug.openWindow')}
+        >
+          🐞
+        </button>
+
+        <button
           className="tmenu-btn gear"
           onClick={() => openSettings('app')}
           title={t('nav.settings')}

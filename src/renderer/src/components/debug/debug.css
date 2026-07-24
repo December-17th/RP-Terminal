@@ -1,0 +1,628 @@
+/* Separate Debug window shell (WP-D1). App-ish chrome over --rpt-* tokens so it reads as part of the
+   app in both light and dark themes. The window hosts one panel today (Logs); the layout fills the
+   viewport and lets the panel body scroll on its own. */
+.debug-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--rpt-bg-primary);
+  color: var(--rpt-text-primary);
+  font-family: var(--rpt-font, system-ui, sans-serif);
+}
+
+.debug-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-secondary);
+  flex: 0 0 auto;
+}
+
+.debug-title {
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--rpt-text-primary);
+}
+
+.debug-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.debug-tab {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 13px;
+  color: var(--rpt-text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.debug-tab:hover {
+  background: color-mix(in srgb, var(--rpt-text-primary) 8%, transparent);
+}
+
+.debug-tab.is-active {
+  color: var(--rpt-text-primary);
+  background: color-mix(in srgb, var(--rpt-accent) 16%, transparent);
+  border-color: var(--rpt-border);
+}
+
+.debug-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  padding: 12px;
+}
+
+.debug-body > .panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* --- Retrieval tab (WP-D2): a side-by-side dry-run of lorebook retrieval (RPT vs ST-keyword baseline).
+   Fills the debug body, scrolls its own overflow, and reads as app chrome in both themes. --- */
+.debug-body > .rt-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.rt-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  font-size: 13px;
+}
+
+.rt-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.rt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.rt-field-grow {
+  flex: 1 1 220px;
+}
+
+.rt-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--rpt-text-secondary);
+}
+
+.rt-select,
+.rt-input {
+  appearance: none;
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--rpt-text-primary);
+  background: var(--rpt-bg-primary);
+  font-family: inherit;
+}
+
+.rt-select:disabled,
+.rt-input:disabled {
+  opacity: 0.55;
+}
+
+.rt-run {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--rpt-on-accent);
+  background: var(--rpt-accent);
+  cursor: pointer;
+}
+
+.rt-run:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rt-empty,
+.rt-error,
+.rt-group-empty {
+  color: var(--rpt-text-secondary);
+  font-size: 13px;
+  margin: 0;
+}
+
+.rt-error {
+  color: var(--rpt-danger);
+}
+
+.rt-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.rt-pinstatus {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rt-pinline {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--rpt-border);
+  word-break: break-word;
+}
+
+.rt-pinline-muted {
+  color: var(--rpt-text-secondary);
+  background: var(--rpt-bg-secondary);
+}
+
+.rt-pinline-ok {
+  color: var(--rpt-text-primary);
+  background: color-mix(in srgb, var(--rpt-accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--rpt-accent) 40%, var(--rpt-border));
+}
+
+.rt-pinline-warn {
+  color: var(--rpt-text-primary);
+  background: var(--rpt-warning-soft);
+  border-color: color-mix(in srgb, var(--rpt-warning) 45%, var(--rpt-border));
+}
+
+.rt-pinline-adhoc {
+  color: var(--rpt-text-primary);
+  background: color-mix(in srgb, var(--rpt-success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--rpt-success) 40%, var(--rpt-border));
+}
+
+.rt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--rpt-text-secondary);
+  font-size: 12px;
+}
+
+.rt-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.rt-group {
+  border: 1px solid var(--rpt-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--rpt-bg-secondary);
+  border-top: 3px solid var(--rpt-border);
+}
+
+.rt-group-both {
+  border-top-color: var(--rpt-success);
+}
+
+.rt-group-rpt {
+  border-top-color: var(--rpt-accent);
+}
+
+.rt-group-baseline {
+  border-top-color: var(--rpt-warning);
+}
+
+.rt-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--rpt-text-primary);
+}
+
+.rt-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 11px;
+  color: var(--rpt-text-primary);
+  background: color-mix(in srgb, var(--rpt-text-primary) 12%, transparent);
+}
+
+.rt-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rt-entry {
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--rpt-bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rt-entry-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rt-entry-book {
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+}
+
+.rt-entry-name {
+  font-size: 13px;
+  color: var(--rpt-text-primary);
+  word-break: break-word;
+}
+
+.rt-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rt-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  border: 1px solid var(--rpt-border);
+  color: var(--rpt-text-secondary);
+  background: var(--rpt-bg-secondary);
+  word-break: break-word;
+}
+
+.rt-chip-reason {
+  color: var(--rpt-text-primary);
+}
+
+.rt-chip-prob {
+  color: var(--rpt-warning);
+  border-color: color-mix(in srgb, var(--rpt-warning) 45%, var(--rpt-border));
+  background: var(--rpt-warning-soft);
+}
+
+/* --- Deterministic-scorer PoC section --- */
+.rt-field-num {
+  min-width: 90px;
+  flex: 0 0 auto;
+}
+
+.rt-scored-params {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+}
+
+.rt-legend {
+  margin: 0 0 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--rpt-text-secondary);
+  opacity: 0.85;
+}
+
+.rt-summary {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rpt-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Constants strip --- */
+.rt-const-strip {
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  background: var(--rpt-bg-secondary);
+  padding: 6px 10px;
+}
+
+.rt-const-strip > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rpt-text-secondary);
+}
+
+.rt-const-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.rt-const-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--rpt-border);
+  background: var(--rpt-bg-primary);
+  color: var(--rpt-text-secondary);
+}
+
+.rt-const-book {
+  opacity: 0.7;
+}
+
+/* --- Unified comparison table --- */
+.rt-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--rpt-border);
+  border-radius: 10px;
+}
+
+.rt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.rt-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--rpt-text-secondary);
+  background: var(--rpt-bg-secondary);
+  border-bottom: 1px solid var(--rpt-border);
+  white-space: nowrap;
+}
+
+.rt-th-score {
+  min-width: 150px;
+}
+
+.rt-row {
+  cursor: pointer;
+  border-top: 1px solid var(--rpt-border);
+}
+
+.rt-row:hover {
+  background: color-mix(in srgb, var(--rpt-text-primary) 4%, transparent);
+}
+
+.rt-row-added {
+  background: color-mix(in srgb, var(--rpt-success) 12%, transparent);
+}
+
+.rt-row-dropped {
+  background: color-mix(in srgb, var(--rpt-danger) 12%, transparent);
+}
+
+.rt-row > td {
+  padding: 7px 10px;
+  vertical-align: top;
+}
+
+.rt-td-entry {
+  min-width: 160px;
+}
+
+.rt-td-caret {
+  display: inline-block;
+  width: 12px;
+  color: var(--rpt-text-secondary);
+  font-size: 10px;
+}
+
+.rt-td-name {
+  color: var(--rpt-text-primary);
+  word-break: break-word;
+}
+
+.rt-td-book {
+  display: block;
+  margin-left: 12px;
+  font-size: 10px;
+  color: var(--rpt-text-secondary);
+  opacity: 0.75;
+}
+
+.rt-td-mark {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.rt-cell-delta {
+  background: color-mix(in srgb, var(--rpt-accent) 14%, transparent);
+}
+
+.rt-mark-yes {
+  color: var(--rpt-success);
+  font-weight: 700;
+}
+
+.rt-mark-no {
+  color: var(--rpt-text-secondary);
+  opacity: 0.5;
+}
+
+.rt-mark-sub {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--rpt-text-secondary);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rt-scored-yes {
+  color: var(--rpt-accent);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rt-scored-gate {
+  color: var(--rpt-warning);
+  font-size: 11px;
+}
+
+.rt-scored-cut {
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+  opacity: 0.8;
+  cursor: help;
+}
+
+.rt-td-score {
+  min-width: 150px;
+}
+
+.rt-score-num {
+  font-weight: 700;
+  color: var(--rpt-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rt-bar {
+  height: 4px;
+  margin: 3px 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--rpt-text-primary) 10%, transparent);
+  overflow: hidden;
+}
+
+.rt-bar-fill {
+  height: 100%;
+  background: var(--rpt-accent);
+}
+
+.rt-evidence {
+  font-size: 10px;
+  color: var(--rpt-text-secondary);
+  font-variant-numeric: tabular-nums;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rt-row-detail > td {
+  padding: 4px 10px 10px 24px;
+  background: color-mix(in srgb, var(--rpt-text-primary) 3%, transparent);
+}
+
+.rt-inert-toggle {
+  align-self: flex-start;
+  appearance: none;
+  border: 1px dashed var(--rpt-border);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--rpt-text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.rt-inert-toggle:hover {
+  color: var(--rpt-text-primary);
+  border-color: var(--rpt-accent);
+}
+
+.rt-chip-score {
+  color: var(--rpt-text-primary);
+  font-weight: 700;
+  border-color: color-mix(in srgb, var(--rpt-accent) 40%, var(--rpt-border));
+}
+
+.rt-chip-keyhit {
+  font-variant-numeric: tabular-nums;
+}
+
+.rt-chip-link {
+  color: var(--rpt-text-primary);
+  border-color: color-mix(in srgb, var(--rpt-success) 40%, var(--rpt-border));
+  background: color-mix(in srgb, var(--rpt-success) 10%, transparent);
+}
+
+.rt-chip-dq {
+  color: var(--rpt-warning);
+  border-color: color-mix(in srgb, var(--rpt-warning) 45%, var(--rpt-border));
+  background: var(--rpt-warning-soft);
+}
+
+.rt-scan-details {
+  border: 1px solid var(--rpt-border);
+  border-radius: 10px;
+  background: var(--rpt-bg-secondary);
+  padding: 8px 12px;
+}
+
+.rt-scan-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rpt-text-secondary);
+}
+
+.rt-scan {
+  margin: 10px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--rpt-bg-primary);
+  color: var(--rpt-text-primary);
+  font-family: var(--rpt-font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.rt-pins {
+  display: inline;
+  color: var(--rpt-accent);
+  background: color-mix(in srgb, var(--rpt-accent) 16%, transparent);
+  border-radius: 4px;
+  font-weight: 600;
+}

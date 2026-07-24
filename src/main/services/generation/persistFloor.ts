@@ -8,6 +8,7 @@ import { FloorMetrics } from '../../../shared/usageTypes'
 import { FloorFile, YuzuGateTrace } from '../../types/chat'
 import { GenContext } from './types'
 import { floorStateForChat, type FloorStateOperation } from '../agentRuntime/floorState'
+import { getAssemblyEpoch, stampFloorAssemblyEpoch } from '../assemblyEpochService'
 import { log } from '../logService'
 
 /**
@@ -65,6 +66,10 @@ export const persistFloor = (
     floorStateForChat(ctx.chatId)?.setBaseline(ctx.chatId, ctx.floorStateBaseline)
   }
   appendFloor(ctx.profileId, ctx.chatId, floor)
+
+  // ADR 0023 (Assembly Epoch): stamp the floor with the chat's epoch at persist time, so a later
+  // Resample can tell whether the stored prompt is still current (exact match) or stale (edited since).
+  stampFloorAssemblyEpoch(ctx.chatId, floor.floor, getAssemblyEpoch(ctx.profileId, ctx.chatId))
 
   // Journal this turn's build-time setvar writes against the floor that just landed. Rows only — no
   // replay: `floor.variables` is already the live result, and re-deriving it here would swap the

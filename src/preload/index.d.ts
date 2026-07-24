@@ -9,6 +9,16 @@ declare global {
         latestVersion: string
       } | null>
       openUpdateRelease: () => Promise<boolean>
+      // Open (or focus) the separate Debug window hosting the Logs panel (WP-D1).
+      openDebugWindow: () => Promise<void>
+      // WP-D2: side-effect-free lorebook retrieval dry-run for the Debug window's Retrieval tab.
+      retrievalPreview: (
+        profileId: string,
+        chatId: string,
+        userAction?: string,
+        extraPinPaths?: string[],
+        scoring?: Partial<import('../shared/retrievalTrace').ScoringParams>
+      ) => Promise<import('../shared/retrievalTrace').RetrievalPreviewResponse>
       importCharacterDialog: (
         profileId: string
       ) => Promise<import('../shared/characterImport').CharacterImportDialogResult | null>

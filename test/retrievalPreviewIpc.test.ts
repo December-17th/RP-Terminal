@@ -1,0 +1,357 @@
+import { describe, it, expect, afterAll, beforeAll, vi } from 'vitest'
+import fs from 'fs'
+import path from 'path'
+import os from 'os'
+import { randomUUID } from 'crypto'
+import type { IpcMain } from 'electron'
+
+/**
+ * WP-D2 — the `retrieval-preview` IPC: a side-effect-free dry-run of lorebook retrieval. This runs the
+ * REAL stack (node:sqlite adapter + a tmp data root — the assemblyEpoch idiom) so buildGenContext, the
+ * pin block, and the traced matcher all execute end-to-end. It pins the pin-vs-baseline contrast (a
+ * keyword present ONLY in a pinned variable fires under RPT but not the ST-keyword baseline) and the
+ * not-found path. The Debug window service is mocked so no BrowserWindow is touched.
+ */
+const DATA_DIR = path.join(os.tmpdir(), `rpt-retrieval-preview-${randomUUID()}`)
+
+vi.mock('better-sqlite3', () => import('./mocks/betterSqlite3Node'))
+vi.mock('../src/main/services/storageService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/services/storageService')>()
+  return { ...actual, getAppDir: () => DATA_DIR }
+})
+vi.mock('../src/main/services/debugWindowService', () => ({ openDebugWindow: vi.fn() }))
+
+import { getDb } from '../src/main/services/db'
+import * as sessionDbService from '../src/main/services/sessionDbService'
+import { saveFloor } from '../src/main/services/floorService'
+import { saveCharacter } from '../src/main/services/characterService'
+import { saveLorebookById } from '../src/main/services/lorebookService'
+import { registerDebugIpc } from '../src/main/ipc/debugIpc'
+import { RPTerminalCardSchema, LorebookSchema } from '../src/main/types/character'
+import type { RetrievalPreviewResponse } from '../src/shared/retrievalTrace'
+
+const PROFILE = 'p-retrieval'
+const CHAR = 'hero'
+const BOOK = 'pinbook'
+const CHAT = 'chat-pin'
+// A second world whose card declares NO pins — used to prove ad-hoc pins fire an entry on their own.
+const PLAIN_CHAR = 'plain'
+const PLAIN_BOOK = 'pinbook2'
+const PLAIN_CHAT = 'chat-plain'
+// A brand-new chat with a single floor — no PREVIOUS floor exists, so the persistence anchor is empty.
+const FRESH_CHAT = 'chat-fresh'
+
+const handlers = new Map<string, (...args: any[]) => unknown>()
+const fakeIpcMain = {
+  handle: (ch: string, fn: (...a: any[]) => unknown) => void handlers.set(ch, fn)
+} as unknown as IpcMain
+
+const invoke = (
+  chatId: string,
+  action = '',
+  extra?: string[],
+  scoring?: Record<string, number>
+): RetrievalPreviewResponse =>
+  handlers.get('retrieval-preview')!(
+    {},
+    PROFILE,
+    chatId,
+    action,
+    extra,
+    scoring
+  ) as RetrievalPreviewResponse
+
+beforeAll(() => {
+  const now = new Date().toISOString()
+  getDb()
+    .prepare('INSERT OR IGNORE INTO profiles (id, name, created_at, last_active) VALUES (?, ?, ?, ?)')
+    .run(PROFILE, 'P', now, now)
+  getDb()
+    .prepare(
+      'INSERT INTO chats (id, profile_id, character_id, created_at, updated_at, lorebook_ids) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    .run(CHAT, PROFILE, CHAR, now, now, JSON.stringify([BOOK]))
+
+  // Card carries a context pin on `location`.
+  saveCharacter(
+    PROFILE,
+    CHAR,
+    RPTerminalCardSchema.parse({
+      data: { name: 'Hero', extensions: { rp_terminal: { pin_paths: ['location'] } } }
+    })
+  )
+
+  // A lorebook entry keyed on a word that appears ONLY in the pinned variable value, plus a constant
+  // entry (always-on) used to exercise the deterministic-scorer PoC output.
+  saveLorebookById(
+    PROFILE,
+    BOOK,
+    LorebookSchema.parse({
+      name: 'Pin World',
+      entries: [
+        { keys: ['Zephyros'], content: 'The floating city.', comment: 'City' },
+        { constant: true, content: 'Always present.', comment: 'AlwaysOn' },
+        // Keyed on a word that appears in the seeded floor MESSAGES ('hello 1' / 'hello 2') — used to
+        // prove the scorer gives a transcript-recency hit (score > 0), not just pin hits.
+        { keys: ['hello'], content: 'A greeting entry.', comment: 'Greeter' }
+      ]
+    })
+  )
+
+  // Three floors; the latest carries the pinned variable. None of the message text names 'Zephyros'.
+  for (let i = 0; i < 3; i++) {
+    saveFloor(PROFILE, CHAT, {
+      floor: i,
+      chat_id: CHAT,
+      timestamp: now,
+      user_message: { content: i === 0 ? '' : `hello ${i}`, timestamp: now },
+      response: { content: `reply ${i}`, model: 'm', provider: i === 0 ? 'greeting' : 'p' },
+      events: [],
+      variables: i === 2 ? { location: 'Zephyros' } : {}
+    })
+  }
+
+  // Second world: card declares NO pins; a variable holds a keyword only an ad-hoc pin can surface.
+  getDb()
+    .prepare(
+      'INSERT INTO chats (id, profile_id, character_id, created_at, updated_at, lorebook_ids) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    .run(PLAIN_CHAT, PROFILE, PLAIN_CHAR, now, now, JSON.stringify([PLAIN_BOOK]))
+  saveCharacter(PROFILE, PLAIN_CHAR, RPTerminalCardSchema.parse({ data: { name: 'Plain' } }))
+  saveLorebookById(
+    PROFILE,
+    PLAIN_BOOK,
+    LorebookSchema.parse({
+      name: 'Plain World',
+      entries: [{ keys: ['Aeloria'], content: 'The old realm.', comment: 'Realm' }]
+    })
+  )
+  for (let i = 0; i < 2; i++) {
+    saveFloor(PROFILE, PLAIN_CHAT, {
+      floor: i,
+      chat_id: PLAIN_CHAT,
+      timestamp: now,
+      user_message: { content: i === 0 ? '' : `hi ${i}`, timestamp: now },
+      response: { content: `resp ${i}`, model: 'm', provider: i === 0 ? 'greeting' : 'p' },
+      events: [],
+      variables: i === 1 ? { region: 'Aeloria' } : {}
+    })
+  }
+
+  // A fresh chat (same Pin World card/book) with only its opening floor. There is no previous floor to
+  // reconstruct, so the persistence axis stays empty (prevFiredCount 0, no persisted rows).
+  getDb()
+    .prepare(
+      'INSERT INTO chats (id, profile_id, character_id, created_at, updated_at, lorebook_ids) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    .run(FRESH_CHAT, PROFILE, CHAR, now, now, JSON.stringify([BOOK]))
+  saveFloor(PROFILE, FRESH_CHAT, {
+    floor: 0,
+    chat_id: FRESH_CHAT,
+    timestamp: now,
+    user_message: { content: '', timestamp: now },
+    response: { content: 'reply 0', model: 'm', provider: 'greeting' },
+    events: [],
+    variables: {}
+  })
+
+  registerDebugIpc(fakeIpcMain)
+})
+
+afterAll(() => {
+  try {
+    sessionDbService.closeAll()
+  } catch {
+    /* ignore */
+  }
+  try {
+    ;(getDb() as unknown as { close: () => void }).close()
+  } catch {
+    /* ignore */
+  }
+  try {
+    fs.rmSync(DATA_DIR, { recursive: true, force: true })
+  } catch {
+    /* best-effort temp cleanup */
+  }
+})
+
+describe('retrieval-preview IPC', () => {
+  it('registers the retrieval-preview handler', () => {
+    expect(handlers.has('retrieval-preview')).toBe(true)
+  })
+
+  it('fires a pin-triggered entry under RPT but not under the ST-keyword baseline', () => {
+    const res = invoke(CHAT)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    // The pin block carries the keyword; the base scan text does not.
+    expect(res.pinBlock).toContain('[PINS]')
+    expect(res.pinBlock).toContain('Zephyros')
+    expect(res.baseScanText).not.toContain('Zephyros')
+    expect(res.lorebookNames).toEqual(['Pin World'])
+
+    const cityRpt = res.rpt.find((r) => r.comment === 'City')!
+    expect(cityRpt.fired).toBe(true)
+    expect(cityRpt.reason).toBe('key')
+    expect(cityRpt.matchedKey).toBe('Zephyros')
+
+    const cityBaseline = res.baseline.find((r) => r.comment === 'City')!
+    expect(cityBaseline.fired).toBe(false)
+    expect(cityBaseline.reason).toBe('none')
+  })
+
+  it('reports the declared pin paths and their resolved values', () => {
+    const res = invoke(CHAT)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.pinPaths).toEqual(['location'])
+    expect(res.extraPinPaths).toEqual([])
+    expect(res.resolvedPins).toEqual([{ path: 'location', value: 'Zephyros' }])
+  })
+
+  it('ad-hoc pins fire an entry under RPT but not baseline on a card with no declared pins', () => {
+    const res = invoke(PLAIN_CHAT, '', ['region'])
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.pinPaths).toEqual([]) // card declares none
+    expect(res.extraPinPaths).toEqual(['region'])
+    expect(res.resolvedPins).toEqual([{ path: 'region', value: 'Aeloria', adhoc: true }])
+    expect(res.pinBlock).toContain('Aeloria')
+
+    const realmRpt = res.rpt.find((r) => r.comment === 'Realm')!
+    expect(realmRpt.fired).toBe(true)
+    expect(realmRpt.matchedKey).toBe('Aeloria')
+    const realmBaseline = res.baseline.find((r) => r.comment === 'Realm')!
+    expect(realmBaseline.fired).toBe(false)
+  })
+
+  it('combines declared + ad-hoc pins with dedupe (declared paths dropped from extra)', () => {
+    // 'location' is declared → removed from extra; the duplicate collapses; 'region' survives.
+    const res = invoke(CHAT, '', ['location', 'region', 'location'])
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.pinPaths).toEqual(['location'])
+    expect(res.extraPinPaths).toEqual(['region'])
+    // 'region' is absent from this chat's vars → resolves to nothing; only the declared pin resolves.
+    expect(res.resolvedPins).toEqual([{ path: 'location', value: 'Zephyros' }])
+  })
+
+  it('returns { ok: false, code: "not-found" } for an unknown chat', () => {
+    expect(invoke('no-such-chat')).toEqual({ ok: false, code: 'not-found' })
+  })
+
+  it('includes the deterministic-scorer output with default params', () => {
+    const res = invoke(CHAT)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(Array.isArray(res.scored)).toBe(true)
+    // Defaults are applied when no scoring arg is passed (maxK 12 / persistBoost 1.5 adopted 2026-07-24).
+    expect(res.scoringParams).toEqual({
+      lambda: 0.6,
+      hopDecay: 0.5,
+      pinBoost: 2.5,
+      maxK: 12,
+      minScore: 0.6,
+      relCut: 0.35,
+      persistBoost: 1.5
+    })
+    // The constant entry appears fired in the scorer output (and first).
+    const always = res.scored.find((r) => r.comment === 'AlwaysOn')!
+    expect(always.constant).toBe(true)
+    expect(always.fired).toBe(true)
+    // Constants bypass scoring — they report score 0 (this is WHY a constants-only chat shows all-zero
+    // rows; it is correct, not a scorer bug).
+    expect(always.score).toBe(0)
+    // The pin-triggered City entry is scored with a pin key hit.
+    const city = res.scored.find((r) => r.comment === 'City')!
+    expect(city.keyHits.some((h) => h.pin)).toBe(true)
+  })
+
+  it('scores a floor-keyword entry with a transcript-recency hit (score > 0)', () => {
+    const res = invoke(CHAT)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    // It fires in the keyword trace (the matcher scans the same floor text).
+    const trace = res.rpt.find((r) => r.comment === 'Greeter')!
+    expect(trace.fired).toBe(true)
+    // …so the deterministic scorer must give it a non-zero score from a recency (depth) key hit.
+    const greeter = res.scored.find((r) => r.comment === 'Greeter')!
+    expect(greeter.score).toBeGreaterThan(0)
+    expect(greeter.keyHits.length).toBeGreaterThan(0)
+    expect(greeter.keyHits[0].key).toBe('hello')
+    expect(greeter.keyHits[0].depth).not.toBeNull()
+  })
+
+  it('carries a stable (bookName, entryIndex) join key across baseline/rpt/scored', () => {
+    const res = invoke(CHAT)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    // 'City' is entry 0 in the pinbook; the join key must agree across all three result sets.
+    const b = res.baseline.find((r) => r.comment === 'City')!
+    const r = res.rpt.find((r) => r.comment === 'City')!
+    const s = res.scored.find((r) => r.comment === 'City')!
+    expect(b.entryIndex).toBe(0)
+    expect(r.entryIndex).toBe(b.entryIndex)
+    expect(s.entryIndex).toBe(b.entryIndex)
+    expect(r.bookName).toBe(b.bookName)
+    expect(s.bookName).toBe(b.bookName)
+    // The constant (index 1) and the floor-keyword entry (index 2) keep their array positions.
+    expect(res.scored.find((x) => x.comment === 'AlwaysOn')!.entryIndex).toBe(1)
+    expect(res.scored.find((x) => x.comment === 'Greeter')!.entryIndex).toBe(2)
+  })
+
+  it('respects a custom scoring arg (maxK cap, sanitized params, cutBy plumbing)', () => {
+    // maxK=1 with no floor/cut; negative lambda and out-of-range relCut are sanitized.
+    const res = invoke(CHAT, '', undefined, { maxK: 1, minScore: 0, relCut: 5, lambda: -5 })
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.scoringParams.maxK).toBe(1)
+    expect(res.scoringParams.relCut).toBe(1) // clamped to [0,1]
+    expect(res.scoringParams.lambda).toBe(0.6) // negative → default
+    // At most one non-constant entry fires under maxK=1.
+    const fired = res.scored.filter((r) => r.fired && !r.constant)
+    expect(fired.length).toBeLessThanOrEqual(1)
+    // A scored-but-not-fired entry (score > 0) records WHY it was cut (floor/cut/cap) — plumbing check.
+    const cut = res.scored.find((r) => !r.fired && !r.constant && r.score > 0)
+    if (cut) expect(['floor', 'cut', 'cap']).toContain(cut.cutBy)
+  })
+
+  it('a fresh single-floor chat has no previous-floor anchor (prevFiredCount 0, no persisted rows)', () => {
+    const res = invoke(FRESH_CHAT, '', undefined, { persistBoost: 3 })
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    // No previous floor exists → the persistence set is empty regardless of persistBoost.
+    expect(res.prevFiredCount).toBe(0)
+    expect(res.scored.some((r) => r.persisted)).toBe(false)
+  })
+
+  it('holds a previous-floor entry when persistBoost > 1, changing the fired set', () => {
+    const base = invoke(CHAT, '', undefined, { persistBoost: 1 })
+    const boosted = invoke(CHAT, '', undefined, { persistBoost: 2 })
+    expect(base.ok).toBe(true)
+    expect(boosted.ok).toBe(true)
+    if (!base.ok || !boosted.ok) return
+    // CHAT has three floors → the previous-floor mirror run fires ≥1 entry to anchor persistence to.
+    expect(boosted.prevFiredCount ?? 0).toBeGreaterThan(0)
+
+    // Greeter (keyed 'hello') fires on the previous floor via recency, but on the CURRENT floor it is cut
+    // below relCut·top by the pin-boosted City entry — so at persistBoost 1 it does not fire or persist.
+    const gBase = base.scored.find((r) => r.comment === 'Greeter')!
+    expect(gBase.fired).toBe(false)
+    expect(gBase.persisted).toBeUndefined()
+
+    // With persistBoost > 1 the hysteresis multiplier lifts it back over the cut: it fires and is flagged.
+    const gBoost = boosted.scored.find((r) => r.comment === 'Greeter')!
+    expect(gBoost.persisted).toBe(true)
+    expect(gBoost.fired).toBe(true)
+
+    // The multiplier genuinely changes selection: the fired non-constant set differs across the two runs.
+    const firedNames = (r: Extract<RetrievalPreviewResponse, { ok: true }>): string[] =>
+      r.scored
+        .filter((s) => s.fired && !s.constant)
+        .map((s) => s.comment)
+        .sort()
+    expect(firedNames(boosted)).not.toEqual(firedNames(base))
+  })
+})

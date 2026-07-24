@@ -1,18 +1,20 @@
 import { getLorebookById } from './lorebookService'
 import { getChat, getChatLorebookIds, truncateFloors } from './chatService'
 import { getCharacter } from './characterService'
-import { getAllFloors, getFloor, saveFloor } from './floorService'
+import { getAllFloors, getFloor, getFloorCount, saveFloor } from './floorService'
+import { bumpAssemblyEpoch, getAssemblyEpoch, getFloorAssemblyEpoch } from './assemblyEpochService'
 import { normalizeSwipes } from './swipeHelpers'
-import { collectRenderMarkers } from './promptBuilder'
+import { collectRenderMarkers, type ChatMessage } from './promptBuilder'
 import { DeltaCallback } from './apiService'
 import { log } from './logService'
 import { FloorFile } from '../types/chat'
 import { Lorebook } from '../types/character'
 import { applyEvent } from './generation/foldState'
 import { resetWriteLoopGuard } from './generation/varsWrite'
-import { floorStateForChat } from './agentRuntime/floorState'
+import { floorStateForChat, type FloorStateOperation } from './agentRuntime/floorState'
 import { RunContext } from './generation/runContext'
 import { runClassicTurnDirect } from './generation/classicTurn'
+import { runResampleTurnDirect, type CapturedResample } from './generation/resampleTurn'
 import { waitForNextTurnBarriers } from './agentRuntime/InvocationRuntimeService'
 import { ABORTED_BY_SIGNAL, raceAbortSignal } from './generation/abortRace'
 
@@ -76,7 +78,12 @@ export const generate = async (
   // ST generation type (openai.js prepareOpenAIMessages `type`) driving preset injection_trigger
   // filtering. Explicit for re-rolls (regenerate/swipe); otherwise a card-script turn is ST's
   // background 'quiet' generation and a plain player send is 'normal'.
-  generationType?: string
+  generationType?: string,
+  // ADR 0023 (Resample): when regenerate/swipe found the target floor's Assembly Epoch current, they
+  // capture its stored prompt + template ops + plot block BEFORE the cut and pass them here. Present ⇒
+  // this turn replays that prompt (Resample) instead of reassembling. Absent (every other caller and
+  // the epoch-stale re-roll) ⇒ today's full reassembly, byte-for-byte unchanged.
+  captured?: CapturedResample
 ): Promise<FloorFile | null> => {
   const genType = generationType ?? (source === 'script' ? 'quiet' : 'normal')
   // ST-faithful serialization with PLAYER PRIORITY: one main turn per chat at a time. SillyTavern
@@ -173,7 +180,12 @@ export const generate = async (
       getNodeState: () => undefined,
       setNodeState: () => {}
     }
-    return await runClassicTurnDirect(ctx)
+    // ADR 0023: a captured bundle means the epoch was current at the cut → Resample the stored prompt;
+    // everything else takes today's full reassembly. Both share this turn's guard, controllers, and
+    // two-signal abort context, so their abort / swipe-restore semantics are identical.
+    return await (captured
+      ? runResampleTurnDirect(ctx, captured)
+      : runClassicTurnDirect(ctx))
   } finally {
     activeTurns.delete(chatId)
     activeControllers.delete(chatId)
@@ -244,6 +256,10 @@ export const setFloorStatData = (
   floorStateForChat(chatId)?.append(chatId, floor, 'user', [
     { kind: 'set', path: 'variables.stat_data', value: statData }
   ])
+  // ADR 0023: a user variable edit to a floor below the latest changes what later floors assembled
+  // from (variables seed the next prompt), so the chat's stored prompts are now stale. A latest-floor
+  // edit does not bump (that floor's own variables never fed its own prompt).
+  if (floor < getFloorCount(profileId, chatId) - 1) bumpAssemblyEpoch(profileId, chatId)
   return getFloor(profileId, chatId, floor)
 }
 
@@ -255,6 +271,59 @@ export const setFloorStatData = (
 export const generateImage = async (_profileId: string, prompt: string): Promise<string | null> => {
   log('info', `image generation requested (no provider configured): ${String(prompt).slice(0, 80)}`)
   return null
+}
+
+/**
+ * ADR 0023 (Resample) — capture-BEFORE-the-cut. A regenerate/swipe is a Resample only when the target
+ * floor's stamped Assembly Epoch still matches the chat's current epoch AND it has a stored request; on
+ * an epoch mismatch, a NULL (legacy) stamp, or a missing request, it falls back to today's full
+ * reassembly. The floor's stored `request`, its `'template'`-source pre-fold journal ops, and its plot
+ * block all die with the cut (`FloorState.deleteFromFloor` removes ops + floor in one transaction), so
+ * they MUST be lifted here first. Emits the one dev-diagnostic line stating which path ran and why.
+ *
+ * `last` is the already-read target floor (its `request` + `plot_block` columns are populated by
+ * `getFloor`'s `SELECT *`). Returns the captured bundle for the Resample path, or `null` for the full
+ * path.
+ */
+const captureResample = (
+  profileId: string,
+  chatId: string,
+  floorIndex: number,
+  last: FloorFile
+): CapturedResample | null => {
+  const floorEpoch = getFloorAssemblyEpoch(chatId, floorIndex)
+  const chatEpoch = getAssemblyEpoch(profileId, chatId)
+  const request = last.request
+  if (floorEpoch == null || floorEpoch !== chatEpoch || !request || request.length === 0) {
+    const why =
+      floorEpoch == null
+        ? 'floor epoch is NULL (legacy floor / never stamped)'
+        : floorEpoch !== chatEpoch
+          ? `epoch mismatch (floor ${floorEpoch} ≠ chat ${chatEpoch} — edited since)`
+          : 'no stored request'
+    log('info', `re-roll → full reassembly for chat ${chatId} (${why})`)
+    return null
+  }
+  const templateOps: FloorStateOperation[] = (
+    floorStateForChat(chatId)?.readFloorOperations(chatId, floorIndex) ?? []
+  )
+    .filter(
+      (op) =>
+        op.source === 'template' &&
+        (op.kind === 'set' || op.kind === 'delete' || op.kind === 'increment')
+    )
+    .map((op): FloorStateOperation =>
+      op.kind === 'delete'
+        ? { kind: 'delete', path: op.path }
+        : op.kind === 'increment'
+          ? { kind: 'increment', path: op.path, value: op.value as number }
+          : { kind: 'set', path: op.path, value: op.value }
+    )
+  log(
+    'info',
+    `re-roll → resample stored prompt for chat ${chatId} (epoch ${chatEpoch}, ${request.length} msgs, ${templateOps.length} template op(s))`
+  )
+  return { sendMessages: request as ChatMessage[], templateOps, ...(last.plot_block ? { plotBlock: last.plot_block } : {}) }
 }
 
 /**
@@ -274,10 +343,20 @@ export const regenerate = async (
   if (!last) throw new Error('Last floor missing')
   if (!last.user_message.content) throw new Error('Cannot regenerate the opening greeting')
 
+  // ADR 0023: decide Resample vs. reassembly and capture the stored prompt BEFORE the cut destroys it.
+  const captured = captureResample(profileId, chatId, lastIndex, last)
   truncateFloors(profileId, chatId, lastIndex)
   // ST generation type 'regenerate' (openai.js `type`) — a preset block gated to specific types via
-  // injection_trigger fires here only when it lists 'regenerate'.
-  return generate(profileId, chatId, last.user_message.content, onDelta, 'player', 'regenerate')
+  // injection_trigger fires here only when it lists 'regenerate' AND the epoch forced a reassembly.
+  return generate(
+    profileId,
+    chatId,
+    last.user_message.content,
+    onDelta,
+    'player',
+    'regenerate',
+    captured ?? undefined
+  )
 }
 
 /**
@@ -301,6 +380,8 @@ export const generateSwipe = async (
   // Capture the existing alternates before the re-roll drops the floor.
   const prior = normalizeSwipes(last.swipes, last.response.content, last.swipe_id).swipes
 
+  // ADR 0023: decide Resample vs. reassembly and capture the stored prompt BEFORE the cut destroys it.
+  const captured = captureResample(profileId, chatId, lastIndex, last)
   truncateFloors(profileId, chatId, lastIndex)
   // ST generation type 'swipe' — same as regenerate but the prior alternates are preserved below.
   const fresh = await generate(
@@ -309,7 +390,8 @@ export const generateSwipe = async (
     last.user_message.content,
     onDelta,
     'player',
-    'swipe'
+    'swipe',
+    captured ?? undefined
   )
   if (!fresh) {
     // Aborted / empty — restore the original floor so the swipe attempt loses nothing.

@@ -21,6 +21,7 @@ import { parseStPreset, selectPromptOrder } from '../parsers/stPresetParser'
 import { agentPresetRoot } from '../../shared/agentPresetEnvelope'
 import * as regexService from './regexService'
 import * as scriptService from './scriptService'
+import { bumpAllAssemblyEpochs } from './assemblyEpochService'
 import {
   parseSPresetConfig,
   spresetBoundRegexes,
@@ -314,6 +315,9 @@ export const getActivePresetId = (profileId: string): string | null => {
 export const setActivePreset = (profileId: string, presetId: string): void => {
   ensurePresetsDir(profileId)
   writeJsonSyncAtomic(activePath(profileId), { id: presetId })
+  // ADR 0023: the active preset is profile-global and feeds every chat's assembly, so switching it
+  // makes every chat's stored prompts stale. Coarse (bump-all) on purpose — a false positive is cheap.
+  bumpAllAssemblyEpochs(profileId)
 }
 
 export const getPresetById = (profileId: string, presetId: string): Preset | null => {
@@ -437,6 +441,9 @@ export const createEmptyPreset = (profileId: string, name = 'New Preset'): Prese
 export const savePreset = (profileId: string, presetId: string, preset: Preset): void => {
   ensurePresetsDir(profileId)
   writeJsonSyncAtomic(presetPath(profileId, presetId), PresetSchema.parse(preset))
+  // ADR 0023: a preset edit can change the active preset's prompt blocks; bump all chats (profile-global)
+  // rather than resolve whether this preset is the active one — a false positive only costs a reassembly.
+  bumpAllAssemblyEpochs(profileId)
 }
 
 interface PresetDeletionBackup {
