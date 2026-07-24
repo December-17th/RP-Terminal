@@ -256,6 +256,24 @@ describe('retrieval-preview IPC', () => {
     expect(greeter.keyHits[0].depth).not.toBeNull()
   })
 
+  it('carries a stable (bookName, entryIndex) join key across baseline/rpt/scored', () => {
+    const res = invoke(CHAT)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    // 'City' is entry 0 in the pinbook; the join key must agree across all three result sets.
+    const b = res.baseline.find((r) => r.comment === 'City')!
+    const r = res.rpt.find((r) => r.comment === 'City')!
+    const s = res.scored.find((r) => r.comment === 'City')!
+    expect(b.entryIndex).toBe(0)
+    expect(r.entryIndex).toBe(b.entryIndex)
+    expect(s.entryIndex).toBe(b.entryIndex)
+    expect(r.bookName).toBe(b.bookName)
+    expect(s.bookName).toBe(b.bookName)
+    // The constant (index 1) and the floor-keyword entry (index 2) keep their array positions.
+    expect(res.scored.find((x) => x.comment === 'AlwaysOn')!.entryIndex).toBe(1)
+    expect(res.scored.find((x) => x.comment === 'Greeter')!.entryIndex).toBe(2)
+  })
+
   it('respects a custom scoring arg (topK cap and sanitized params)', () => {
     const res = invoke(CHAT, '', undefined, { topK: 1, lambda: -5 })
     expect(res.ok).toBe(true)

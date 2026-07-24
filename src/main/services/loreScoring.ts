@@ -211,6 +211,7 @@ export const scoreLoreEntries = (
     const { entry } = s.c
     const row: ScoredEntryRow = {
       bookName: s.c.bookName,
+      entryIndex: s.c.entryIndex,
       ...(entry.id ? { entryId: entry.id } : {}),
       comment: labelOf(entry),
       constant: s.constant,

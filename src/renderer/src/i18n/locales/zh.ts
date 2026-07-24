@@ -759,8 +759,20 @@ const zh: Record<string, string> = {
   'debug.scoreKeyHitPin': '{{key}} · idf {{idf}} · PIN',
   'debug.scoreLink': '+联动 ← {{from}} ({{n}})',
   'debug.scoreProbFactor': '×p {{n}}',
-  'debug.scoreLegend':
-    '按得分排序；高亮行为将会触发的前 K 条。标签展示证据——关键词·idf·dN（idf = 关键词稀有度，dN = 命中于 N 层之前，PIN = 命中当前固定状态）；+联动 = 被相关已触发条目提升；×p = 作者概率。常驻条目及无有效证据的条目得分为 0。',
+  'debug.retrievalTableEntry': '条目',
+  'debug.retrievalTableKeyword': 'ST 关键词',
+  'debug.retrievalTablePins': '+固定',
+  'debug.retrievalTableScored': '打分',
+  'debug.retrievalTableScore': '得分',
+  'debug.retrievalScoredRank': '#{{n}}',
+  'debug.retrievalScoredGate': '门控',
+  'debug.retrievalSummary':
+    '关键词命中 {{n}} · +固定命中 {{m}} · 打分命中 {{k}} · 打分丢弃 {{x}} · 打分新增 {{y}}',
+  'debug.retrievalConstantStrip': '{{n}} 条常驻条目 — 始终触发',
+  'debug.retrievalShowInert': '显示 {{n}} 条无关条目',
+  'debug.retrievalHideInert': '隐藏无关条目',
+  'debug.retrievalTableLegend':
+    '每行一个条目，按打分排序（进度条 = 相对最高分的占比）。各列对比触发情况：ST 关键词（基线）、+固定（真实检索）、确定性打分器前 K。绿色行为打分器新增而关键词检索遗漏的条目；红色行为关键词检索触发但被打分器排除的条目。常驻条目始终触发，置于上方条带。点击行可展开完整证据明细。',
 
   'common.new': '+ 新建',
   'common.delete': '删除',

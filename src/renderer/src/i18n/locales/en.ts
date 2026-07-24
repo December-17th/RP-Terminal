@@ -786,8 +786,20 @@ const en: Record<string, string> = {
   'debug.scoreKeyHitPin': '{{key}} · idf {{idf}} · PIN',
   'debug.scoreLink': '+link ← {{from}} ({{n}})',
   'debug.scoreProbFactor': '×p {{n}}',
-  'debug.scoreLegend':
-    'Rows ranked by score; highlighted rows are the top-K that would fire. Chips show evidence — key·idf·dN (idf = key rarity, dN = matched N floors back, PIN = matched current pinned state); +link = boosted by a related fired entry; ×p = author probability. Constants and entries with no in-scope evidence score 0.',
+  'debug.retrievalTableEntry': 'Entry',
+  'debug.retrievalTableKeyword': 'ST keyword',
+  'debug.retrievalTablePins': '+Pins',
+  'debug.retrievalTableScored': 'Scored',
+  'debug.retrievalTableScore': 'Score',
+  'debug.retrievalScoredRank': '#{{n}}',
+  'debug.retrievalScoredGate': 'gate',
+  'debug.retrievalSummary':
+    'keyword fires {{n}} · +pins fires {{m}} · scorer fires {{k}} · scorer drops {{x}} · scorer adds {{y}}',
+  'debug.retrievalConstantStrip': '{{n}} constant entries — always fire',
+  'debug.retrievalShowInert': 'show {{n}} inert entries',
+  'debug.retrievalHideInert': 'hide inert entries',
+  'debug.retrievalTableLegend':
+    'One row per entry, ranked by scorer score (bar = share of the top score). Columns compare what fires: ST keyword (baseline) vs +Pins (real retrieval) vs the deterministic scorer top-K. Green rows the scorer adds that keyword retrieval missed; red rows keyword retrieval fires that the scorer ranks out. Constants always fire and sit in the strip above. Click a row for the full evidence breakdown.',
 
   'common.new': '+ New',
   'common.delete': 'Delete',

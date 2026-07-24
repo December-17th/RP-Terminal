@@ -15,6 +15,8 @@ export type RetrievalReason = 'constant' | 'key' | 'none'
 export interface RetrievalTraceRow {
   /** The lorebook this entry came from (its `name`). */
   bookName: string
+  /** Index of this entry within its book's `entries` array (the join key across baseline/rpt/scored). */
+  entryIndex: number
   /** The entry's stable id when present (minted-on-save entries always have one). */
   entryId?: string
   /** Display label: the entry `comment`, falling back to the first ~40 chars of its content. */
@@ -78,6 +80,8 @@ export interface ScoredKeyHit {
 /** One scored lorebook entry in the deterministic-scorer PoC section. */
 export interface ScoredEntryRow {
   bookName: string
+  /** Index of this entry within its book's `entries` array (the join key across baseline/rpt/scored). */
+  entryIndex: number
   entryId?: string
   comment: string
   /** Always-on entry (bypasses scoring; reported fired without consuming a top-K slot). */

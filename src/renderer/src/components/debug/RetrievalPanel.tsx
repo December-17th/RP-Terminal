@@ -4,7 +4,7 @@ import {
   DEFAULT_SCORING_PARAMS,
   type RetrievalPreviewResponse,
   type RetrievalTraceRow,
-  type ScoredEntryRow,
+  type ScoredKeyHit,
   type ScoringParams
 } from '../../../../shared/retrievalTrace'
 
@@ -209,28 +209,100 @@ export function RetrievalPanel(): React.ReactElement {
   )
 }
 
+/** One entry joined across the ST-keyword baseline, the +pins RPT retrieval, and the deterministic
+ *  scorer — the unit of a comparison-table row. Joined on `bookName + entryIndex`. */
+interface JoinedRow {
+  key: string
+  bookName: string
+  entryIndex: number
+  comment: string
+  constant: boolean
+  baseFired: boolean
+  baseKey?: string
+  rptFired: boolean
+  rptKey?: string
+  score: number
+  scoreShare: number // score / max non-constant score (bar width)
+  scoredFired: boolean // top-K (non-constant)
+  disqualified: boolean
+  rank: number | null
+  keyHits: ScoredKeyHit[]
+  linkBonus: number
+  linkFrom?: string
+  probabilityFactor: number
+}
+
+const rowKey = (r: { bookName: string; entryIndex: number }): string =>
+  `${r.bookName} ${r.entryIndex}`
+
 function RetrievalResult({
   result
 }: {
   result: Extract<RetrievalPreviewResponse, { ok: true }>
 }): React.ReactElement {
   const t = useT()
-  const { both, rptOnly, baselineOnly } = useMemo(() => {
-    const both: RetrievalTraceRow[] = []
-    const rptOnly: RetrievalTraceRow[] = []
-    const baselineOnly: RetrievalTraceRow[] = []
-    // The two traces cover the SAME candidates in the SAME order, so index i pairs across them.
-    for (let i = 0; i < result.rpt.length; i++) {
-      const r = result.rpt[i]
-      const b = result.baseline[i]
-      if (r.fired && b?.fired) both.push(r)
-      else if (r.fired) rptOnly.push(r)
-      else if (b?.fired) baselineOnly.push(b)
+  const [showInert, setShowInert] = useState(false)
+  const multiBook = result.lorebookNames.length > 1
+
+  const { rows, constants, inertCount, summary } = useMemo(() => {
+    const baseMap = new Map<string, RetrievalTraceRow>(result.baseline.map((r) => [rowKey(r), r]))
+    const rptMap = new Map<string, RetrievalTraceRow>(result.rpt.map((r) => [rowKey(r), r]))
+    // Rank (1-based) among the fired, non-constant scored rows — they appear in rank order in `scored`.
+    const rankMap = new Map<string, number>()
+    let rk = 0
+    for (const s of result.scored) {
+      if (s.fired && !s.constant) rankMap.set(rowKey(s), ++rk)
     }
-    return { both, rptOnly, baselineOnly }
+    const maxScore = result.scored.reduce((m, s) => (!s.constant && s.score > m ? s.score : m), 0)
+
+    const nonConstant: JoinedRow[] = []
+    const constants: JoinedRow[] = []
+    for (const s of result.scored) {
+      const k = rowKey(s)
+      const base = baseMap.get(k)
+      const rpt = rptMap.get(k)
+      const jr: JoinedRow = {
+        key: k,
+        bookName: s.bookName,
+        entryIndex: s.entryIndex,
+        comment: s.comment || s.keyHits[0]?.key || `#${s.entryIndex}`,
+        constant: s.constant,
+        baseFired: !!base?.fired,
+        baseKey: base?.matchedKey,
+        rptFired: !!rpt?.fired,
+        rptKey: rpt?.matchedKey,
+        score: s.score,
+        scoreShare: maxScore > 0 ? s.score / maxScore : 0,
+        scoredFired: s.fired && !s.constant,
+        disqualified: !!s.disqualified,
+        rank: rankMap.get(k) ?? null,
+        keyHits: s.keyHits,
+        linkBonus: s.linkBonus,
+        linkFrom: s.linkFrom,
+        probabilityFactor: s.probabilityFactor
+      }
+      ;(s.constant ? constants : nonConstant).push(jr)
+    }
+    // Order: score>0 (scorer's deterministic desc order) → zero-score keyword-fired → inert (hidden).
+    const kw = (r: JoinedRow): boolean => r.baseFired || r.rptFired
+    const scored = nonConstant.filter((r) => r.score > 0)
+    const zeroFired = nonConstant.filter((r) => r.score === 0 && kw(r))
+    const inert = nonConstant.filter((r) => r.score === 0 && !kw(r))
+    const rows = [...scored, ...zeroFired, ...inert]
+
+    const summary = {
+      N: result.baseline.filter((r) => r.fired).length,
+      M: result.rpt.filter((r) => r.fired).length,
+      K: nonConstant.filter((r) => r.scoredFired).length,
+      // Keyword-reference = the +pins RPT retrieval (a superset of the baseline).
+      X: nonConstant.filter((r) => r.rptFired && !r.scoredFired).length,
+      Y: nonConstant.filter((r) => r.scoredFired && !r.rptFired).length
+    }
+    return { rows, constants, inertCount: inert.length, summary }
   }, [result])
 
-  const nothingFired = both.length === 0 && rptOnly.length === 0 && baselineOnly.length === 0
+  const visible = showInert ? rows : rows.slice(0, rows.length - inertCount)
+  const p = result.scoringParams
 
   return (
     <div className="rt-result">
@@ -249,29 +321,64 @@ function RetrievalResult({
         </span>
       </div>
 
-      {nothingFired ? (
+      <p className="rt-legend">{t('debug.retrievalTableLegend')}</p>
+      <p className="rt-scored-params">
+        {t('debug.scoreParams', { lambda: p.lambda, hop: p.hopDecay, pin: p.pinBoost, topK: p.topK })}
+      </p>
+      <p className="rt-summary">
+        {t('debug.retrievalSummary', {
+          n: summary.N,
+          m: summary.M,
+          k: summary.K,
+          x: summary.X,
+          y: summary.Y
+        })}
+      </p>
+
+      {constants.length > 0 && (
+        <details className="rt-const-strip" open={constants.length <= 10}>
+          <summary>{t('debug.retrievalConstantStrip', { n: constants.length })}</summary>
+          <div className="rt-const-list">
+            {constants.map((c) => (
+              <span key={c.key} className="rt-const-chip">
+                {c.comment}
+                {multiBook && <span className="rt-const-book"> · {c.bookName}</span>}
+              </span>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {result.scored.length === 0 ? (
         <p className="rt-empty">{t('debug.retrievalNothingFired')}</p>
       ) : (
-        <div className="rt-groups">
-          <RetrievalGroup
-            title={t('debug.retrievalFiredBoth')}
-            variant="both"
-            rows={both}
-          />
-          <RetrievalGroup
-            title={t('debug.retrievalRptOnly')}
-            variant="rpt"
-            rows={rptOnly}
-          />
-          <RetrievalGroup
-            title={t('debug.retrievalBaselineOnly')}
-            variant="baseline"
-            rows={baselineOnly}
-          />
+        <div className="rt-table-wrap">
+          <table className="rt-table">
+            <thead>
+              <tr>
+                <th className="rt-th-entry">{t('debug.retrievalTableEntry')}</th>
+                <th>{t('debug.retrievalTableKeyword')}</th>
+                <th>{t('debug.retrievalTablePins')}</th>
+                <th>{t('debug.retrievalTableScored')}</th>
+                <th className="rt-th-score">{t('debug.retrievalTableScore')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((row) => (
+                <RtRow key={row.key} row={row} multiBook={multiBook} />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      <ScoredSection result={result} />
+      {inertCount > 0 && (
+        <button className="rt-inert-toggle" onClick={() => setShowInert((s) => !s)}>
+          {showInert
+            ? t('debug.retrievalHideInert')
+            : t('debug.retrievalShowInert', { n: inertCount })}
+        </button>
+      )}
 
       <details className="rt-scan-details">
         <summary>{t('debug.retrievalScanText')}</summary>
@@ -284,83 +391,108 @@ function RetrievalResult({
   )
 }
 
-/** The deterministic-scorer PoC ranking (debug-only; never influences generation). */
-function ScoredSection({
-  result
-}: {
-  result: Extract<RetrievalPreviewResponse, { ok: true }>
-}): React.ReactElement {
-  const t = useT()
-  const rows = result.scored
-  const p = result.scoringParams
+/** A fired/not cell for the ST-keyword and +Pins columns, with the matched key as tiny sub-text. */
+function FiredMark({ fired, matchedKey }: { fired: boolean; matchedKey?: string }): React.ReactElement {
+  if (!fired) return <span className="rt-mark-no">—</span>
   return (
-    <section className="rt-scored">
-      <h3 className="rt-group-title">
-        {t('debug.scoreTitle')} <span className="rt-group-count">{rows.length}</span>
-      </h3>
-      <p className="rt-scored-params">
-        {t('debug.scoreParams', {
-          lambda: p.lambda,
-          hop: p.hopDecay,
-          pin: p.pinBoost,
-          topK: p.topK
-        })}
-      </p>
-      <p className="rt-legend">{t('debug.scoreLegend')}</p>
-      {rows.length === 0 ? (
-        <p className="rt-group-empty">{t('debug.retrievalGroupEmpty')}</p>
-      ) : (
-        <ul className="rt-entries">
-          {rows.map((row, i) => (
-            <ScoredRow key={`${row.bookName}:${row.entryId ?? row.comment}:${i}`} row={row} />
-          ))}
-        </ul>
-      )}
-    </section>
+    <span className="rt-mark-yes" title={matchedKey}>
+      ✓{matchedKey && <span className="rt-mark-sub">{matchedKey}</span>}
+    </span>
   )
 }
 
-function ScoredRow({ row }: { row: ScoredEntryRow }): React.ReactElement {
+/** Strongest-2 keyHits + link/probability as a compact, truncatable evidence line. */
+const compactEvidence = (row: JoinedRow): string => {
+  const parts: string[] = []
+  for (const h of [...row.keyHits].sort((a, b) => b.weight - a.weight).slice(0, 2)) {
+    parts.push(h.pin ? `${h.key}·PIN` : `${h.key}·d${h.depth ?? 0}`)
+  }
+  if (row.linkBonus > 0) parts.push('+link')
+  if (row.probabilityFactor < 1) parts.push(`×p${row.probabilityFactor}`)
+  return parts.join('  ')
+}
+
+/** The full click-to-expand chip breakdown (reuses the original PoC chip rendering). */
+function ScoredChips({ row }: { row: JoinedRow }): React.ReactElement {
   const t = useT()
-  const cls = [
-    'rt-entry',
-    'rt-scored-row',
-    row.fired ? 'rt-scored-fired' : '',
-    row.disqualified ? 'rt-scored-dq' : ''
-  ]
-    .filter(Boolean)
-    .join(' ')
   return (
-    <li className={cls}>
-      <div className="rt-entry-head">
-        <span className="rt-entry-book">{row.bookName}</span>
-        <span className="rt-entry-name">{row.comment || t('debug.retrievalUnnamed')}</span>
-      </div>
-      <div className="rt-entry-meta">
-        <span className="rt-chip rt-chip-score">{t('debug.scoreValue', { n: row.score })}</span>
-        {row.constant && <span className="rt-chip rt-chip-reason">{t('debug.scoreConstant')}</span>}
-        {row.disqualified && (
-          <span className="rt-chip rt-chip-dq">{t('debug.scoreSecondaryGate')}</span>
-        )}
-        {row.keyHits.map((h, i) => (
-          <span key={i} className="rt-chip rt-chip-keyhit">
-            {h.pin
-              ? t('debug.scoreKeyHitPin', { key: h.key, idf: h.idf })
-              : t('debug.scoreKeyHitDepth', { key: h.key, idf: h.idf, depth: h.depth ?? 0 })}
-          </span>
-        ))}
-        {row.linkBonus > 0 && row.linkFrom && (
-          <span className="rt-chip rt-chip-link">
-            {t('debug.scoreLink', { from: row.linkFrom, n: row.linkBonus })}
-          </span>
-        )}
-        {row.probabilityFactor < 1 && (
-          <span className="rt-chip rt-chip-prob">
-            {t('debug.scoreProbFactor', { n: row.probabilityFactor })}
-          </span>
-        )}
-      </div>
-    </li>
+    <div className="rt-entry-meta">
+      <span className="rt-chip rt-chip-score">{t('debug.scoreValue', { n: row.score })}</span>
+      {row.disqualified && (
+        <span className="rt-chip rt-chip-dq">{t('debug.scoreSecondaryGate')}</span>
+      )}
+      {row.keyHits.map((h, i) => (
+        <span key={i} className="rt-chip rt-chip-keyhit">
+          {h.pin
+            ? t('debug.scoreKeyHitPin', { key: h.key, idf: h.idf })
+            : t('debug.scoreKeyHitDepth', { key: h.key, idf: h.idf, depth: h.depth ?? 0 })}
+        </span>
+      ))}
+      {row.linkBonus > 0 && row.linkFrom && (
+        <span className="rt-chip rt-chip-link">
+          {t('debug.scoreLink', { from: row.linkFrom, n: row.linkBonus })}
+        </span>
+      )}
+      {row.probabilityFactor < 1 && (
+        <span className="rt-chip rt-chip-prob">
+          {t('debug.scoreProbFactor', { n: row.probabilityFactor })}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** One comparison-table row. The whole row toggles the full evidence breakdown; the tint encodes the
+ *  scorer-vs-retrieval delta (added = scorer-only fire, dropped = keyword-only fire). */
+function RtRow({ row, multiBook }: { row: JoinedRow; multiBook: boolean }): React.ReactElement {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const tint = row.scoredFired && !row.rptFired
+    ? 'rt-row-added'
+    : row.rptFired && !row.scoredFired
+      ? 'rt-row-dropped'
+      : ''
+  return (
+    <>
+      <tr className={`rt-row ${tint}`} onClick={() => setOpen((o) => !o)}>
+        <td className="rt-td-entry">
+          <span className="rt-td-caret">{open ? '▾' : '▸'}</span>
+          <span className="rt-td-name">{row.comment}</span>
+          {multiBook && <span className="rt-td-book">{row.bookName}</span>}
+        </td>
+        <td className="rt-td-mark">
+          <FiredMark fired={row.baseFired} matchedKey={row.baseKey} />
+        </td>
+        <td className={`rt-td-mark${row.rptFired !== row.baseFired ? ' rt-cell-delta' : ''}`}>
+          <FiredMark fired={row.rptFired} matchedKey={row.rptKey} />
+        </td>
+        <td className="rt-td-scored">
+          {row.rank !== null ? (
+            <span className="rt-scored-yes">✓ {t('debug.retrievalScoredRank', { n: row.rank })}</span>
+          ) : row.disqualified ? (
+            <span className="rt-scored-gate">{t('debug.retrievalScoredGate')}</span>
+          ) : (
+            <span className="rt-mark-no">—</span>
+          )}
+        </td>
+        <td className="rt-td-score">
+          <div className="rt-score-num">{row.score}</div>
+          <div className="rt-bar">
+            <div className="rt-bar-fill" style={{ width: `${Math.round(row.scoreShare * 100)}%` }} />
+          </div>
+          <div className="rt-evidence" title={compactEvidence(row)}>
+            {compactEvidence(row)}
+          </div>
+        </td>
+      </tr>
+      {open && (
+        <tr className="rt-row-detail">
+          <td colSpan={5}>
+            <ScoredChips row={row} />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
@@ -412,55 +544,5 @@ function PinStatus({
         </span>
       )}
     </div>
-  )
-}
-
-function RetrievalGroup({
-  title,
-  variant,
-  rows
-}: {
-  title: string
-  variant: 'both' | 'rpt' | 'baseline'
-  rows: RetrievalTraceRow[]
-}): React.ReactElement {
-  const t = useT()
-  const reasonChip = (row: RetrievalTraceRow): string => {
-    if (row.recursionPass > 0) return t('debug.retrievalReasonRecursion', { n: row.recursionPass })
-    if (row.reason === 'constant') return t('debug.retrievalReasonConstant')
-    if (row.reason === 'key')
-      return t('debug.retrievalReasonKey', { key: row.matchedKey ?? '' })
-    return t('debug.retrievalReasonNone')
-  }
-  return (
-    <section className={`rt-group rt-group-${variant}`}>
-      <h3 className="rt-group-title">
-        {title} <span className="rt-group-count">{rows.length}</span>
-      </h3>
-      {rows.length === 0 ? (
-        <p className="rt-group-empty">{t('debug.retrievalGroupEmpty')}</p>
-      ) : (
-        <ul className="rt-entries">
-          {rows.map((row, i) => (
-            <li key={`${row.bookName}:${row.entryId ?? row.comment}:${i}`} className="rt-entry">
-              <div className="rt-entry-head">
-                <span className="rt-entry-book">{row.bookName}</span>
-                <span className="rt-entry-name">
-                  {row.comment || t('debug.retrievalUnnamed')}
-                </span>
-              </div>
-              <div className="rt-entry-meta">
-                <span className="rt-chip rt-chip-reason">{reasonChip(row)}</span>
-                {row.probability < 100 && (
-                  <span className="rt-chip rt-chip-prob">
-                    {t('debug.retrievalProbability', { n: row.probability })}
-                  </span>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   )
 }

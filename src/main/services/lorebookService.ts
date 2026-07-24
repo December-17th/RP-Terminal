@@ -230,15 +230,19 @@ export const matchEntries = (
  * recursive pass, and `prevent_recursion` entries' content doesn't feed the next
  * pass. Each entry is decided (and probability-rolled) at most once.
  */
-/** One considered entry paired with its source lorebook name (for the trace). */
+/** One considered entry paired with its source lorebook name (for the trace). `entryIndex` is the
+ *  entry's position within its book's `entries` array — carried for the trace's cross-set join key;
+ *  the matcher core never reads it, so it is behavior-neutral. */
 interface MatchCandidate {
   entry: LorebookEntry
   bookName: string
+  entryIndex: number
 }
 
 /** Per-entry trace accumulator, keyed by the entry object. Only allocated on the traced path. */
 type TraceOutcome = {
   bookName: string
+  entryIndex: number
   entryId?: string
   comment: string
   fired: boolean
@@ -274,6 +278,7 @@ const runMatchCore = (
     for (const c of candidates) {
       trace.set(c.entry, {
         bookName: c.bookName,
+        entryIndex: c.entryIndex,
         ...(c.entry.id ? { entryId: c.entry.id } : {}),
         comment: entryLabel(c.entry),
         fired: false,
@@ -352,7 +357,9 @@ export const matchAcross = (
   maxRecursion = 0
 ): LorebookEntry[] => {
   const candidates = lorebooks.flatMap((lb) =>
-    lb.entries.filter((e) => e.enabled).map((entry) => ({ entry, bookName: lb.name }))
+    lb.entries
+      .map((entry, entryIndex) => ({ entry, bookName: lb.name, entryIndex }))
+      .filter((c) => c.entry.enabled)
   )
   return runMatchCore(candidates, scanText, rng, maxRecursion, null)
 }
@@ -369,7 +376,9 @@ export const matchAcrossTraced = (
   maxRecursion = 0
 ): { fired: LorebookEntry[]; trace: RetrievalTraceRow[] } => {
   const candidates: MatchCandidate[] = books.flatMap(({ name, lorebook }) =>
-    lorebook.entries.filter((e) => e.enabled).map((entry) => ({ entry, bookName: name }))
+    lorebook.entries
+      .map((entry, entryIndex) => ({ entry, bookName: name, entryIndex }))
+      .filter((c) => c.entry.enabled)
   )
   const traceMap = new Map<LorebookEntry, TraceOutcome>()
   const fired = runMatchCore(candidates, scanText, rng, maxRecursion, traceMap)
@@ -378,6 +387,7 @@ export const matchAcrossTraced = (
     const o = traceMap.get(c.entry)!
     return {
       bookName: o.bookName,
+      entryIndex: o.entryIndex,
       ...(o.entryId ? { entryId: o.entryId } : {}),
       comment: o.comment,
       fired: o.fired,
