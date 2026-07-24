@@ -329,3 +329,71 @@ describe('scoreLoreEntries — adaptive selection (minScore floor + relCut)', ()
     expect(a).toEqual(b)
   })
 })
+
+describe('scoreLoreEntries — persistence bonus', () => {
+  // One fired entry (index 0, rowKey 'B::0') plus a zero-evidence entry (index 1, 'B::1').
+  const twoBook = (): Array<{ name: string; lorebook: Lorebook }> => [
+    book('B', [
+      mkEntry({ keys: ['ember'], content: '', comment: 'real' }),
+      mkEntry({ keys: ['ghost'], content: '', comment: 'ghost' })
+    ])
+  ]
+  const twoSegs = [seg(0, 'the ember glows')] // 'ghost' never appears → zero evidence
+
+  it('(a) empty prevFired OR persistBoost=1 is deeply-equal to the no-prevFired baseline (no flags)', () => {
+    const p = params()
+    const baseline = scoreLoreEntries(twoBook(), twoSegs, '', p)
+    const emptySet = scoreLoreEntries(twoBook(), twoSegs, '', p, new Set())
+    // prevFired names the fired entry, but persistBoost=1 makes the multiplier a no-op.
+    const boost1 = scoreLoreEntries(twoBook(), twoSegs, '', params({ persistBoost: 1 }), new Set(['B::0']))
+    expect(emptySet).toEqual(baseline)
+    expect(boost1).toEqual(baseline)
+    for (const rows of [baseline, emptySet, boost1])
+      for (const r of rows) expect(r.persisted).toBeUndefined()
+  })
+
+  it('(b) persistBoost multiplies the final score and sets persisted on the fired entry', () => {
+    const off = scoreLoreEntries(twoBook(), twoSegs, '', params(), new Set())
+    const on = scoreLoreEntries(twoBook(), twoSegs, '', params({ persistBoost: 2 }), new Set(['B::0']))
+    const base = row(off, 'real').score
+    const boosted = row(on, 'real')
+    expect(base).toBeGreaterThan(0)
+    expect(boosted.score).toBeCloseTo(base * 2, 4)
+    expect(boosted.persisted).toBe(true)
+    expect(boosted.fired).toBe(true)
+    // The non-persisted entry (ghost) is untouched and carries no flag.
+    expect(row(on, 'ghost').persisted).toBeUndefined()
+  })
+
+  it('(c) a zero-evidence prevFired entry stays score 0, never fires, and carries no flag', () => {
+    // 'B::1' (ghost) fired last floor but has NO current evidence — persistence must not resurrect it.
+    const rows = scoreLoreEntries(twoBook(), twoSegs, '', params({ persistBoost: 2 }), new Set(['B::1']))
+    const ghost = row(rows, 'ghost')
+    expect(ghost.score).toBe(0)
+    expect(ghost.fired).toBe(false)
+    expect(ghost.persisted).toBeUndefined()
+  })
+
+  it('(d) the boost lets a prevFired entry clear a minScore floor it would otherwise fail', () => {
+    // One entry, key at depth 1: idf = ln(2) ≈ 0.693, base ≈ 0.693·0.6 = 0.4158 < minScore 0.5.
+    const oneBook = (): Array<{ name: string; lorebook: Lorebook }> => [
+      book('B', [mkEntry({ keys: ['zephyrite'], content: '', comment: 'lone' })])
+    ]
+    const segs = [seg(1, 'a shard of zephyrite hums in the dark')]
+    const off = scoreLoreEntries(oneBook(), segs, '', params({ minScore: 0.5, relCut: 0, persistBoost: 2 }), new Set())
+    const on = scoreLoreEntries(oneBook(), segs, '', params({ minScore: 0.5, relCut: 0, persistBoost: 2 }), new Set(['B::0']))
+    expect(row(off, 'lone').fired).toBe(false) // below the floor without the boost
+    expect(row(off, 'lone').cutBy).toBe('floor')
+    const lifted = row(on, 'lone')
+    expect(lifted.fired).toBe(true) // 0.4158 · 2 = 0.8316 ≥ 0.5
+    expect(lifted.persisted).toBe(true)
+  })
+
+  it('(e) is deterministic with prevFired + a boost', () => {
+    const p = params({ persistBoost: 1.5 })
+    const prev = new Set(['B::0'])
+    const a = scoreLoreEntries(twoBook(), twoSegs, '', p, prev)
+    const b = scoreLoreEntries(twoBook(), twoSegs, '', p, prev)
+    expect(a).toEqual(b)
+  })
+})

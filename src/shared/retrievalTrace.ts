@@ -62,6 +62,10 @@ export interface ScoringParams {
   minScore: number
   /** Relative cut in [0,1]: an entry scoring below `relCut * topScore` never fires (0 disables it). */
   relCut: number
+  /** Persistence (hysteresis) multiplier ≥1 applied to the FINAL score of an entry that fired on the
+   *  previous floor; 1 disables. Rewards cache continuity so a persistently-relevant entry survives the
+   *  floor/cut/cap it would otherwise fail — but never resurrects a zero-evidence entry (0 × boost = 0). */
+  persistBoost: number
 }
 
 /** Tuned on the synthetic scenario suite (docs/lore-scoring-tuning-2026-07-24.md). Selection is adaptive:
@@ -74,7 +78,8 @@ export const DEFAULT_SCORING_PARAMS: ScoringParams = {
   pinBoost: 2.5,
   maxK: 4,
   minScore: 0.6,
-  relCut: 0.35
+  relCut: 0.35,
+  persistBoost: 1
 }
 
 /** One weighted key-evidence hit contributing to an entry's seed score. `depth` is the lowest scan
@@ -109,6 +114,9 @@ export interface ScoredEntryRow {
   linkFrom?: string
   /** Set when a `selective` entry failed its required secondary-key gate (score 0, no link activation). */
   disqualified?: 'secondary'
+  /** True only when this entry was in the previous floor's fired set AND its final (boosted) score > 0,
+   *  i.e. the persistence multiplier actually applied. Absent otherwise. */
+  persisted?: boolean
   /** For a scored-but-not-fired entry (score > 0): the FIRST selection condition it failed — `floor`
    *  (below minScore), `cut` (below relCut·topScore), or `cap` (maxK already reached). */
   cutBy?: 'floor' | 'cut' | 'cap'

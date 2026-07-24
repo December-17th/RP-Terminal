@@ -27,6 +27,10 @@ export interface Scenario {
   pinText: string
   relevant: EntryRef[]
   hardNegative: EntryRef[]
+  /** Entries that fired on the PREVIOUS floor (chat-continuity), keyed like every other ref. Fed to the
+   *  scorer's `prevFired` set so the persistence multiplier can apply. Absent = empty (the common case).
+   *  The keyword baseline ignores it. */
+  prevFired?: EntryRef[]
 }
 
 /** Build a full LorebookEntry from a partial (schema-default fields filled in). */
@@ -77,7 +81,10 @@ const bigBookEntries = (): LorebookEntry[] => {
   return entries
 }
 
-export const SCENARIOS: Scenario[] = [
+/** The original tuned suite (byte-identical). Regression FLOORS are computed over THIS list so the
+ *  broad-evidence / persistence scenarios (which deliberately under-fire at current defaults) can't drag
+ *  the floors below their thresholds before the owner decides on retuned defaults. */
+export const ORIGINAL_SCENARIOS: Scenario[] = [
   // === 1. Stale mention (×3) ===
   {
     name: 'stale-mention-far',
@@ -427,6 +434,165 @@ export const SCENARIOS: Scenario[] = [
     hardNegative: []
   }
 ]
+
+/**
+ * NEW scenarios (2026-07-24) added for the persistence-bonus axis + maxK cap justification.
+ *
+ * CLEAN-ROOM: every name, key, comment, and prose string below is original, authored for this harness —
+ * generic fantasy/sci-fi flavor, nothing copied from any card, preset, or third-party lorebook.
+ *
+ *  - broad-evidence-*  : 12–14 enabled entries, 9–10 genuinely-evidenced relevant + 3–4 hard negatives.
+ *    Every relevant entry has real primary-key evidence at a shallow depth (score well above the floor).
+ *    At maxK=4 the cap loses recall (only 4 of 9–10 fire); at maxK 8–12 recall recovers WITHOUT the hard
+ *    negatives (which have zero evidence) ever firing.
+ *  - persistence-*     : chat-continuity. A few relevant entries have weak-but-nonzero current evidence
+ *    (deep segment match) AND fired last floor (`prevFired`). Equal-or-stronger hard negatives are NOT in
+ *    prevFired. With persistBoost>1 the persisted relevant survive the floor (A) / win the cap (B) and the
+ *    negatives don't; with persistBoost=1 the relevant drop. Each also lists one ZERO-current-evidence
+ *    entry in prevFired that must NEVER fire — persistence multiplies, it never resurrects (0 × boost = 0).
+ */
+export const NEW_SCENARIOS: Scenario[] = [
+  // === Broad-evidence A: a warband roster (12 enabled, 9 relevant @ depth 0/1, 3 zero-evidence HN). ===
+  {
+    name: 'broad-evidence-warband',
+    category: 'broad',
+    books: [
+      book('Warband', [
+        E({ keys: ['Captain Yarrow'], content: 'The grizzled leader of the free company.', comment: 'Yarrow' }),
+        E({ keys: ['Quartermaster Del'], content: 'Keeper of the packs and the ledger.', comment: 'Del' }),
+        E({ keys: ['Standard-bearer Onra'], content: 'She carries the company banner into every field.', comment: 'Onra' }),
+        E({ keys: ['Scout Pell'], content: 'A quiet outrider who reads the wind.', comment: 'Pell' }),
+        E({ keys: ['Healer Mireen'], content: 'A field surgeon with steady hands.', comment: 'Mireen' }),
+        E({ keys: ['Ranger Tolk'], content: 'A longbowman raised in the pinewoods.', comment: 'Tolk' }),
+        E({ keys: ['Beastmaster Kurr'], content: 'He keeps the war-hounds calm and fed.', comment: 'Kurr' }),
+        E({ keys: ['Smith Braga'], content: 'The company farrier and armorer.', comment: 'Braga' }),
+        E({ keys: ['Cook Nessa'], content: 'She rations the stew and hoards the salt.', comment: 'Nessa' }),
+        // Hard negatives — never named in the transcript, no evidence.
+        E({ keys: ['Phantom Envoy Sable'], content: 'A rumored courier no one has met.', comment: 'Sable-HN' }),
+        E({ keys: ['The Undertow Pact'], content: 'A treaty spoken of only in old songs.', comment: 'Undertow-HN' }),
+        E({ keys: ['Warden of the Ninth Vault'], content: 'A jailer of a vault long since emptied.', comment: 'Warden-HN' })
+      ])
+    ],
+    segments: [
+      seg(0, 'Captain Yarrow calls the muster; Quartermaster Del counts the packs and Standard-bearer Onra raises the banner.'),
+      seg(1, 'Scout Pell returns with news, Healer Mireen tends the wounded, Ranger Tolk strings his bow, Beastmaster Kurr calms the hounds, Smith Braga mends a shield, and Cook Nessa ladles the stew.')
+    ],
+    pinText: '',
+    relevant: [
+      ref('Warband', 0), ref('Warband', 1), ref('Warband', 2), ref('Warband', 3), ref('Warband', 4),
+      ref('Warband', 5), ref('Warband', 6), ref('Warband', 7), ref('Warband', 8)
+    ],
+    hardNegative: [ref('Warband', 9), ref('Warband', 10), ref('Warband', 11)]
+  },
+
+  // === Broad-evidence B: a star-chart (14 enabled, 10 relevant @ depth 0/1/2, 4 HN). Deep entries carry
+  //     two rare keys so their seed clears the floor/cut robustly despite the recency decay. ===
+  {
+    name: 'broad-evidence-starchart',
+    category: 'broad',
+    books: [
+      book('StarChart', [
+        E({ keys: ['Vega Anchorage'], content: 'A deep-space refuelling depot at the blue star.', comment: 'Vega' }),
+        E({ keys: ['Corvid Relay'], content: 'A comms buoy on the trade lane.', comment: 'Corvid' }),
+        E({ keys: ['Halcyon Drift'], content: 'A slow river of ice and rock.', comment: 'Halcyon' }),
+        E({ keys: ['Umbral Reef'], content: 'A shoal of dead satellites.', comment: 'Umbral' }),
+        E({ keys: ['Ferrous Belt'], content: 'A mining belt of iron-rich planetoids.', comment: 'Ferrous' }),
+        E({ keys: ['Lantern Array'], content: 'A ring of solar collectors.', comment: 'Lantern' }),
+        E({ keys: ['Saffron Gate'], content: 'A jump gate stained by its old star.', comment: 'Saffron' }),
+        E({ keys: ['Cobalt Yards'], content: 'The orbital shipwrights.', comment: 'Yards' }),
+        // Deep, double-keyed (both keys appear at depth 2) so seed is robust.
+        E({ keys: ['Mistral Station', 'the low-orbit hub'], content: 'A weather-monitoring platform.', comment: 'Mistral' }),
+        E({ keys: ['Ember Locks', 'the fire canals'], content: 'A chain of thermal locks.', comment: 'Ember' }),
+        // Hard negatives — never charted in the transcript.
+        E({ keys: ['Requiem Void'], content: 'An unmapped dead zone.', comment: 'Requiem-HN' }),
+        E({ keys: ['Ophidian Wake'], content: 'A phantom signal never confirmed.', comment: 'Ophidian-HN' }),
+        E({ keys: ['Gilded Marauders'], content: 'A pirate fleet from another sector.', comment: 'Marauders-HN' }),
+        E({ keys: ['The Sunless Court'], content: 'A legend of a hidden station.', comment: 'Sunless-HN' })
+      ])
+    ],
+    segments: [
+      seg(0, 'We plot a course past Vega Anchorage and the Corvid Relay.'),
+      seg(1, 'The Halcyon Drift and Umbral Reef flank the lane; the Ferrous Belt, Lantern Array, Saffron Gate, and Cobalt Yards all report clear.'),
+      seg(2, 'Weeks back we logged Mistral Station, the low-orbit hub, and the Ember Locks along the fire canals.')
+    ],
+    pinText: '',
+    relevant: [
+      ref('StarChart', 0), ref('StarChart', 1), ref('StarChart', 2), ref('StarChart', 3), ref('StarChart', 4),
+      ref('StarChart', 5), ref('StarChart', 6), ref('StarChart', 7), ref('StarChart', 8), ref('StarChart', 9)
+    ],
+    hardNegative: [ref('StarChart', 10), ref('StarChart', 11), ref('StarChart', 12), ref('StarChart', 13)]
+  },
+
+  // === Persistence A (FLOOR): 3 relevant with weak deep evidence (@ depth 3) that fired last floor; 2
+  //     equal-scored hard negatives NOT persisted; 1 zero-evidence persisted decoy. 7 enabled → idf≈2.079,
+  //     depth-3 base ≈0.449 (< minScore 0.6). persistBoost≥1.5 lifts the persisted relevant over the floor;
+  //     the negatives stay floored; the zero-evidence decoy never fires at any boost. ===
+  {
+    name: 'persistence-fading-companions',
+    category: 'persistence',
+    books: [
+      book('FadingRoad', [
+        E({ keys: ['Squire Alden'], content: 'A young shield-bearer from the eastern march.', comment: 'Alden' }),
+        E({ keys: ['Groom Pell'], content: 'The one who tends our horses on the road.', comment: 'GroomPell' }),
+        E({ keys: ['Herbalist Wynn'], content: 'A wanderer who trades in dried roots.', comment: 'Wynn' }),
+        // Equal-scored hard negatives (same depth-3 evidence) but NOT persisted.
+        E({ keys: ['the drifter Corvin'], content: 'A stranger met once and never again.', comment: 'Corvin-HN' }),
+        E({ keys: ['the tinker Mabb'], content: 'A peddler whose wares we declined.', comment: 'Mabb-HN' }),
+        // Zero current evidence, yet listed as fired last floor — must NEVER be resurrected.
+        E({ keys: ['Phantom Rider'], content: 'A figure glimpsed in a dream, never real.', comment: 'PhantomRider-ZERO' }),
+        // Distractor to fix N at 7 (never mentioned).
+        E({ keys: ['Gilded Barge'], content: 'A pleasure boat from a far city.', comment: 'Barge-distractor' })
+      ])
+    ],
+    segments: [
+      seg(0, 'We make camp for the night and take stock of the road ahead.'),
+      seg(1, 'The way is quiet; nothing stirs in the brush.'),
+      seg(3, 'Long ago Squire Alden, Groom Pell, and Herbalist Wynn walked with us, as did the drifter Corvin and the tinker Mabb.')
+    ],
+    pinText: '',
+    relevant: [ref('FadingRoad', 0), ref('FadingRoad', 1), ref('FadingRoad', 2)],
+    hardNegative: [ref('FadingRoad', 3), ref('FadingRoad', 4), ref('FadingRoad', 5)],
+    prevFired: [ref('FadingRoad', 0), ref('FadingRoad', 1), ref('FadingRoad', 2), ref('FadingRoad', 5)]
+  },
+
+  // === Persistence B (CAP): 4 relevant that fired last floor, all @ depth 1 (base ≈1.318); 3 equal-scored
+  //     hard negatives NOT persisted with a LOWER insertion_order (so they win score-ties at boost=1); 1
+  //     zero-evidence persisted decoy. maxK=4. At boost=1 the tie-break hands the 4 cap slots mostly to the
+  //     negatives; at boost≥1.5 the persisted relevant strictly out-score them and take all 4 slots, the
+  //     negatives cut by cap. The zero-evidence decoy never fires. ===
+  {
+    name: 'persistence-recurring-company',
+    category: 'persistence',
+    books: [
+      book('AshenCompany', [
+        E({ keys: ['Warden Iyla'], content: 'The steadfast commander of our company.', insertion_order: 50, comment: 'Iyla' }),
+        E({ keys: ['Pike-captain Doe'], content: 'She holds the center of every line.', insertion_order: 50, comment: 'Doe' }),
+        E({ keys: ['Sapper Renn'], content: 'He clears the walls and sets the charges.', insertion_order: 50, comment: 'Renn' }),
+        E({ keys: ['Signaler Kestra'], content: 'Our flags-and-horns officer.', insertion_order: 50, comment: 'Kestra' }),
+        // Hard negatives — equal depth-1 evidence, LOWER insertion_order (win ties when scores are equal).
+        E({ keys: ['the Bleak Talon raiders'], content: 'A rival band circling for scraps.', insertion_order: 10, comment: 'BleakTalon-HN' }),
+        E({ keys: ['Vane the Cutthroat'], content: 'A mercenary of shifting loyalty.', insertion_order: 10, comment: 'Vane-HN' }),
+        E({ keys: ['Hollow Sook'], content: 'A skulking opportunist on the flank.', insertion_order: 10, comment: 'Sook-HN' }),
+        // Zero current evidence, persisted — must NEVER fire.
+        E({ keys: ['the Sunken Herald'], content: 'A messenger lost at sea seasons ago.', insertion_order: 100, comment: 'SunkenHerald-ZERO' })
+      ])
+    ],
+    segments: [
+      seg(0, 'We brace for the coming clash at the river ford.'),
+      seg(1, 'Warden Iyla rallies Pike-captain Doe, Sapper Renn, and Signaler Kestra as the Bleak Talon raiders, Vane the Cutthroat, and Hollow Sook press the flank.')
+    ],
+    pinText: '',
+    relevant: [ref('AshenCompany', 0), ref('AshenCompany', 1), ref('AshenCompany', 2), ref('AshenCompany', 3)],
+    hardNegative: [ref('AshenCompany', 4), ref('AshenCompany', 5), ref('AshenCompany', 6)],
+    prevFired: [
+      ref('AshenCompany', 0), ref('AshenCompany', 1), ref('AshenCompany', 2), ref('AshenCompany', 3),
+      ref('AshenCompany', 7)
+    ]
+  }
+]
+
+/** The full evaluation suite: original tuned scenarios + the new broad-evidence / persistence ones. */
+export const SCENARIOS: Scenario[] = [...ORIGINAL_SCENARIOS, ...NEW_SCENARIOS]
 
 /** Look up a scenario by name (throws if absent — keeps the regression test honest). */
 export const scenario = (name: string): Scenario => {

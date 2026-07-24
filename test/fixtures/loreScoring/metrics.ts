@@ -39,9 +39,20 @@ const metricsFor = (fired: EntryRef[], scenario: Scenario): EvalResult => {
   return { fired, tp, firedCount, relevantCount, precision, recall, f1, hardNegativeViolations }
 }
 
-/** Evaluate the deterministic scorer (non-constant fired set only) for one scenario + params. */
+/** Build the scorer's `prevFired` set (viewer rowKey format) from a scenario's optional prevFired refs. */
+const prevFiredSet = (scenario: Scenario): ReadonlySet<string> =>
+  new Set((scenario.prevFired ?? []).map(refKey))
+
+/** Evaluate the deterministic scorer (non-constant fired set only) for one scenario + params. Threads the
+ *  scenario's `prevFired` set so the persistence multiplier applies. */
 export const evaluate = (scenario: Scenario, params: ScoringParams): EvalResult => {
-  const rows = scoreLoreEntries(scenario.books, scenario.segments, scenario.pinText, params)
+  const rows = scoreLoreEntries(
+    scenario.books,
+    scenario.segments,
+    scenario.pinText,
+    params,
+    prevFiredSet(scenario)
+  )
   const fired: EntryRef[] = rows
     .filter((r) => r.fired && !r.constant)
     .map((r) => ({ bookName: r.bookName, entryIndex: r.entryIndex }))

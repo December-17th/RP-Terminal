@@ -234,7 +234,8 @@ describe('retrieval-preview IPC', () => {
       pinBoost: 2.5,
       maxK: 4,
       minScore: 0.6,
-      relCut: 0.35
+      relCut: 0.35,
+      persistBoost: 1
     })
     // The constant entry appears fired in the scorer output (and first).
     const always = res.scored.find((r) => r.comment === 'AlwaysOn')!

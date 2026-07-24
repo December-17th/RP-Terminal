@@ -34,7 +34,11 @@ const sanitizeScoringParams = (raw?: Partial<ScoringParams>): ScoringParams => {
     pinBoost: pos(p.pinBoost, DEFAULT_SCORING_PARAMS.pinBoost),
     maxK,
     minScore: pos(p.minScore, DEFAULT_SCORING_PARAMS.minScore),
-    relCut
+    relCut,
+    persistBoost:
+      typeof p.persistBoost === 'number' && Number.isFinite(p.persistBoost) && p.persistBoost >= 1
+        ? p.persistBoost
+        : DEFAULT_SCORING_PARAMS.persistBoost
   }
 }
 

@@ -74,12 +74,18 @@ export const scoreLoreEntries = (
   books: Array<{ name: string; lorebook: Lorebook }>,
   segments: ScoreSegment[],
   pinText: string,
-  params: ScoringParams
+  params: ScoringParams,
+  /** Entries fired on the PREVIOUS floor, keyed `${bookName}::${entryIndex}` (the viewer rowKey format).
+   *  Their final score is multiplied by `persistBoost` (hysteresis for cache stability). Default empty. */
+  prevFired: ReadonlySet<string> = new Set()
 ): ScoredEntryRow[] => {
   const cache: RegexKeyCache = new Map() // one shared compiled-regex cache for the whole call
   const maxK = Number.isFinite(params.maxK) && params.maxK >= 0 ? Math.floor(params.maxK) : 0
   const minScore = Number.isFinite(params.minScore) && params.minScore >= 0 ? params.minScore : 0
   const relCut = Number.isFinite(params.relCut) ? Math.min(1, Math.max(0, params.relCut)) : 0
+  // Persistence multiplier: non-finite or < 1 collapses to 1 (no-op). Never < 1, so 0 stays 0.
+  const persistBoost =
+    Number.isFinite(params.persistBoost) && params.persistBoost >= 1 ? params.persistBoost : 1
   const hasPin = pinText.length > 0
   // Full joined scan text used ONLY for the selective secondary-key gate.
   const fullScan = segments.map((s) => s.text).join('\n') + pinText
@@ -191,8 +197,14 @@ export const scoreLoreEntries = (
     }
   }
 
+  // An entry persists when it fired last floor (same rowKey). The multiplier applies to the FINAL score
+  // of non-constant, non-disqualified entries only; because persistBoost ≥ 1, a zero base stays zero.
+  const inPrevFired = (s: Scratch): boolean =>
+    prevFired.has(`${s.c.bookName}::${s.c.entryIndex}`)
   const finalScoreOf = (s: Scratch): number =>
-    s.constant || s.disqualified ? 0 : s.seedScore + s.linkBonus
+    s.constant || s.disqualified
+      ? 0
+      : (s.seedScore + s.linkBonus) * (inPrevFired(s) ? persistBoost : 1)
 
   // --- Selection: rank non-constant, non-disqualified entries with final score > 0. Top-K fire. ---
   const ranked = scratch
@@ -242,6 +254,9 @@ export const scoreLoreEntries = (
       keyHits: s.keyHits,
       ...(s.linkBonus > 0 && s.linkFrom ? { linkFrom: s.linkFrom } : {}),
       ...(s.disqualified ? { disqualified: 'secondary' as const } : {}),
+      // persisted only when the boost was a real multiplier (>1), the entry fired last floor, and the
+      // boosted score is > 0. A persistBoost of 1 (or empty prevFired) leaves the flag off entirely.
+      ...(persistBoost > 1 && inPrevFired(s) && finalScoreOf(s) > 0 ? { persisted: true as const } : {}),
       ...(!fired && cutBy ? { cutBy } : {})
     }
     return row
