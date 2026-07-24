@@ -106,7 +106,33 @@ export const registerDebugIpc = (ipcMain: IpcMain): void => {
           .join('\n')
         if (text) segments.push({ depth, text })
       }
-      const scored = scoreLoreEntries(books, segments, pinBlock, scoringParams)
+      // Persistence axis (hysteresis): the scorer boosts entries that fired on the PREVIOUS floor. We
+      // reconstruct that floor's fired set with a mirror dry-run over the history shifted one floor back —
+      // drop the newest floor from the slice, omit the pending user action, and resolve pins from the
+      // floor-N-1 variables snapshot (the state the previous floor's generation actually saw), exactly as
+      // the real-data harness does (test/loreScoringRealData.test.ts L75-91, L164-168). A chat with fewer
+      // than two floors has no previous floor, so the set stays empty and no row is marked persisted.
+      let prevFired: ReadonlySet<string> = new Set<string>()
+      if (ctx.floors.length >= 2) {
+        const prevSlice = ctx.floors.slice(0, -1).slice(-Math.max(1, ctx.scanDepth))
+        const prevSegments: ScoreSegment[] = []
+        for (let i = prevSlice.length - 1, depth = 1; i >= 0; i--, depth++) {
+          const f = prevSlice[i]
+          const text = [f.user_message.content, cleanForHistory(f.response.content)]
+            .filter(Boolean)
+            .join('\n')
+          if (text) prevSegments.push({ depth, text })
+        }
+        // Pins as of the previous floor = the floor-N-1 variables snapshot (second-newest floor's vars).
+        const prevPinVars = ctx.floors[ctx.floors.length - 2]?.variables ?? {}
+        const prevPinBlock = buildPinBlock(prevPinVars as Record<string, any>, combined)
+        const prevScored = scoreLoreEntries(books, prevSegments, prevPinBlock, scoringParams)
+        prevFired = new Set(
+          prevScored.filter((s) => s.fired).map((s) => `${s.bookName}::${s.entryIndex}`)
+        )
+      }
+
+      const scored = scoreLoreEntries(books, segments, pinBlock, scoringParams, prevFired)
 
       return {
         ok: true,
@@ -121,7 +147,8 @@ export const registerDebugIpc = (ipcMain: IpcMain): void => {
         baseline: baseline.trace,
         lorebookNames: ctx.lorebooks.map((lb) => lb.name),
         scored,
-        scoringParams
+        scoringParams,
+        prevFiredCount: prevFired.size
       }
     }
   )

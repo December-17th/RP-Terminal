@@ -148,6 +148,9 @@ export interface RetrievalPreviewOk {
   scored: ScoredEntryRow[]
   /** The (sanitized) scoring params actually used for `scored`. */
   scoringParams: ScoringParams
+  /** How many entries fired on the PREVIOUS floor's mirror dry-run — the anchor set the persistence
+   *  multiplier (`persistBoost`) is applied against. 0 for a fresh chat with no previous floor. */
+  prevFiredCount?: number
 }
 
 /** `retrieval-preview` response: the dry-run result, or a not-found error (unknown/empty chat or card). */

@@ -779,10 +779,12 @@ const en: Record<string, string> = {
   'debug.scoreMaxK': 'Max K',
   'debug.scoreMinScore': 'Min score',
   'debug.scoreRelCut': 'Rel cut',
+  'debug.scorePersistBoost': 'Persist boost',
   'debug.scoreTitle': 'Deterministic scorer (PoC)',
   'debug.scoreParams':
-    'λ={{lambda}} · hop={{hop}} · pin={{pin}} · maxK={{maxK}} · min={{min}} · relCut={{rel}}',
+    'λ={{lambda}} · hop={{hop}} · pin={{pin}} · maxK={{maxK}} · min={{min}} · relCut={{rel}} · persist={{persist}}',
   'debug.scoreValue': 'score {{n}}',
+  'debug.scoreHeld': 'held',
   'debug.scoreConstant': 'constant',
   'debug.scoreSecondaryGate': 'secondary gate',
   'debug.scoreKeyHitDepth': '{{key}} · idf {{idf}} · d{{depth}}',
@@ -802,6 +804,7 @@ const en: Record<string, string> = {
   'debug.retrievalCutHint': 'Scored but not fired: below min score (floor), below relCut·top (cut), or maxK reached (cap).',
   'debug.retrievalSummary':
     'keyword fires {{n}} · +pins fires {{m}} · scorer fires {{k}} · scorer drops {{x}} · scorer adds {{y}}',
+  'debug.retrievalHeldFromPrev': 'held-from-prev: {{n}}',
   'debug.retrievalConstantStrip': '{{n}} constant entries — always fire',
   'debug.retrievalShowInert': 'show {{n}} inert entries',
   'debug.retrievalHideInert': 'hide inert entries',

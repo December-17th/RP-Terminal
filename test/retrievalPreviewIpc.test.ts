@@ -38,6 +38,8 @@ const CHAT = 'chat-pin'
 const PLAIN_CHAR = 'plain'
 const PLAIN_BOOK = 'pinbook2'
 const PLAIN_CHAT = 'chat-plain'
+// A brand-new chat with a single floor — no PREVIOUS floor exists, so the persistence anchor is empty.
+const FRESH_CHAT = 'chat-fresh'
 
 const handlers = new Map<string, (...args: any[]) => unknown>()
 const fakeIpcMain = {
@@ -135,6 +137,23 @@ beforeAll(() => {
       variables: i === 1 ? { region: 'Aeloria' } : {}
     })
   }
+
+  // A fresh chat (same Pin World card/book) with only its opening floor. There is no previous floor to
+  // reconstruct, so the persistence axis stays empty (prevFiredCount 0, no persisted rows).
+  getDb()
+    .prepare(
+      'INSERT INTO chats (id, profile_id, character_id, created_at, updated_at, lorebook_ids) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    .run(FRESH_CHAT, PROFILE, CHAR, now, now, JSON.stringify([BOOK]))
+  saveFloor(PROFILE, FRESH_CHAT, {
+    floor: 0,
+    chat_id: FRESH_CHAT,
+    timestamp: now,
+    user_message: { content: '', timestamp: now },
+    response: { content: 'reply 0', model: 'm', provider: 'greeting' },
+    events: [],
+    variables: {}
+  })
 
   registerDebugIpc(fakeIpcMain)
 })
@@ -296,5 +315,43 @@ describe('retrieval-preview IPC', () => {
     // A scored-but-not-fired entry (score > 0) records WHY it was cut (floor/cut/cap) — plumbing check.
     const cut = res.scored.find((r) => !r.fired && !r.constant && r.score > 0)
     if (cut) expect(['floor', 'cut', 'cap']).toContain(cut.cutBy)
+  })
+
+  it('a fresh single-floor chat has no previous-floor anchor (prevFiredCount 0, no persisted rows)', () => {
+    const res = invoke(FRESH_CHAT, '', undefined, { persistBoost: 3 })
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    // No previous floor exists → the persistence set is empty regardless of persistBoost.
+    expect(res.prevFiredCount).toBe(0)
+    expect(res.scored.some((r) => r.persisted)).toBe(false)
+  })
+
+  it('holds a previous-floor entry when persistBoost > 1, changing the fired set', () => {
+    const base = invoke(CHAT, '', undefined, { persistBoost: 1 })
+    const boosted = invoke(CHAT, '', undefined, { persistBoost: 2 })
+    expect(base.ok).toBe(true)
+    expect(boosted.ok).toBe(true)
+    if (!base.ok || !boosted.ok) return
+    // CHAT has three floors → the previous-floor mirror run fires ≥1 entry to anchor persistence to.
+    expect(boosted.prevFiredCount ?? 0).toBeGreaterThan(0)
+
+    // Greeter (keyed 'hello') fires on the previous floor via recency, but on the CURRENT floor it is cut
+    // below relCut·top by the pin-boosted City entry — so at persistBoost 1 it does not fire or persist.
+    const gBase = base.scored.find((r) => r.comment === 'Greeter')!
+    expect(gBase.fired).toBe(false)
+    expect(gBase.persisted).toBeUndefined()
+
+    // With persistBoost > 1 the hysteresis multiplier lifts it back over the cut: it fires and is flagged.
+    const gBoost = boosted.scored.find((r) => r.comment === 'Greeter')!
+    expect(gBoost.persisted).toBe(true)
+    expect(gBoost.fired).toBe(true)
+
+    // The multiplier genuinely changes selection: the fired non-constant set differs across the two runs.
+    const firedNames = (r: Extract<RetrievalPreviewResponse, { ok: true }>): string[] =>
+      r.scored
+        .filter((s) => s.fired && !s.constant)
+        .map((s) => s.comment)
+        .sort()
+    expect(firedNames(boosted)).not.toEqual(firedNames(base))
   })
 })

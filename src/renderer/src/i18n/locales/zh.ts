@@ -752,10 +752,12 @@ const zh: Record<string, string> = {
   'debug.scoreMaxK': '最大 K',
   'debug.scoreMinScore': '最低分',
   'debug.scoreRelCut': '相对截断',
+  'debug.scorePersistBoost': '持有加权',
   'debug.scoreTitle': '确定性打分器（试验）',
   'debug.scoreParams':
-    'λ={{lambda}} · 跳跃={{hop}} · 固定={{pin}} · maxK={{maxK}} · min={{min}} · relCut={{rel}}',
+    'λ={{lambda}} · 跳跃={{hop}} · 固定={{pin}} · maxK={{maxK}} · min={{min}} · relCut={{rel}} · 持有={{persist}}',
   'debug.scoreValue': '得分 {{n}}',
+  'debug.scoreHeld': '持有',
   'debug.scoreConstant': '常驻',
   'debug.scoreSecondaryGate': '次要关键词未命中',
   'debug.scoreKeyHitDepth': '{{key}} · idf {{idf}} · d{{depth}}',
@@ -775,6 +777,7 @@ const zh: Record<string, string> = {
   'debug.retrievalCutHint': '已打分但未触发：低于最低分（floor）、低于 relCut·最高分（cut），或已达 maxK（cap）。',
   'debug.retrievalSummary':
     '关键词命中 {{n}} · +固定命中 {{m}} · 打分命中 {{k}} · 打分丢弃 {{x}} · 打分新增 {{y}}',
+  'debug.retrievalHeldFromPrev': '上一楼层持有: {{n}}',
   'debug.retrievalConstantStrip': '{{n}} 条常驻条目 — 始终触发',
   'debug.retrievalShowInert': '显示 {{n}} 条无关条目',
   'debug.retrievalHideInert': '隐藏无关条目',

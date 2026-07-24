@@ -38,6 +38,9 @@ export function RetrievalPanel(): React.ReactElement {
   const [maxK, setMaxK] = useState<string>(String(DEFAULT_SCORING_PARAMS.maxK))
   const [minScore, setMinScore] = useState<string>(String(DEFAULT_SCORING_PARAMS.minScore))
   const [relCut, setRelCut] = useState<string>(String(DEFAULT_SCORING_PARAMS.relCut))
+  const [persistBoost, setPersistBoost] = useState<string>(
+    String(DEFAULT_SCORING_PARAMS.persistBoost)
+  )
   const [result, setResult] = useState<RetrievalPreviewResponse | null>(null)
   const [running, setRunning] = useState(false)
 
@@ -87,6 +90,7 @@ export function RetrievalPanel(): React.ReactElement {
     put('maxK', maxK)
     put('minScore', minScore)
     put('relCut', relCut)
+    put('persistBoost', persistBoost)
     setRunning(true)
     try {
       const res: RetrievalPreviewResponse = await window.api.retrievalPreview(
@@ -221,6 +225,16 @@ export function RetrievalPanel(): React.ReactElement {
             onChange={(e) => setRelCut(e.target.value)}
           />
         </label>
+        <label className="rt-field rt-field-num">
+          <span className="rt-field-label">{t('debug.scorePersistBoost')}</span>
+          <input
+            className="rt-input"
+            type="number"
+            step="0.1"
+            value={persistBoost}
+            onChange={(e) => setPersistBoost(e.target.value)}
+          />
+        </label>
         <button className="rt-run" onClick={() => void run()} disabled={!chatId || running}>
           {running ? t('debug.retrievalRunning') : t('debug.retrievalRun')}
         </button>
@@ -249,6 +263,7 @@ interface JoinedRow {
   scoreShare: number // score / max non-constant score (bar width)
   scoredFired: boolean // top-K (non-constant)
   disqualified: boolean
+  persisted: boolean // the persistBoost multiplier actually applied (fired on the previous floor)
   rank: number | null
   cutBy?: 'floor' | 'cut' | 'cap'
   keyHits: ScoredKeyHit[]
@@ -300,6 +315,7 @@ function RetrievalResult({
         scoreShare: maxScore > 0 ? s.score / maxScore : 0,
         scoredFired: s.fired && !s.constant,
         disqualified: !!s.disqualified,
+        persisted: !!s.persisted,
         rank: rankMap.get(k) ?? null,
         cutBy: s.cutBy,
         keyHits: s.keyHits,
@@ -355,7 +371,8 @@ function RetrievalResult({
           pin: p.pinBoost,
           maxK: p.maxK,
           min: p.minScore,
-          rel: p.relCut
+          rel: p.relCut,
+          persist: p.persistBoost
         })}
       </p>
       <p className="rt-summary">
@@ -366,6 +383,12 @@ function RetrievalResult({
           x: summary.X,
           y: summary.Y
         })}
+        {typeof result.prevFiredCount === 'number' && (
+          <span className="rt-summary-held">
+            {' · '}
+            {t('debug.retrievalHeldFromPrev', { n: result.prevFiredCount })}
+          </span>
+        )}
       </p>
 
       {constants.length > 0 && (
@@ -451,6 +474,7 @@ function ScoredChips({ row }: { row: JoinedRow }): React.ReactElement {
   return (
     <div className="rt-entry-meta">
       <span className="rt-chip rt-chip-score">{t('debug.scoreValue', { n: row.score })}</span>
+      {row.persisted && <span className="rt-chip rt-chip-held">{t('debug.scoreHeld')}</span>}
       {row.disqualified && (
         <span className="rt-chip rt-chip-dq">{t('debug.scoreSecondaryGate')}</span>
       )}
