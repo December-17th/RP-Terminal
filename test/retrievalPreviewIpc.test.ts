@@ -228,7 +228,14 @@ describe('retrieval-preview IPC', () => {
     if (!res.ok) return
     expect(Array.isArray(res.scored)).toBe(true)
     // Defaults are applied when no scoring arg is passed.
-    expect(res.scoringParams).toEqual({ lambda: 0.6, hopDecay: 0.5, pinBoost: 2.5, topK: 4 })
+    expect(res.scoringParams).toEqual({
+      lambda: 0.6,
+      hopDecay: 0.5,
+      pinBoost: 2.5,
+      maxK: 4,
+      minScore: 0.6,
+      relCut: 0.35
+    })
     // The constant entry appears fired in the scorer output (and first).
     const always = res.scored.find((r) => r.comment === 'AlwaysOn')!
     expect(always.constant).toBe(true)
@@ -274,14 +281,19 @@ describe('retrieval-preview IPC', () => {
     expect(res.scored.find((x) => x.comment === 'Greeter')!.entryIndex).toBe(2)
   })
 
-  it('respects a custom scoring arg (topK cap and sanitized params)', () => {
-    const res = invoke(CHAT, '', undefined, { topK: 1, lambda: -5 })
+  it('respects a custom scoring arg (maxK cap, sanitized params, cutBy plumbing)', () => {
+    // maxK=1 with no floor/cut; negative lambda and out-of-range relCut are sanitized.
+    const res = invoke(CHAT, '', undefined, { maxK: 1, minScore: 0, relCut: 5, lambda: -5 })
     expect(res.ok).toBe(true)
     if (!res.ok) return
-    // topK floored/kept; the negative lambda is rejected and falls back to the default.
-    expect(res.scoringParams.topK).toBe(1)
-    expect(res.scoringParams.lambda).toBe(0.6)
-    // At most one non-constant entry fires under topK=1.
-    expect(res.scored.filter((r) => r.fired && !r.constant).length).toBeLessThanOrEqual(1)
+    expect(res.scoringParams.maxK).toBe(1)
+    expect(res.scoringParams.relCut).toBe(1) // clamped to [0,1]
+    expect(res.scoringParams.lambda).toBe(0.6) // negative → default
+    // At most one non-constant entry fires under maxK=1.
+    const fired = res.scored.filter((r) => r.fired && !r.constant)
+    expect(fired.length).toBeLessThanOrEqual(1)
+    // A scored-but-not-fired entry (score > 0) records WHY it was cut (floor/cut/cap) — plumbing check.
+    const cut = res.scored.find((r) => !r.fired && !r.constant && r.score > 0)
+    if (cut) expect(['floor', 'cut', 'cap']).toContain(cut.cutBy)
   })
 })

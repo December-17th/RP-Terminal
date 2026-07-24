@@ -776,9 +776,12 @@ const en: Record<string, string> = {
   'debug.scoreLambda': 'λ recency',
   'debug.scoreHopDecay': 'Hop decay',
   'debug.scorePinBoost': 'Pin boost',
-  'debug.scoreTopK': 'Top K',
+  'debug.scoreMaxK': 'Max K',
+  'debug.scoreMinScore': 'Min score',
+  'debug.scoreRelCut': 'Rel cut',
   'debug.scoreTitle': 'Deterministic scorer (PoC)',
-  'debug.scoreParams': 'λ={{lambda}} · hop={{hop}} · pin={{pin}} · topK={{topK}}',
+  'debug.scoreParams':
+    'λ={{lambda}} · hop={{hop}} · pin={{pin}} · maxK={{maxK}} · min={{min}} · relCut={{rel}}',
   'debug.scoreValue': 'score {{n}}',
   'debug.scoreConstant': 'constant',
   'debug.scoreSecondaryGate': 'secondary gate',
@@ -793,13 +796,17 @@ const en: Record<string, string> = {
   'debug.retrievalTableScore': 'Score',
   'debug.retrievalScoredRank': '#{{n}}',
   'debug.retrievalScoredGate': 'gate',
+  'debug.retrievalCut_floor': 'floor',
+  'debug.retrievalCut_cut': 'cut',
+  'debug.retrievalCut_cap': 'cap',
+  'debug.retrievalCutHint': 'Scored but not fired: below min score (floor), below relCut·top (cut), or maxK reached (cap).',
   'debug.retrievalSummary':
     'keyword fires {{n}} · +pins fires {{m}} · scorer fires {{k}} · scorer drops {{x}} · scorer adds {{y}}',
   'debug.retrievalConstantStrip': '{{n}} constant entries — always fire',
   'debug.retrievalShowInert': 'show {{n}} inert entries',
   'debug.retrievalHideInert': 'hide inert entries',
   'debug.retrievalTableLegend':
-    'One row per entry, ranked by scorer score (bar = share of the top score). Columns compare what fires: ST keyword (baseline) vs +Pins (real retrieval) vs the deterministic scorer top-K. Green rows the scorer adds that keyword retrieval missed; red rows keyword retrieval fires that the scorer ranks out. Constants always fire and sit in the strip above. Click a row for the full evidence breakdown.',
+    'One row per entry, ranked by scorer score (bar = share of the top score). Columns compare what fires: ST keyword (baseline) vs +Pins (real retrieval) vs the adaptive scorer (fires the top entries clearing the min-score floor and relCut·top cut, up to maxK). Green rows the scorer adds that keyword retrieval missed; red rows keyword retrieval fires that the scorer ranks out. A scored-but-not-fired row shows why (floor / cut / cap). Constants always fire and sit in the strip above. Click a row for the full evidence breakdown.',
 
   'common.new': '+ New',
   'common.delete': 'Delete',

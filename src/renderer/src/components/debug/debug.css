@@ -507,6 +507,13 @@
   font-size: 11px;
 }
 
+.rt-scored-cut {
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+  opacity: 0.8;
+  cursor: help;
+}
+
 .rt-td-score {
   min-width: 150px;
 }

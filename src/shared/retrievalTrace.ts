@@ -56,18 +56,25 @@ export interface ScoringParams {
   hopDecay: number
   /** Weight a key gets when it matches the appended pin block (vs. transcript recency). */
   pinBoost: number
-  /** How many top-ranked non-constant entries are flagged `fired`. */
-  topK: number
+  /** Ceiling (NOT a quota) on how many non-constant entries may fire. */
+  maxK: number
+  /** Absolute score floor: an entry below this never fires (0 disables the floor). */
+  minScore: number
+  /** Relative cut in [0,1]: an entry scoring below `relCut * topScore` never fires (0 disables it). */
+  relCut: number
 }
 
-/** Tuned on the synthetic scenario suite (docs/lore-scoring-tuning-2026-07-23.md): topK lowered 8→4,
- *  which raised micro-F1 0.775→0.861 and cut hard-negative violations 12→8 by curbing over-firing on
- *  small books. The other knobs were metric-neutral and kept. Debug-only; real-card validation pending. */
+/** Tuned on the synthetic scenario suite (docs/lore-scoring-tuning-2026-07-24.md). Selection is adaptive:
+ *  an entry fires iff score > 0 AND score ≥ minScore AND score ≥ relCut·topScore AND fewer than maxK have
+ *  fired. A sane floor + relative cut lets `maxK` be a generous ceiling while thin/weak evidence still
+ *  fires nothing. Debug-only; real-card validation pending. */
 export const DEFAULT_SCORING_PARAMS: ScoringParams = {
   lambda: 0.6,
   hopDecay: 0.5,
   pinBoost: 2.5,
-  topK: 4
+  maxK: 4,
+  minScore: 0.6,
+  relCut: 0.35
 }
 
 /** One weighted key-evidence hit contributing to an entry's seed score. `depth` is the lowest scan
@@ -102,6 +109,9 @@ export interface ScoredEntryRow {
   linkFrom?: string
   /** Set when a `selective` entry failed its required secondary-key gate (score 0, no link activation). */
   disqualified?: 'secondary'
+  /** For a scored-but-not-fired entry (score > 0): the FIRST selection condition it failed — `floor`
+   *  (below minScore), `cut` (below relCut·topScore), or `cap` (maxK already reached). */
+  cutBy?: 'floor' | 'cut' | 'cap'
 }
 
 /** Successful `retrieval-preview` result: the base scan text + pin block, matcher tuning, pin status,

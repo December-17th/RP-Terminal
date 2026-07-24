@@ -749,9 +749,12 @@ const zh: Record<string, string> = {
   'debug.scoreLambda': 'λ 时近性',
   'debug.scoreHopDecay': '跳跃衰减',
   'debug.scorePinBoost': '固定加权',
-  'debug.scoreTopK': 'Top K',
+  'debug.scoreMaxK': '最大 K',
+  'debug.scoreMinScore': '最低分',
+  'debug.scoreRelCut': '相对截断',
   'debug.scoreTitle': '确定性打分器（试验）',
-  'debug.scoreParams': 'λ={{lambda}} · 跳跃={{hop}} · 固定={{pin}} · topK={{topK}}',
+  'debug.scoreParams':
+    'λ={{lambda}} · 跳跃={{hop}} · 固定={{pin}} · maxK={{maxK}} · min={{min}} · relCut={{rel}}',
   'debug.scoreValue': '得分 {{n}}',
   'debug.scoreConstant': '常驻',
   'debug.scoreSecondaryGate': '次要关键词未命中',
@@ -766,13 +769,17 @@ const zh: Record<string, string> = {
   'debug.retrievalTableScore': '得分',
   'debug.retrievalScoredRank': '#{{n}}',
   'debug.retrievalScoredGate': '门控',
+  'debug.retrievalCut_floor': '低于下限',
+  'debug.retrievalCut_cut': '相对截断',
+  'debug.retrievalCut_cap': '超出上限',
+  'debug.retrievalCutHint': '已打分但未触发：低于最低分（floor）、低于 relCut·最高分（cut），或已达 maxK（cap）。',
   'debug.retrievalSummary':
     '关键词命中 {{n}} · +固定命中 {{m}} · 打分命中 {{k}} · 打分丢弃 {{x}} · 打分新增 {{y}}',
   'debug.retrievalConstantStrip': '{{n}} 条常驻条目 — 始终触发',
   'debug.retrievalShowInert': '显示 {{n}} 条无关条目',
   'debug.retrievalHideInert': '隐藏无关条目',
   'debug.retrievalTableLegend':
-    '每行一个条目，按打分排序（进度条 = 相对最高分的占比）。各列对比触发情况：ST 关键词（基线）、+固定（真实检索）、确定性打分器前 K。绿色行为打分器新增而关键词检索遗漏的条目；红色行为关键词检索触发但被打分器排除的条目。常驻条目始终触发，置于上方条带。点击行可展开完整证据明细。',
+    '每行一个条目，按打分排序（进度条 = 相对最高分的占比）。各列对比触发情况：ST 关键词（基线）、+固定（真实检索）、自适应打分器（触发清过最低分下限与 relCut·最高分截断的靠前条目，至多 maxK 条）。绿色行为打分器新增而关键词检索遗漏的条目；红色行为关键词检索触发但被打分器排除的条目。已打分但未触发的行会标注原因（floor / cut / cap）。常驻条目始终触发，置于上方条带。点击行可展开完整证据明细。',
 
   'common.new': '+ 新建',
   'common.delete': '删除',

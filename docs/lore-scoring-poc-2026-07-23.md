@@ -13,7 +13,7 @@ Code: `src/main/services/loreScoring.ts` (pure), types in `src/shared/retrievalT
 For each **enabled** entry across all active books:
 
 1. **Hard gates first**
-   - `constant: true` → fired, no scoring, does NOT consume a top-K slot.
+   - `constant: true` → fired, no scoring, does NOT consume a `maxK` slot.
    - `selective` with secondary keys → at least one secondary key must match the full joined scan text
      (all segments + pin text); otherwise `disqualified: 'secondary'`, score 0, and it neither seeds nor
      receives link activation.
@@ -29,23 +29,38 @@ For each **enabled** entry across all active books:
    naming one of `B`'s keys, `B` is enabled / not `exclude_recursion` / not constant / not disqualified,
    `A ≠ B`. `linkBonus(B) = hopDecay * max(seedScore(A))` over inbound donors with `seedScore > 0`. One
    hop only — link bonuses never chain. `linkFrom` records the argmax donor (ties: bookName asc, index asc).
-4. `finalScore = seedScore + linkBonus`. Top-`topK` non-constant, non-disqualified entries with
-   `finalScore > 0` are flagged `fired` (ranked desc; ties: insertion_order, bookName, index).
+4. `finalScore = seedScore + linkBonus`.
+
+### Adaptive selection
+
+Rank the non-constant, non-disqualified entries with `finalScore > 0` (desc; ties: insertion_order,
+bookName, index). Let `topScore` = the highest-ranked score. Iterating in rank order, an entry **fires
+iff** `score > 0` AND `score ≥ minScore` AND `score ≥ relCut · topScore` AND fewer than `maxK` have
+already fired. `maxK` is a **ceiling, not a quota**: `minScore = 0` disables the floor, `relCut = 0`
+disables the relative cut (so `minScore = 0` + `relCut = 0` reproduces the old fixed top-K), and if
+`topScore < minScore` nothing fires (thin evidence → zero, by design). A scored-but-not-fired entry
+records the FIRST condition it failed as `cutBy`: `floor` (below `minScore`) → `cut` (below
+`relCut · topScore`) → `cap` (`maxK` reached).
 
 Key matching reuses `lorebookService.keyMatchesText`, so literal/regex/case semantics are identical to
 the real matcher.
 
 ## Params (defaults)
 
-| param     | default | meaning                                        |
-| --------- | ------- | ---------------------------------------------- |
-| `lambda`  | 0.6     | recency decay base (`lambda ** depth`)         |
-| `hopDecay`| 0.5     | one-hop link decay on a donor's seed score     |
-| `pinBoost`| 2.5     | weight for a pin-block key hit                 |
-| `topK`    | 4       | how many non-constant entries are flagged fired (tuned 8→4, see lore-scoring-tuning-2026-07-23.md) |
+Tuned on the synthetic scenario suite — see `docs/lore-scoring-tuning-2026-07-24.md` (adaptive selection
+raised micro-F1 0.838 → 0.954 and cut hard-negative violations 10 → 3 over the fixed-K baseline).
+
+| param      | default | meaning                                                        |
+| ---------- | ------- | -------------------------------------------------------------- |
+| `lambda`   | 0.6     | recency decay base (`lambda ** depth`)                         |
+| `hopDecay` | 0.5     | one-hop link decay on a donor's seed score                     |
+| `pinBoost` | 2.5     | weight for a pin-block key hit                                 |
+| `maxK`     | 4       | ceiling on how many non-constant entries may fire              |
+| `minScore` | 0.6     | absolute score floor (0 disables it)                           |
+| `relCut`   | 0.35    | relative cut: fire only entries ≥ `relCut · topScore` (0 off)  |
 
 The IPC merges a caller's partial params over these and sanitizes them (non-finite/negative → default;
-`topK` floored to an int ≥ 0).
+`maxK` floored to an int ≥ 0; `relCut` clamped to [0, 1]).
 
 ## Known limitations
 

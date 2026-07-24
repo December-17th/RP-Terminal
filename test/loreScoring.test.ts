@@ -34,7 +34,14 @@ const book = (name: string, entries: LorebookEntry[]): { name: string; lorebook:
 })
 
 const seg = (depth: number, text: string): ScoreSegment => ({ depth, text })
-const params = (o: Partial<ScoringParams> = {}): ScoringParams => ({ ...DEFAULT_SCORING_PARAMS, ...o })
+// These tests exercise SCORING/RANKING mechanics, so they default to the old fixed-K selection (no floor,
+// no relative cut) unless a test opts in. The adaptive-selection semantics have their own block below.
+const params = (o: Partial<ScoringParams> = {}): ScoringParams => ({
+  ...DEFAULT_SCORING_PARAMS,
+  minScore: 0,
+  relCut: 0,
+  ...o
+})
 
 const row = (rows: ReturnType<typeof scoreLoreEntries>, comment: string): ReturnType<typeof scoreLoreEntries>[number] =>
   rows.find((r) => r.comment === comment)!
@@ -216,7 +223,7 @@ describe('scoreLoreEntries — constant bypass', () => {
       ])
     ]
     // Both A and B have identical evidence (df=1, depth 0); A's insertion_order (10) < B's (20) → A wins.
-    const rows = scoreLoreEntries(books, [seg(0, 'apple mango')], '', params({ topK: 1 }))
+    const rows = scoreLoreEntries(books, [seg(0, 'apple mango')], '', params({ maxK: 1 }))
     expect(rows[0].comment).toBe('K') // constants first
     expect(row(rows, 'K').fired).toBe(true)
     expect(row(rows, 'K').constant).toBe(true)
@@ -234,7 +241,7 @@ describe('scoreLoreEntries — top-K tie-break', () => {
         mkEntry({ keys: ['q'], content: '', comment: 'earlier', insertion_order: 10 })
       ])
     ]
-    const rows = scoreLoreEntries(books, [seg(0, 'p q')], '', params({ topK: 1 }))
+    const rows = scoreLoreEntries(books, [seg(0, 'p q')], '', params({ maxK: 1 }))
     expect(row(rows, 'later').score).toBe(row(rows, 'earlier').score) // equal scores
     expect(row(rows, 'earlier').fired).toBe(true) // lower insertion_order wins the slot
     expect(row(rows, 'later').fired).toBe(false)
@@ -248,5 +255,77 @@ describe('scoreLoreEntries — regex key parity', () => {
     const r = row(rows, 'R')
     expect(r.score).toBeGreaterThan(0)
     expect(r.keyHits[0].key).toBe('/fire/i')
+  })
+})
+
+describe('scoreLoreEntries — adaptive selection (minScore floor + relCut)', () => {
+  // A deterministic score ladder: 5 entries with unique keys (df=1 ⇒ equal idf = ln(1+5) = 1.7918),
+  // each matched at a distinct depth so score = idf · 0.6**depth:
+  //   L0 1.7918 · L1 1.0751 · L2 0.6450 · L3 0.3870 · L4 0.2322   (topScore = 1.7918)
+  const ladderBook = (): Array<{ name: string; lorebook: Lorebook }> => [
+    book(
+      'L',
+      [0, 1, 2, 3, 4].map((d) => mkEntry({ keys: [`k${d}`], content: '', comment: `L${d}` }))
+    )
+  ]
+  const ladderSegs = [0, 1, 2, 3, 4].map((d) => seg(d, `k${d}`))
+  const firedComments = (rows: ReturnType<typeof scoreLoreEntries>): string[] =>
+    rows.filter((r) => r.fired && !r.constant).map((r) => r.comment)
+
+  it('relCut=0 + minScore=0 reproduces the old fixed-K selection (top maxK fire)', () => {
+    const rows = scoreLoreEntries(ladderBook(), ladderSegs, '', params({ maxK: 2, minScore: 0, relCut: 0 }))
+    expect(firedComments(rows)).toEqual(['L0', 'L1'])
+    // The ranked-but-cut rows are all capped.
+    expect(row(rows, 'L2').cutBy).toBe('cap')
+    expect(row(rows, 'L4').cutBy).toBe('cap')
+  })
+
+  it('minScore floors weak entries even inside a free quota, with cutBy="floor"', () => {
+    // maxK=5 (no cap), relCut=0. minScore=0.3 floors only L4 (0.2322 < 0.3).
+    const rows = scoreLoreEntries(ladderBook(), ladderSegs, '', params({ maxK: 5, minScore: 0.3, relCut: 0 }))
+    expect(firedComments(rows)).toEqual(['L0', 'L1', 'L2', 'L3'])
+    expect(row(rows, 'L4').fired).toBe(false)
+    expect(row(rows, 'L4').cutBy).toBe('floor')
+  })
+
+  it('relCut fires fewer on a skewed distribution', () => {
+    // relFloor = 0.5 · 1.7918 = 0.8959 → only L0, L1 clear it; L2..L4 are cut.
+    const rows = scoreLoreEntries(ladderBook(), ladderSegs, '', params({ maxK: 5, minScore: 0, relCut: 0.5 }))
+    expect(firedComments(rows)).toEqual(['L0', 'L1'])
+    expect(row(rows, 'L2').cutBy).toBe('cut')
+    expect(row(rows, 'L3').cutBy).toBe('cut')
+  })
+
+  it('relCut leaves a flat distribution firing up to maxK', () => {
+    // All five keys matched at depth 0 → equal top scores; relCut can cut nothing (all == topScore).
+    const flatSegs = [seg(0, 'k0 k1 k2 k3 k4')]
+    const rows = scoreLoreEntries(ladderBook(), flatSegs, '', params({ maxK: 5, minScore: 0, relCut: 0.5 }))
+    expect(firedComments(rows).length).toBe(5)
+  })
+
+  it('fires nothing when topScore < minScore (thin evidence → zero)', () => {
+    const rows = scoreLoreEntries(ladderBook(), ladderSegs, '', params({ maxK: 5, minScore: 2.0, relCut: 0 }))
+    expect(firedComments(rows)).toEqual([])
+    expect(row(rows, 'L0').cutBy).toBe('floor')
+  })
+
+  it('reports cutBy in floor→cut→cap priority across one run', () => {
+    // maxK=2, minScore=0.3, relCut=0.35 (relFloor = 0.6271):
+    //   L0,L1 fire · L2 (0.6450 ≥ relFloor, passes floor+cut, but quota full) → cap
+    //   L3 (0.3870 ≥ min, < relFloor) → cut · L4 (0.2322 < min) → floor
+    const rows = scoreLoreEntries(ladderBook(), ladderSegs, '', params({ maxK: 2, minScore: 0.3, relCut: 0.35 }))
+    expect(firedComments(rows)).toEqual(['L0', 'L1'])
+    expect(row(rows, 'L2').cutBy).toBe('cap')
+    expect(row(rows, 'L3').cutBy).toBe('cut')
+    expect(row(rows, 'L4').cutBy).toBe('floor')
+    // Fired rows carry no cutBy.
+    expect(row(rows, 'L0').cutBy).toBeUndefined()
+  })
+
+  it('is deterministic under the new selection', () => {
+    const p = params({ maxK: 3, minScore: 0.3, relCut: 0.35 })
+    const a = scoreLoreEntries(ladderBook(), ladderSegs, '', p)
+    const b = scoreLoreEntries(ladderBook(), ladderSegs, '', p)
+    expect(a).toEqual(b)
   })
 })

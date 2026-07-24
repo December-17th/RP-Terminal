@@ -77,7 +77,9 @@ export const scoreLoreEntries = (
   params: ScoringParams
 ): ScoredEntryRow[] => {
   const cache: RegexKeyCache = new Map() // one shared compiled-regex cache for the whole call
-  const topK = Number.isFinite(params.topK) && params.topK >= 0 ? Math.floor(params.topK) : 0
+  const maxK = Number.isFinite(params.maxK) && params.maxK >= 0 ? Math.floor(params.maxK) : 0
+  const minScore = Number.isFinite(params.minScore) && params.minScore >= 0 ? params.minScore : 0
+  const relCut = Number.isFinite(params.relCut) ? Math.min(1, Math.max(0, params.relCut)) : 0
   const hasPin = pinText.length > 0
   // Full joined scan text used ONLY for the selective secondary-key gate.
   const fullScan = segments.map((s) => s.text).join('\n') + pinText
@@ -205,9 +207,26 @@ export const scoreLoreEntries = (
       if (x.c.entryIndex !== y.c.entryIndex) return x.c.entryIndex - y.c.entryIndex
       return x.c.order - y.c.order
     })
-  const firedSet = new Set<Scratch>(ranked.slice(0, topK))
+  // Adaptive selection (ranked desc, all score > 0). Fire iff score ≥ minScore AND score ≥ relCut·topScore
+  // AND fewer than maxK have fired. A non-firing entry records the FIRST failed condition (floor→cut→cap)
+  // so the viewer can explain why. topScore < minScore ⇒ nothing fires (thin evidence → zero, by design).
+  const topScore = ranked.length > 0 ? finalScoreOf(ranked[0]) : 0
+  const relFloor = relCut * topScore
+  const firedSet = new Set<Scratch>()
+  const cutOf = new Map<Scratch, 'floor' | 'cut' | 'cap'>()
+  let firedCount = 0
+  for (const s of ranked) {
+    const sc = finalScoreOf(s) // > 0 by construction
+    if (sc < minScore) cutOf.set(s, 'floor')
+    else if (sc < relFloor) cutOf.set(s, 'cut')
+    else if (firedCount >= maxK) cutOf.set(s, 'cap')
+    else {
+      firedSet.add(s)
+      firedCount++
+    }
+  }
 
-  const toRow = (s: Scratch, fired: boolean): ScoredEntryRow => {
+  const toRow = (s: Scratch, fired: boolean, cutBy?: 'floor' | 'cut' | 'cap'): ScoredEntryRow => {
     const { entry } = s.c
     const row: ScoredEntryRow = {
       bookName: s.c.bookName,
@@ -222,13 +241,14 @@ export const scoreLoreEntries = (
       probabilityFactor: round4(entry.probability / 100),
       keyHits: s.keyHits,
       ...(s.linkBonus > 0 && s.linkFrom ? { linkFrom: s.linkFrom } : {}),
-      ...(s.disqualified ? { disqualified: 'secondary' as const } : {})
+      ...(s.disqualified ? { disqualified: 'secondary' as const } : {}),
+      ...(!fired && cutBy ? { cutBy } : {})
     }
     return row
   }
 
   // Output order: constants (book order) → ranked scored (desc) → zero-score entries (book order).
-  const rankedRows = ranked.map((s) => toRow(s, firedSet.has(s)))
+  const rankedRows = ranked.map((s) => toRow(s, firedSet.has(s), cutOf.get(s)))
   const constantRows = scratch.filter((s) => s.constant).map((s) => toRow(s, true))
   const rankedSet = new Set(ranked)
   const zeroRows = scratch

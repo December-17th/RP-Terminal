@@ -283,21 +283,30 @@ export const SCENARIOS: Scenario[] = [
     hardNegative: []
   },
 
-  // === 8. Thin-evidence opening (measures overfiring on noise) ===
+  // === 8. Thin-evidence opening (measures overfiring on low-idf noise) ===
+  // A short greeting mentions only a GENERIC word ('traveler') that every entry in the book declares, so
+  // its idf is low and every match scores weakly — a sane minScore floor should zero the whole book.
   {
     name: 'thin-evidence-opening',
     category: 'thin',
     books: [
-      book('ThinRealm', [
-        E({ keys: ['inn'], content: 'A network of roadside inns along the trade road.', comment: 'Inns' }),
-        E({ keys: ['traveler'], content: 'Wandering travelers who trade rumor for coin.', comment: 'Travelers' }),
-        E({ keys: ['Starfall Keep'], content: 'A fortress struck by a falling star.', comment: 'Starfall' })
-      ])
+      book(
+        'ThinRealm',
+        // Content deliberately omits the shared key 'traveler' so the entries don't self-link (spreading
+        // activation would otherwise inflate the noise back above a floor).
+        Array.from({ length: 10 }, (_, i) =>
+          E({
+            keys: ['traveler', `Wayside_${i}`],
+            content: `A roadside rest stop, waypost ${i}, along the common route.`,
+            comment: `Wayside ${i}`
+          })
+        )
+      )
     ],
-    segments: [seg(1, 'A quiet evening at the roadside inn; a lone traveler nods in greeting.')],
+    segments: [seg(1, 'A quiet evening; a lone traveler warms by the fire.')],
     pinText: '',
     relevant: [],
-    hardNegative: [ref('ThinRealm', 0), ref('ThinRealm', 1), ref('ThinRealm', 2)]
+    hardNegative: Array.from({ length: 10 }, (_, i) => ref('ThinRealm', i))
   },
 
   // === 9. Big-book noise (procedural distractors) ===

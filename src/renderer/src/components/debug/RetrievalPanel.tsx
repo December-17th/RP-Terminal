@@ -35,7 +35,9 @@ export function RetrievalPanel(): React.ReactElement {
   const [lambda, setLambda] = useState<string>(String(DEFAULT_SCORING_PARAMS.lambda))
   const [hopDecay, setHopDecay] = useState<string>(String(DEFAULT_SCORING_PARAMS.hopDecay))
   const [pinBoost, setPinBoost] = useState<string>(String(DEFAULT_SCORING_PARAMS.pinBoost))
-  const [topK, setTopK] = useState<string>(String(DEFAULT_SCORING_PARAMS.topK))
+  const [maxK, setMaxK] = useState<string>(String(DEFAULT_SCORING_PARAMS.maxK))
+  const [minScore, setMinScore] = useState<string>(String(DEFAULT_SCORING_PARAMS.minScore))
+  const [relCut, setRelCut] = useState<string>(String(DEFAULT_SCORING_PARAMS.relCut))
   const [result, setResult] = useState<RetrievalPreviewResponse | null>(null)
   const [running, setRunning] = useState(false)
 
@@ -82,7 +84,9 @@ export function RetrievalPanel(): React.ReactElement {
     put('lambda', lambda)
     put('hopDecay', hopDecay)
     put('pinBoost', pinBoost)
-    put('topK', topK)
+    put('maxK', maxK)
+    put('minScore', minScore)
+    put('relCut', relCut)
     setRunning(true)
     try {
       const res: RetrievalPreviewResponse = await window.api.retrievalPreview(
@@ -188,13 +192,33 @@ export function RetrievalPanel(): React.ReactElement {
           />
         </label>
         <label className="rt-field rt-field-num">
-          <span className="rt-field-label">{t('debug.scoreTopK')}</span>
+          <span className="rt-field-label">{t('debug.scoreMaxK')}</span>
           <input
             className="rt-input"
             type="number"
             step="1"
-            value={topK}
-            onChange={(e) => setTopK(e.target.value)}
+            value={maxK}
+            onChange={(e) => setMaxK(e.target.value)}
+          />
+        </label>
+        <label className="rt-field rt-field-num">
+          <span className="rt-field-label">{t('debug.scoreMinScore')}</span>
+          <input
+            className="rt-input"
+            type="number"
+            step="0.1"
+            value={minScore}
+            onChange={(e) => setMinScore(e.target.value)}
+          />
+        </label>
+        <label className="rt-field rt-field-num">
+          <span className="rt-field-label">{t('debug.scoreRelCut')}</span>
+          <input
+            className="rt-input"
+            type="number"
+            step="0.05"
+            value={relCut}
+            onChange={(e) => setRelCut(e.target.value)}
           />
         </label>
         <button className="rt-run" onClick={() => void run()} disabled={!chatId || running}>
@@ -226,6 +250,7 @@ interface JoinedRow {
   scoredFired: boolean // top-K (non-constant)
   disqualified: boolean
   rank: number | null
+  cutBy?: 'floor' | 'cut' | 'cap'
   keyHits: ScoredKeyHit[]
   linkBonus: number
   linkFrom?: string
@@ -233,7 +258,7 @@ interface JoinedRow {
 }
 
 const rowKey = (r: { bookName: string; entryIndex: number }): string =>
-  `${r.bookName} ${r.entryIndex}`
+  `${r.bookName}::${r.entryIndex}`
 
 function RetrievalResult({
   result
@@ -276,6 +301,7 @@ function RetrievalResult({
         scoredFired: s.fired && !s.constant,
         disqualified: !!s.disqualified,
         rank: rankMap.get(k) ?? null,
+        cutBy: s.cutBy,
         keyHits: s.keyHits,
         linkBonus: s.linkBonus,
         linkFrom: s.linkFrom,
@@ -323,7 +349,14 @@ function RetrievalResult({
 
       <p className="rt-legend">{t('debug.retrievalTableLegend')}</p>
       <p className="rt-scored-params">
-        {t('debug.scoreParams', { lambda: p.lambda, hop: p.hopDecay, pin: p.pinBoost, topK: p.topK })}
+        {t('debug.scoreParams', {
+          lambda: p.lambda,
+          hop: p.hopDecay,
+          pin: p.pinBoost,
+          maxK: p.maxK,
+          min: p.minScore,
+          rel: p.relCut
+        })}
       </p>
       <p className="rt-summary">
         {t('debug.retrievalSummary', {
@@ -471,6 +504,10 @@ function RtRow({ row, multiBook }: { row: JoinedRow; multiBook: boolean }): Reac
             <span className="rt-scored-yes">✓ {t('debug.retrievalScoredRank', { n: row.rank })}</span>
           ) : row.disqualified ? (
             <span className="rt-scored-gate">{t('debug.retrievalScoredGate')}</span>
+          ) : row.cutBy ? (
+            <span className="rt-scored-cut" title={t('debug.retrievalCutHint')}>
+              {t(`debug.retrievalCut_${row.cutBy}`)}
+            </span>
           ) : (
             <span className="rt-mark-no">—</span>
           )}

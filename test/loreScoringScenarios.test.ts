@@ -10,9 +10,10 @@ import { DEFAULT_SCORING_PARAMS } from '../src/shared/retrievalTrace'
 
 /**
  * Regression tests for the deterministic lore scorer over the synthetic scenario suite
- * (test/fixtures/loreScoring). Runs at DEFAULT_SCORING_PARAMS. The F1 floor is deliberately loose
- * (~5 points below the measured 0.861) so it pins "don't regress badly", not an overfit lock. See the
- * tuner (test/loreScoringTuner.test.ts, `npm run tune:lore`) and docs/lore-scoring-tuning-2026-07-23.md.
+ * (test/fixtures/loreScoring). Runs at DEFAULT_SCORING_PARAMS (adaptive selection). The F1 floor is
+ * deliberately loose (~5 points below the measured 0.954) so it pins "don't regress badly", not an
+ * overfit lock. See the tuner (test/loreScoringTuner.test.ts, `npm run tune:lore`) and
+ * docs/lore-scoring-tuning-2026-07-24.md.
  */
 
 // Comment lookup on a scored run of one scenario (DEFAULT params).
@@ -25,9 +26,15 @@ const scoreByComment = (name: string): Map<string, number> => {
 describe('lore scorer — synthetic scenario regression', () => {
   it('achieves a micro-F1 above a loose floor at the default params', () => {
     const micro = microScorer(SCENARIOS, DEFAULT_SCORING_PARAMS)
-    // Measured 0.861 (see tuning doc); floor set ~5 points below, not an overfit lock.
-    expect(micro.f1).toBeGreaterThanOrEqual(0.8)
+    // Measured 0.954 (see tuning doc); floor set ~5 points below, not an overfit lock.
+    expect(micro.f1).toBeGreaterThanOrEqual(0.9)
     expect(micro.recall).toBeGreaterThanOrEqual(0.9)
+  })
+
+  it('fires nothing on the thin-evidence opening (min-score floor zeroes weak noise)', () => {
+    const r = evaluate(scenario('thin-evidence-opening'), DEFAULT_SCORING_PARAMS)
+    expect(r.firedCount).toBe(0)
+    expect(r.hardNegativeViolations).toBe(0)
   })
 
   it('beats the ST-keyword baseline on micro-precision', () => {

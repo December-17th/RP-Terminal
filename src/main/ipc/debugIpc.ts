@@ -13,21 +13,28 @@ import {
 } from '../../shared/retrievalTrace'
 
 /** Merge a caller's partial scoring params over the defaults, sanitizing bad values (non-finite/negative
- *  → default; topK floored to an int ≥ 0). Debug-only, so this stays permissive. */
+ *  → default; maxK floored to an int ≥ 0; relCut clamped to [0,1]). Debug-only, so this stays permissive. */
 const sanitizeScoringParams = (raw?: Partial<ScoringParams>): ScoringParams => {
   const p = raw ?? {}
   const pos = (v: unknown, d: number): number =>
     typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : d
-  const topKRaw = p.topK
-  const topK =
-    typeof topKRaw === 'number' && Number.isFinite(topKRaw) && topKRaw >= 0
-      ? Math.floor(topKRaw)
-      : DEFAULT_SCORING_PARAMS.topK
+  const maxKRaw = p.maxK
+  const maxK =
+    typeof maxKRaw === 'number' && Number.isFinite(maxKRaw) && maxKRaw >= 0
+      ? Math.floor(maxKRaw)
+      : DEFAULT_SCORING_PARAMS.maxK
+  const relCutRaw = p.relCut
+  const relCut =
+    typeof relCutRaw === 'number' && Number.isFinite(relCutRaw)
+      ? Math.min(1, Math.max(0, relCutRaw))
+      : DEFAULT_SCORING_PARAMS.relCut
   return {
     lambda: pos(p.lambda, DEFAULT_SCORING_PARAMS.lambda),
     hopDecay: pos(p.hopDecay, DEFAULT_SCORING_PARAMS.hopDecay),
     pinBoost: pos(p.pinBoost, DEFAULT_SCORING_PARAMS.pinBoost),
-    topK
+    maxK,
+    minScore: pos(p.minScore, DEFAULT_SCORING_PARAMS.minScore),
+    relCut
   }
 }
 

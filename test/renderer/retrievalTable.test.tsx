@@ -51,20 +51,22 @@ const okResult: RetrievalPreviewResponse = {
   extraPinPaths: [],
   resolvedPins: [],
   lorebookNames: ['W'],
-  scoringParams: { lambda: 0.6, hopDecay: 0.5, pinBoost: 2.5, topK: 8 },
+  scoringParams: { lambda: 0.6, hopDecay: 0.5, pinBoost: 2.5, maxK: 4, minScore: 0.6, relCut: 0.35 },
   baseline: [
     traceRow('A', 0, true, 'a'),
     traceRow('B', 1, false),
     traceRow('C', 2, true, undefined, 'constant'),
     traceRow('D', 3, false),
-    traceRow('E', 4, false)
+    traceRow('E', 4, false),
+    traceRow('F', 5, false)
   ],
   rpt: [
     traceRow('A', 0, true, 'a'),
     traceRow('B', 1, true, 'b'), // fires only with pins → pins-delta + dropped (scorer ranks it out)
     traceRow('C', 2, true, undefined, 'constant'),
     traceRow('D', 3, false),
-    traceRow('E', 4, false)
+    traceRow('E', 4, false),
+    traceRow('F', 5, false)
   ],
   scored: [
     scoredRow('C', 2, { constant: true, fired: true, score: 0 }),
@@ -78,6 +80,8 @@ const okResult: RetrievalPreviewResponse = {
       score: 3,
       keyHits: [{ key: 'e', depth: 1, pin: false, idf: 1.5, weight: 0.6 }]
     }), // scorer-only fire → added
+    // Scored but not fired with score > 0 → shows a cutBy reason chip ('cap').
+    scoredRow('F', 5, { fired: false, score: 2, cutBy: 'cap' }),
     scoredRow('B', 1, { fired: false, score: 0 }),
     scoredRow('D', 3, { fired: false, score: 0 }) // fires nowhere, score 0 → inert
   ]
@@ -113,6 +117,10 @@ describe('RetrievalPanel unified comparison table', () => {
     expect(container.querySelector('.rt-row-added')).toBeTruthy() // E: scorer adds
     expect(container.querySelector('.rt-row-dropped')).toBeTruthy() // B: scorer drops
     expect(container.querySelector('.rt-cell-delta')).toBeTruthy() // B fires only with pins
+    // F: scored but not fired (score > 0) shows its cutBy reason chip.
+    const cut = container.querySelector('.rt-scored-cut')
+    expect(cut).toBeTruthy()
+    expect(cut?.textContent).toBe('cap')
 
     // Constants live in the strip; the inert D row is hidden behind the toggle.
     expect(view.getByText('1 constant entries — always fire')).toBeTruthy()
