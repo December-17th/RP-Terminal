@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useT } from '../../i18n'
-import type {
-  RetrievalPreviewResponse,
-  RetrievalTraceRow
+import {
+  DEFAULT_SCORING_PARAMS,
+  type RetrievalPreviewResponse,
+  type RetrievalTraceRow,
+  type ScoredEntryRow,
+  type ScoringParams
 } from '../../../../shared/retrievalTrace'
 
 /**
@@ -28,6 +31,11 @@ export function RetrievalPanel(): React.ReactElement {
   const [charNames, setCharNames] = useState<Record<string, string>>({})
   const [action, setAction] = useState<string>('')
   const [extraPins, setExtraPins] = useState<string>('')
+  // Scorer tuning knobs (PoC). Held as strings so an empty field is omitted and main applies its default.
+  const [lambda, setLambda] = useState<string>(String(DEFAULT_SCORING_PARAMS.lambda))
+  const [hopDecay, setHopDecay] = useState<string>(String(DEFAULT_SCORING_PARAMS.hopDecay))
+  const [pinBoost, setPinBoost] = useState<string>(String(DEFAULT_SCORING_PARAMS.pinBoost))
+  const [topK, setTopK] = useState<string>(String(DEFAULT_SCORING_PARAMS.topK))
   const [result, setResult] = useState<RetrievalPreviewResponse | null>(null)
   const [running, setRunning] = useState(false)
 
@@ -65,13 +73,24 @@ export function RetrievalPanel(): React.ReactElement {
       .split(/[\n,]/)
       .map((p) => p.trim())
       .filter(Boolean)
+    // Only include a knob when its field parses to a finite number; otherwise main applies the default.
+    const scoring: Partial<ScoringParams> = {}
+    const put = (key: keyof ScoringParams, raw: string): void => {
+      const n = Number(raw.trim())
+      if (raw.trim() !== '' && Number.isFinite(n)) scoring[key] = n
+    }
+    put('lambda', lambda)
+    put('hopDecay', hopDecay)
+    put('pinBoost', pinBoost)
+    put('topK', topK)
     setRunning(true)
     try {
       const res: RetrievalPreviewResponse = await window.api.retrievalPreview(
         profileId,
         chatId,
         action,
-        extra
+        extra,
+        scoring
       )
       setResult(res)
     } finally {
@@ -136,6 +155,46 @@ export function RetrievalPanel(): React.ReactElement {
             value={extraPins}
             placeholder={t('debug.retrievalExtraPinsPlaceholder')}
             onChange={(e) => setExtraPins(e.target.value)}
+          />
+        </label>
+        <label className="rt-field rt-field-num">
+          <span className="rt-field-label">{t('debug.scoreLambda')}</span>
+          <input
+            className="rt-input"
+            type="number"
+            step="0.05"
+            value={lambda}
+            onChange={(e) => setLambda(e.target.value)}
+          />
+        </label>
+        <label className="rt-field rt-field-num">
+          <span className="rt-field-label">{t('debug.scoreHopDecay')}</span>
+          <input
+            className="rt-input"
+            type="number"
+            step="0.05"
+            value={hopDecay}
+            onChange={(e) => setHopDecay(e.target.value)}
+          />
+        </label>
+        <label className="rt-field rt-field-num">
+          <span className="rt-field-label">{t('debug.scorePinBoost')}</span>
+          <input
+            className="rt-input"
+            type="number"
+            step="0.5"
+            value={pinBoost}
+            onChange={(e) => setPinBoost(e.target.value)}
+          />
+        </label>
+        <label className="rt-field rt-field-num">
+          <span className="rt-field-label">{t('debug.scoreTopK')}</span>
+          <input
+            className="rt-input"
+            type="number"
+            step="1"
+            value={topK}
+            onChange={(e) => setTopK(e.target.value)}
           />
         </label>
         <button className="rt-run" onClick={() => void run()} disabled={!chatId || running}>
@@ -212,6 +271,8 @@ function RetrievalResult({
         </div>
       )}
 
+      <ScoredSection result={result} />
+
       <details className="rt-scan-details">
         <summary>{t('debug.retrievalScanText')}</summary>
         <pre className="rt-scan">
@@ -220,6 +281,85 @@ function RetrievalResult({
         </pre>
       </details>
     </div>
+  )
+}
+
+/** The deterministic-scorer PoC ranking (debug-only; never influences generation). */
+function ScoredSection({
+  result
+}: {
+  result: Extract<RetrievalPreviewResponse, { ok: true }>
+}): React.ReactElement {
+  const t = useT()
+  const rows = result.scored
+  const p = result.scoringParams
+  return (
+    <section className="rt-scored">
+      <h3 className="rt-group-title">
+        {t('debug.scoreTitle')} <span className="rt-group-count">{rows.length}</span>
+      </h3>
+      <p className="rt-scored-params">
+        {t('debug.scoreParams', {
+          lambda: p.lambda,
+          hop: p.hopDecay,
+          pin: p.pinBoost,
+          topK: p.topK
+        })}
+      </p>
+      {rows.length === 0 ? (
+        <p className="rt-group-empty">{t('debug.retrievalGroupEmpty')}</p>
+      ) : (
+        <ul className="rt-entries">
+          {rows.map((row, i) => (
+            <ScoredRow key={`${row.bookName}:${row.entryId ?? row.comment}:${i}`} row={row} />
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function ScoredRow({ row }: { row: ScoredEntryRow }): React.ReactElement {
+  const t = useT()
+  const cls = [
+    'rt-entry',
+    'rt-scored-row',
+    row.fired ? 'rt-scored-fired' : '',
+    row.disqualified ? 'rt-scored-dq' : ''
+  ]
+    .filter(Boolean)
+    .join(' ')
+  return (
+    <li className={cls}>
+      <div className="rt-entry-head">
+        <span className="rt-entry-book">{row.bookName}</span>
+        <span className="rt-entry-name">{row.comment || t('debug.retrievalUnnamed')}</span>
+      </div>
+      <div className="rt-entry-meta">
+        <span className="rt-chip rt-chip-score">{t('debug.scoreValue', { n: row.score })}</span>
+        {row.constant && <span className="rt-chip rt-chip-reason">{t('debug.scoreConstant')}</span>}
+        {row.disqualified && (
+          <span className="rt-chip rt-chip-dq">{t('debug.scoreSecondaryGate')}</span>
+        )}
+        {row.keyHits.map((h, i) => (
+          <span key={i} className="rt-chip rt-chip-keyhit">
+            {h.pin
+              ? t('debug.scoreKeyHitPin', { key: h.key, idf: h.idf })
+              : t('debug.scoreKeyHitDepth', { key: h.key, idf: h.idf, depth: h.depth ?? 0 })}
+          </span>
+        ))}
+        {row.linkBonus > 0 && row.linkFrom && (
+          <span className="rt-chip rt-chip-link">
+            {t('debug.scoreLink', { from: row.linkFrom, n: row.linkBonus })}
+          </span>
+        )}
+        {row.probabilityFactor < 1 && (
+          <span className="rt-chip rt-chip-prob">
+            {t('debug.scoreProbFactor', { n: row.probabilityFactor })}
+          </span>
+        )}
+      </div>
+    </li>
   )
 }
 

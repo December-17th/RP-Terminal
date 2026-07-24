@@ -128,13 +128,38 @@ const parseRegexKey = (key: string): RegExp | null => {
 // V8 lore-runtime spec): the cache is created at the call entry point and threaded through
 // entryQualifies. Value `null` = "not a valid regex key, use literal". Cached RegExps may carry `g`/`y`
 // state, so lastIndex is reset before every `.test()`.
-type RegexKeyCache = Map<string, RegExp | null>
+export type RegexKeyCache = Map<string, RegExp | null>
 const getRegexKey = (key: string, cache: RegexKeyCache): RegExp | null => {
   const cached = cache.get(key)
   if (cached !== undefined) return cached
   const re = parseRegexKey(key)
   cache.set(key, re)
   return re
+}
+
+/**
+ * The single key-vs-text matcher. A slash-delimited `/pattern/flags` key tests the UNTRANSFORMED text
+ * (its own `i` flag governs case; `caseSensitive` does not apply); a literal key does a case-folded
+ * substring test unless `caseSensitive`. An invalid regex key falls back to literal. `cache` is an
+ * optional per-call compiled-regex cache (regexes may carry `g`/`y` lastIndex state, reset before every
+ * `.test`). Extracted so `qualifyDetail` (the matcher) and the debug-only lore scorer share ONE code
+ * path — matcher behavior is unchanged.
+ */
+export const keyMatchesText = (
+  key: string,
+  text: string,
+  caseSensitive: boolean,
+  cache?: RegexKeyCache
+): boolean => {
+  if (!key) return false
+  const re = cache ? getRegexKey(key, cache) : parseRegexKey(key)
+  if (re) {
+    re.lastIndex = 0 // guard against g/y-flag lastIndex state across calls
+    return re.test(text) // untransformed: the regex's own flags govern case
+  }
+  const needle = caseSensitive ? key : key.toLowerCase()
+  const haystack = caseSensitive ? text : text.toLowerCase()
+  return haystack.includes(needle)
 }
 
 /** The outcome of qualifying one entry against scan text, with the detail the trace viewer needs.
@@ -159,19 +184,11 @@ const qualifyDetail = (
   cache: RegexKeyCache
 ): QualifyDetail => {
   if (entry.constant) return { qualified: true, reason: 'constant' }
-  const haystack = entry.case_sensitive ? scanText : scanText.toLowerCase()
-  // First key that hits (mirrors the old `.some` short-circuit), returning its source string.
+  // First key that hits (mirrors the old `.some` short-circuit), returning its source string. Routes
+  // through the shared `keyMatchesText` so the matcher and the debug scorer can never diverge.
   const firstHit = (keys: string[]): string | undefined => {
     for (const k of keys) {
-      if (!k) continue
-      const re = getRegexKey(k, cache)
-      if (re) {
-        re.lastIndex = 0 // guard against g/y-flag lastIndex state across calls
-        if (re.test(scanText)) return k // untransformed: the regex's own flags govern case
-        continue
-      }
-      const needle = entry.case_sensitive ? k : k.toLowerCase()
-      if (haystack.includes(needle)) return k
+      if (keyMatchesText(k, scanText, entry.case_sensitive, cache)) return k
     }
     return undefined
   }

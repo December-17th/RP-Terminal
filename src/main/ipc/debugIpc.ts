@@ -3,8 +3,33 @@ import { openDebugWindow } from '../services/debugWindowService'
 import { buildGenContext } from '../services/generation/genContext'
 import { buildScanText, buildPinBlock, resolvePins } from '../services/promptBuilder'
 import { matchAcrossTraced } from '../services/lorebookService'
+import { scoreLoreEntries, type ScoreSegment } from '../services/loreScoring'
+import { cleanForHistory } from '../../shared/responseView'
 import { getRpExt } from '../types/character'
-import type { RetrievalPreviewResponse } from '../../shared/retrievalTrace'
+import {
+  DEFAULT_SCORING_PARAMS,
+  type RetrievalPreviewResponse,
+  type ScoringParams
+} from '../../shared/retrievalTrace'
+
+/** Merge a caller's partial scoring params over the defaults, sanitizing bad values (non-finite/negative
+ *  → default; topK floored to an int ≥ 0). Debug-only, so this stays permissive. */
+const sanitizeScoringParams = (raw?: Partial<ScoringParams>): ScoringParams => {
+  const p = raw ?? {}
+  const pos = (v: unknown, d: number): number =>
+    typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : d
+  const topKRaw = p.topK
+  const topK =
+    typeof topKRaw === 'number' && Number.isFinite(topKRaw) && topKRaw >= 0
+      ? Math.floor(topKRaw)
+      : DEFAULT_SCORING_PARAMS.topK
+  return {
+    lambda: pos(p.lambda, DEFAULT_SCORING_PARAMS.lambda),
+    hopDecay: pos(p.hopDecay, DEFAULT_SCORING_PARAMS.hopDecay),
+    pinBoost: pos(p.pinBoost, DEFAULT_SCORING_PARAMS.pinBoost),
+    topK
+  }
+}
 
 /** IPC for the separate Debug window: open/focus (WP-D1) + lorebook retrieval dry-run (WP-D2). */
 export const registerDebugIpc = (ipcMain: IpcMain): void => {
@@ -25,7 +50,8 @@ export const registerDebugIpc = (ipcMain: IpcMain): void => {
       profileId: string,
       chatId: string,
       userAction?: string,
-      extraPinPaths?: string[]
+      extraPinPaths?: string[],
+      scoring?: Partial<ScoringParams>
     ): RetrievalPreviewResponse => {
       const action = userAction ?? ''
       let ctx
@@ -54,6 +80,23 @@ export const registerDebugIpc = (ipcMain: IpcMain): void => {
       // so the viewer shows what WOULD qualify and the two runs are stably comparable.
       const rpt = matchAcrossTraced(books, base + pinBlock, () => 0, ctx.maxRecursion)
       const baseline = matchAcrossTraced(books, base, () => 0, ctx.maxRecursion)
+
+      // Deterministic-scorer PoC (debug-only). Segments mirror buildScanText's floor slice/extraction so
+      // the scorer and the matcher see the same text, but tagged by recency depth (0 = pending action,
+      // 1 = newest floor, …). The pin block is passed separately as the pin-evidence source.
+      const scoringParams = sanitizeScoringParams(scoring)
+      const segments: ScoreSegment[] = []
+      if (action) segments.push({ depth: 0, text: action })
+      const floorSlice = ctx.floors.slice(-Math.max(1, ctx.scanDepth))
+      for (let i = floorSlice.length - 1, depth = 1; i >= 0; i--, depth++) {
+        const f = floorSlice[i]
+        const text = [f.user_message.content, cleanForHistory(f.response.content)]
+          .filter(Boolean)
+          .join('\n')
+        if (text) segments.push({ depth, text })
+      }
+      const scored = scoreLoreEntries(books, segments, pinBlock, scoringParams)
+
       return {
         ok: true,
         baseScanText: base,
@@ -65,7 +108,9 @@ export const registerDebugIpc = (ipcMain: IpcMain): void => {
         resolvedPins,
         rpt: rpt.trace,
         baseline: baseline.trace,
-        lorebookNames: ctx.lorebooks.map((lb) => lb.name)
+        lorebookNames: ctx.lorebooks.map((lb) => lb.name),
+        scored,
+        scoringParams
       }
     }
   )

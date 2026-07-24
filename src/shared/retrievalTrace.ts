@@ -42,6 +42,61 @@ export interface ResolvedPinView {
   adhoc?: boolean
 }
 
+/**
+ * Deterministic lore-scoring PoC (debug window only — NOT wired into generation). Tuning knobs for the
+ * keyword-evidence + one-hop spreading-activation scorer (`loreScoring.scoreLoreEntries`). Lives here in
+ * the pure shared module so the main scorer and the renderer viewer share one definition without the
+ * renderer importing main. */
+export interface ScoringParams {
+  /** Recency decay base: a key hit at scan depth d contributes `lambda ** d`. */
+  lambda: number
+  /** One-hop spreading-activation decay applied to a neighbour's seed score. */
+  hopDecay: number
+  /** Weight a key gets when it matches the appended pin block (vs. transcript recency). */
+  pinBoost: number
+  /** How many top-ranked non-constant entries are flagged `fired`. */
+  topK: number
+}
+
+export const DEFAULT_SCORING_PARAMS: ScoringParams = {
+  lambda: 0.6,
+  hopDecay: 0.5,
+  pinBoost: 2.5,
+  topK: 8
+}
+
+/** One weighted key-evidence hit contributing to an entry's seed score. `depth` is the lowest scan
+ *  segment depth the key matched (null when it only matched via the pin block); `pin` marks a pin hit. */
+export interface ScoredKeyHit {
+  key: string
+  depth: number | null
+  pin: boolean
+  idf: number
+  weight: number
+}
+
+/** One scored lorebook entry in the deterministic-scorer PoC section. */
+export interface ScoredEntryRow {
+  bookName: string
+  entryId?: string
+  comment: string
+  /** Always-on entry (bypasses scoring; reported fired without consuming a top-K slot). */
+  constant: boolean
+  /** Constant, or ranked within the top-K by final score. */
+  fired: boolean
+  /** seedScore + linkBonus, rounded. */
+  score: number
+  seedScore: number
+  linkBonus: number
+  /** entry.probability / 100 (the seed-score multiplier). */
+  probabilityFactor: number
+  keyHits: ScoredKeyHit[]
+  /** Label of the neighbour that donated the one-hop link bonus (present when linkBonus > 0). */
+  linkFrom?: string
+  /** Set when a `selective` entry failed its required secondary-key gate (score 0, no link activation). */
+  disqualified?: 'secondary'
+}
+
 /** Successful `retrieval-preview` result: the base scan text + pin block, matcher tuning, pin status,
  *  and the two traces (RPT = base + [PINS]; baseline = base only). */
 export interface RetrievalPreviewOk {
@@ -64,6 +119,10 @@ export interface RetrievalPreviewOk {
   baseline: RetrievalTraceRow[]
   /** Names of the active lorebooks scanned. */
   lorebookNames: string[]
+  /** Deterministic-scorer PoC ranking (debug window only — never influences generation). */
+  scored: ScoredEntryRow[]
+  /** The (sanitized) scoring params actually used for `scored`. */
+  scoringParams: ScoringParams
 }
 
 /** `retrieval-preview` response: the dry-run result, or a not-found error (unknown/empty chat or card). */

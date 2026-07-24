@@ -16,7 +16,8 @@ declare global {
         profileId: string,
         chatId: string,
         userAction?: string,
-        extraPinPaths?: string[]
+        extraPinPaths?: string[],
+        scoring?: Partial<import('../shared/retrievalTrace').ScoringParams>
       ) => Promise<import('../shared/retrievalTrace').RetrievalPreviewResponse>
       importCharacterDialog: (
         profileId: string

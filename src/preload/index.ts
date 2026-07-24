@@ -616,8 +616,10 @@ const api = {
     profileId: string,
     chatId: string,
     userAction?: string,
-    extraPinPaths?: string[]
-  ) => ipcRenderer.invoke('retrieval-preview', profileId, chatId, userAction, extraPinPaths),
+    extraPinPaths?: string[],
+    scoring?: Partial<import('../shared/retrievalTrace').ScoringParams>
+  ) =>
+    ipcRenderer.invoke('retrieval-preview', profileId, chatId, userAction, extraPinPaths, scoring),
   // Regex
   getRenderRegex: (profileId: string, ctx?: { cardId?: string | null; chatId?: string | null }) =>
     ipcRenderer.invoke('get-render-regex', profileId, ctx),

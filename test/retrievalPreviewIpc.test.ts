@@ -47,9 +47,17 @@ const fakeIpcMain = {
 const invoke = (
   chatId: string,
   action = '',
-  extra?: string[]
+  extra?: string[],
+  scoring?: Record<string, number>
 ): RetrievalPreviewResponse =>
-  handlers.get('retrieval-preview')!({}, PROFILE, chatId, action, extra) as RetrievalPreviewResponse
+  handlers.get('retrieval-preview')!(
+    {},
+    PROFILE,
+    chatId,
+    action,
+    extra,
+    scoring
+  ) as RetrievalPreviewResponse
 
 beforeAll(() => {
   const now = new Date().toISOString()
@@ -71,13 +79,17 @@ beforeAll(() => {
     })
   )
 
-  // A lorebook entry keyed on a word that appears ONLY in the pinned variable value.
+  // A lorebook entry keyed on a word that appears ONLY in the pinned variable value, plus a constant
+  // entry (always-on) used to exercise the deterministic-scorer PoC output.
   saveLorebookById(
     PROFILE,
     BOOK,
     LorebookSchema.parse({
       name: 'Pin World',
-      entries: [{ keys: ['Zephyros'], content: 'The floating city.', comment: 'City' }]
+      entries: [
+        { keys: ['Zephyros'], content: 'The floating city.', comment: 'City' },
+        { constant: true, content: 'Always present.', comment: 'AlwaysOn' }
+      ]
     })
   )
 
@@ -205,5 +217,32 @@ describe('retrieval-preview IPC', () => {
 
   it('returns { ok: false, code: "not-found" } for an unknown chat', () => {
     expect(invoke('no-such-chat')).toEqual({ ok: false, code: 'not-found' })
+  })
+
+  it('includes the deterministic-scorer output with default params', () => {
+    const res = invoke(CHAT)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(Array.isArray(res.scored)).toBe(true)
+    // Defaults are applied when no scoring arg is passed.
+    expect(res.scoringParams).toEqual({ lambda: 0.6, hopDecay: 0.5, pinBoost: 2.5, topK: 8 })
+    // The constant entry appears fired in the scorer output (and first).
+    const always = res.scored.find((r) => r.comment === 'AlwaysOn')!
+    expect(always.constant).toBe(true)
+    expect(always.fired).toBe(true)
+    // The pin-triggered City entry is scored with a pin key hit.
+    const city = res.scored.find((r) => r.comment === 'City')!
+    expect(city.keyHits.some((h) => h.pin)).toBe(true)
+  })
+
+  it('respects a custom scoring arg (topK cap and sanitized params)', () => {
+    const res = invoke(CHAT, '', undefined, { topK: 1, lambda: -5 })
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    // topK floored/kept; the negative lambda is rejected and falls back to the default.
+    expect(res.scoringParams.topK).toBe(1)
+    expect(res.scoringParams.lambda).toBe(0.6)
+    // At most one non-constant entry fires under topK=1.
+    expect(res.scored.filter((r) => r.fired && !r.constant).length).toBeLessThanOrEqual(1)
   })
 })

@@ -325,6 +325,62 @@
   background: var(--rpt-warning-soft);
 }
 
+/* --- Deterministic-scorer PoC section --- */
+.rt-field-num {
+  min-width: 90px;
+  flex: 0 0 auto;
+}
+
+.rt-scored {
+  border: 1px solid var(--rpt-border);
+  border-top: 3px solid var(--rpt-accent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--rpt-bg-secondary);
+}
+
+.rt-scored-params {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--rpt-text-secondary);
+}
+
+.rt-scored-row {
+  opacity: 0.82;
+}
+
+.rt-scored-row.rt-scored-fired {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--rpt-accent) 45%, var(--rpt-border));
+  background: color-mix(in srgb, var(--rpt-accent) 8%, var(--rpt-bg-primary));
+}
+
+.rt-scored-row.rt-scored-dq {
+  opacity: 0.55;
+}
+
+.rt-chip-score {
+  color: var(--rpt-text-primary);
+  font-weight: 700;
+  border-color: color-mix(in srgb, var(--rpt-accent) 40%, var(--rpt-border));
+}
+
+.rt-chip-keyhit {
+  font-variant-numeric: tabular-nums;
+}
+
+.rt-chip-link {
+  color: var(--rpt-text-primary);
+  border-color: color-mix(in srgb, var(--rpt-success) 40%, var(--rpt-border));
+  background: color-mix(in srgb, var(--rpt-success) 10%, transparent);
+}
+
+.rt-chip-dq {
+  color: var(--rpt-warning);
+  border-color: color-mix(in srgb, var(--rpt-warning) 45%, var(--rpt-border));
+  background: var(--rpt-warning-soft);
+}
+
 .rt-scan-details {
   border: 1px solid var(--rpt-border);
   border-radius: 10px;
