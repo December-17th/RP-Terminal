@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
   destroy: vi.fn(),
   notifyEvent: vi.fn(),
   notifyVarsChanged: vi.fn(),
+  cardButtonsFor: vi.fn(() => [{ name: '命定创意工坊' }]),
   requestOverlay: vi.fn(() => true),
   pushHostReload: vi.fn(),
   pushHostVars: vi.fn(),
@@ -71,6 +72,7 @@ vi.mock('../src/main/services/wcvManager', () => ({
   destroy: h.destroy,
   notifyEvent: h.notifyEvent,
   notifyVarsChanged: h.notifyVarsChanged,
+  cardButtonsFor: h.cardButtonsFor,
   requestOverlay: h.requestOverlay,
   pushHostReload: h.pushHostReload,
   pushHostVars: h.pushHostVars,
@@ -160,6 +162,11 @@ const evt = (senderId: number): unknown => ({
 })
 const call = (channel: string, senderId: number, ...args: unknown[]): unknown =>
   handlers.get(channel)!(evt(senderId), ...args)
+const callSync = (channel: string, senderId: number, ...args: unknown[]): unknown => {
+  const e = evt(senderId) as { returnValue?: unknown }
+  handlers.get(channel)!(e, ...args)
+  return e.returnValue
+}
 
 beforeEach(() => {
   handlers.clear()
@@ -270,6 +277,13 @@ describe('broadcast/button channels — WCV sender confined to its bound chat', 
   it('wcv-button-click: honors the caller chatId for a host-renderer sender', () => {
     call('wcv-button-click', RENDERER_ID, 'cX', 'btn')
     expect(h.notifyEvent).toHaveBeenCalledWith('cX', 'btn', undefined)
+  })
+
+  it('hydrates a card WCV from the script-button inventory bound to its sender', () => {
+    expect(callSync('wcv-get-script-buttons-sync', WCV_ID)).toEqual([
+      { name: '命定创意工坊' }
+    ])
+    expect(h.cardButtonsFor).toHaveBeenCalledWith(WCV_ID)
   })
 })
 

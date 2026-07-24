@@ -376,6 +376,15 @@ Runtime restyling of the **play shell + chat message box**, extending the static
 ### UI / misc — ✅ / 🔁
 
 - `toastr.*` — ✅ · `getTavernHelperVersion()` — ✅ (reports ≥ the card's required minimum) · `waitGlobalInitialized()` — ✅ (resolves true) · `errorCatched(fn)` — ✅
+- **Full-screen WCV script actions (RPT-only):**
+  `window.rptHost.onScriptButtons(cb)` immediately delivers the active card-script engine's complete visible
+  `Array<{name:string}>`, delivers later replacements, and returns an unsubscribe.
+  `window.rptHost.activateScriptButton(name)` activates that action through the existing
+  `eventOn(getButtonEvent(name), handler)` route. The inventory is scoped to the calling WCV's session,
+  supports late-mounted surfaces, and clears with the card-script engine. The card supplies the strip DOM
+  and styling. WCV-only: TavernHelper `getScriptButtons()` state remains local to each runtime. Backed by
+  [`wcvPreload.ts`](../src/preload/wcvPreload.ts), [`wcvIpc.ts`](../src/main/ipc/wcvIpc.ts), and
+  [`wcvManager.ts`](../src/main/services/wcvManager.ts).
 - Audio (background music / SFX) — 🔁 stubs (`audioPlay`/`audioPause`/`audioImport`/`audioMode`/`audioEnable`, no-op + logged). Cards play audio directly under the CSP (native `<audio>`/WebAudio) — the real path.
 
 ### Combat — ✅ (Track Combat)
