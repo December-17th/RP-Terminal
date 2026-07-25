@@ -569,6 +569,10 @@ export const getDb = (): Database.Database => {
   // be migrated into profiles/<id>/chats/<chatId>/session.sqlite; 1 = migrated (or born decentralized).
   // Pre-existing chats default to 0 (migrated on next startup); createChat writes 1 for new chats.
   addColumnIfMissing(db, 'chats', 'session_migrated', 'session_migrated INTEGER NOT NULL DEFAULT 0')
+  // ADR 0023 (Assembly Epoch): per-chat counter bumped by any assembly-relevant edit (variables/
+  // transcript below the latest floor, referenced lorebook/card/preset, lorebook selection or mode).
+  // Missing/NULL reads as 0; a floor whose stored epoch no longer matches falls back to full reassembly.
+  addColumnIfMissing(db, 'chats', 'assembly_epoch', 'assembly_epoch INTEGER')
   // TH-2 swipes: alternate responses per floor + the active index.
   addColumnIfMissing(db, 'floors', 'swipes', 'swipes TEXT')
   addColumnIfMissing(db, 'floors', 'swipe_id', 'swipe_id INTEGER')
@@ -578,6 +582,10 @@ export const getDb = (): Database.Database => {
   addColumnIfMissing(db, 'floors', 'metrics', 'metrics TEXT')
   // Display-only plot-recall directive (recall's plot_block), rendered in the collapsible plot panel.
   addColumnIfMissing(db, 'floors', 'plot_block', 'plot_block TEXT')
+  // ADR 0023 (Assembly Epoch): the chat epoch this floor was assembled under (NULL = legacy/stale).
+  // Floors live in the per-chat session DB now (sessionDbService); this keeps the legacy central shape
+  // in parity — the session schema folds the same column inline + migrates existing session stores.
+  addColumnIfMissing(db, 'floors', 'assembly_epoch', 'assembly_epoch INTEGER')
   // WP4.6: pin_version records which pack version an activation runs (version-coexistence). Add it to
   // a pre-WP4.6 activation table, then BACKFILL null pins from the just-migrated agent_packs: a legacy
   // DB held exactly one version per pack id, so that version is the unambiguous pin for its rows. A

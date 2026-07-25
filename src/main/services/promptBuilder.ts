@@ -7,6 +7,7 @@ import { parseEntryMarker, markerIndex, Marker, InjectMarker } from '../parsers/
 import { applyRegex, RenderRegexRule } from './regexService'
 import { evalTemplate, evalTemplateDetailed, TemplateContext } from './templateService'
 import { cleanForHistory } from '../../shared/responseView'
+import { getPath } from '../../shared/objectPath'
 import { log } from './logService'
 import { expandMacros, MacroContext } from '../../shared/macros'
 import { buildStateBlock } from './cacheLayers'
@@ -248,6 +249,73 @@ export const buildScanText = (floors: FloorFile[], userAction: string, scanDepth
   ]
     .filter(Boolean)
     .join('\n')
+
+const isPinScalar = (v: unknown): v is string | number | boolean =>
+  typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+
+/** Render one pin value into scan text, or `undefined` to skip it. Scalars stringify; a short
+ * (≤8) array of scalars joins with ", "; objects, long/non-scalar arrays, null/undefined all skip —
+ * never guess or stringify structured state into the matcher input. */
+const renderPinValue = (value: unknown): string | undefined => {
+  if (isPinScalar(value)) return String(value)
+  if (Array.isArray(value) && value.length <= 8 && value.every(isPinScalar)) {
+    return value.map(String).join(', ')
+  }
+  return undefined
+}
+
+/**
+ * Context pins (WP-L3): build the pin block appended to the lore SCAN TEXT so state-relevant keyed
+ * entries keep firing after recent messages stop naming them. The block is matcher input ONLY — it
+ * is never threaded into the assembled prompt (only `buildGenContext` concatenates it onto the
+ * `buildScanText` result, which feeds `matchAcross`; `buildScanText` itself never contains it).
+ *
+ * Canonical, byte-stable-for-a-given-state format (order = `pin_paths` config order, label = last
+ * dot-segment of the path):
+ *   `\n[PINS] location: 王都 | party: 艾莉亚, 尤兹`
+ * Returns '' when no pin resolves, so the scan text is byte-identical to the no-pins case.
+ */
+/** One pin path that resolved to a usable scan-text value. `label` = last dot-segment (the pin block
+ *  label); `value` = the rendered scalar/short-array string. */
+export interface ResolvedPin {
+  path: string
+  label: string
+  value: string
+}
+
+/**
+ * The single pin-resolution codepath: for each path, render its current value (scalars, and short
+ * all-scalar arrays; objects / long arrays / missing paths contribute nothing). `buildPinBlock` and the
+ * retrieval diagnostics both read from here so a path resolves identically everywhere.
+ */
+export const resolvePins = (
+  vars: Record<string, any>,
+  pinPaths: string[] | undefined
+): ResolvedPin[] => {
+  if (!pinPaths?.length) return []
+  const out: ResolvedPin[] = []
+  for (const path of pinPaths) {
+    const rendered = renderPinValue(getPath(vars, path))
+    if (rendered === undefined) {
+      // Missing path, object, or long/non-scalar array — contribute nothing.
+      log('info', `context pin "${path}" skipped (missing or unsupported value)`)
+      continue
+    }
+    const label = path.split('.').pop() || path
+    out.push({ path, label, value: rendered })
+  }
+  return out
+}
+
+export const buildPinBlock = (
+  vars: Record<string, any>,
+  pinPaths: string[] | undefined
+): string => {
+  const resolved = resolvePins(vars, pinPaths)
+  return resolved.length
+    ? `\n[PINS] ${resolved.map((r) => `${r.label}: ${r.value}`).join(' | ')}`
+    : ''
+}
 
 /**
  * Assemble the final provider message array from the card, preset ordering,

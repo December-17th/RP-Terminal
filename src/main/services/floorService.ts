@@ -10,6 +10,7 @@ import { createFloorState } from './agentRuntime/floorState/FloorState'
 // below don't each re-derive it. (The combat-mode resolver is process-wide on FloorState; both this
 // and the bare factory above inherit it.)
 import { floorStateForChat, type FloorTranscriptUpdate } from './agentRuntime/floorState'
+import { bumpAssemblyEpoch } from './assemblyEpochService'
 
 /** Per-chat floor-variable write lock key (agent-packs WP1.5; ADR 0003). Floors are keyed by
  *  `chat_id` in SQLite (PRIMARY KEY (chat_id, floor)), so a chat is the write-serialization scope —
@@ -199,6 +200,16 @@ export const getFloorCount = (_profileId: string, chatId: string): number => {
     ?.prepare('SELECT COUNT(*) AS n FROM floors WHERE chat_id = ?')
     .get(chatId) as { n: number } | undefined
   return row?.n ?? 0
+}
+
+/**
+ * ADR 0023 (Assembly Epoch): an edit to a floor STRICTLY BELOW the latest changes what a later floor's
+ * prompt was assembled from, so the chat's stored prompts are stale → bump. A latest-floor edit does
+ * NOT bump: that floor's own response/swipes/variables never feed its own prompt (they die with the cut
+ * on regenerate), so browse-then-swipe-again on the latest floor stays a clean Resample.
+ */
+const bumpEpochIfBelowLatest = (profileId: string, chatId: string, floor: number): void => {
+  if (floor < getFloorCount(profileId, chatId) - 1) bumpAssemblyEpoch(profileId, chatId)
 }
 
 // Denormalized session-summary maintained on the CENTRAL `chats` index (plan §B3), so `getChats`/
@@ -395,6 +406,8 @@ export const setActiveSwipe = (
     swipes: floor.swipes,
     swipeId: swipe_id
   })
+  // ADR 0023: switching the active swipe of a floor below the latest changes later floors' prompts.
+  bumpEpochIfBelowLatest(profileId, chatId, floorIndex)
   return floor
 }
 
@@ -421,6 +434,8 @@ export const addSwipe = (
     swipes: floor.swipes,
     swipeId: state.swipe_id
   })
+  // ADR 0023: appending/activating a swipe on a floor below the latest changes later floors' prompts.
+  bumpEpochIfBelowLatest(profileId, chatId, floorIndex)
   return floor
 }
 
@@ -432,12 +447,14 @@ export const updateFloorFields = (
   userContent: string | null,
   responseContent: string | null
 ): void => {
-  // Either field, both, or neither — `editFloorTranscript` no-ops on the last case.
-  editFloorTranscript(profileId, chatId, {
+  // Either field, both, or neither — `editFloorTranscript` no-ops (returns false) on the last case.
+  const edited = editFloorTranscript(profileId, chatId, {
     floor: floorIndex,
     ...(userContent !== null ? { userContent } : {}),
     ...(responseContent !== null ? { responseContent } : {})
   })
+  // ADR 0023: an in-place text edit to a floor below the latest invalidates later floors' prompts.
+  if (edited) bumpEpochIfBelowLatest(profileId, chatId, floorIndex)
 }
 
 /** Replace only a floor's active assistant text (and its active swipe) without replaying MVU. This is
@@ -496,6 +513,9 @@ export const deleteFloorAndSubsequent = (
   notifyEvidenceDeleted()
   refreshChatSummary(chatId) // floor_count + last-floor changed (B3)
   bumpTranscriptEpoch(chatId) // truncation (regenerate / floor delete)
+  // ADR 0023: a CUT deliberately does NOT bump the Assembly Epoch. The surviving floors' stored prompts
+  // are unaffected (a floor's prompt depends only on floors below it, which all survive), and the
+  // Resample flow itself performs the cut before replaying — bumping here would defeat its own reuse.
   for (const fn of transcriptCutListeners) {
     try {
       fn(profileId, chatId, fromFloorIndex)

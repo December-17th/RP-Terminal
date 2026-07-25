@@ -4,6 +4,14 @@ import { log, getLogs, clearLogs, setFullTrace } from '../src/main/services/logS
 // logService imports BrowserWindow from 'electron' — resolved to test/mocks/electron.ts
 // (getAllWindows() → []), so `log()` runs without a live Electron runtime.
 
+// Extract the multiline detail body the console mirror printed for a `[level] label\n<detail>` line.
+const consoleDetailOf = (spy: ReturnType<typeof vi.spyOn>): string | undefined => {
+  const call = spy.mock.calls.at(-1)
+  const line = call?.[0] as string
+  const nl = line.indexOf('\n')
+  return nl === -1 ? undefined : line.slice(nl + 1)
+}
+
 describe('logService bounded detail', () => {
   beforeEach(() => {
     clearLogs()
@@ -100,5 +108,70 @@ describe('logService bounded detail', () => {
       8 * 1024 * 1024
     )
     expect(logs[0].detail).toContain('bytes total]')
+  })
+})
+
+describe('logService console preview', () => {
+  const PREVIEW = 1024
+  let logSpy: ReturnType<typeof vi.spyOn>
+  let errorSpy: ReturnType<typeof vi.spyOn>
+  beforeEach(() => {
+    clearLogs()
+    setFullTrace(false)
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+  afterEach(() => {
+    clearLogs()
+    setFullTrace(false)
+    vi.restoreAllMocks()
+  })
+
+  it('mirrors a small detail (<1KB) to the console in full', () => {
+    log('info', 'small', 'hello world')
+    expect(consoleDetailOf(logSpy)).toBe('hello world')
+    expect(consoleDetailOf(logSpy)).not.toContain('more bytes')
+  })
+
+  it('mirrors a large detail as a ≤1KB preview naming the remaining bytes; ring keeps the full detail', () => {
+    // 4KB detail — under the 16KB ring cap (so the ring keeps it whole) but over the 1KB console cap.
+    const big = 'x'.repeat(4096)
+    log('request', 'huge', big)
+
+    const preview = consoleDetailOf(logSpy) as string
+    expect(preview).toBeDefined()
+    // Console preview is bounded, marker included.
+    expect(Buffer.byteLength(preview, 'utf8')).toBeLessThanOrEqual(PREVIEW)
+    // Marker names the bytes NOT shown and points at the Logs panel.
+    const shownBytes = Buffer.byteLength(preview.slice(0, preview.indexOf('… [+')), 'utf8')
+    const remaining = Buffer.byteLength(big, 'utf8') - shownBytes
+    expect(preview).toContain(`[+${remaining} more bytes — see Logs panel]`)
+
+    // The ring entry retains the FULL bounded detail, untouched by the preview.
+    const entry = getLogs()[0]
+    expect(entry.detail).toBe(big)
+    expect(entry.detail).not.toContain('more bytes')
+  })
+
+  it('never splits a multibyte CJK char in the preview (no U+FFFD)', () => {
+    // ~9KB of CJK (3 bytes each) — well over the 1KB console cap; the byte-boundary cut must land
+    // on a char boundary, not mid-codepoint.
+    const cjk = '汉'.repeat(3072)
+    log('request', 'cjk', cjk)
+    const preview = consoleDetailOf(logSpy) as string
+    expect(Buffer.byteLength(preview, 'utf8')).toBeLessThanOrEqual(PREVIEW)
+    expect(preview).not.toContain('�')
+    expect(preview).toContain('more bytes — see Logs panel]')
+  })
+
+  it('routes error level through console.error with the same preview rule', () => {
+    const big = 'e'.repeat(4096)
+    log('error', 'boom', big)
+    // Went to console.error, not console.log.
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    expect(logSpy).not.toHaveBeenCalled()
+    const preview = consoleDetailOf(errorSpy) as string
+    expect(Buffer.byteLength(preview, 'utf8')).toBeLessThanOrEqual(PREVIEW)
+    expect(preview).toContain('more bytes — see Logs panel]')
   })
 })

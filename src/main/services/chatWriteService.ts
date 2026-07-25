@@ -11,6 +11,7 @@ import * as chatService from './chatService'
 import { chatIndexMap } from '../../shared/thRuntime/shapes'
 import type { FloorFile } from '../types/chat'
 import { floorStateForChat, type FloorTranscriptUpdate } from './agentRuntime/floorState'
+import { bumpAssemblyEpoch } from './assemblyEpochService'
 
 /**
  * Edit message content by chat-array index (TH setChatMessages). Returns the count of floors actually
@@ -53,6 +54,8 @@ export function setChatMessages(profileId: string, chatId: string, messages: unk
         })
       )
     )
+  // ADR 0023: a card edit to any floor below the latest invalidates later floors' stored prompts.
+  if ([...touched].some((fi) => fi < floors.length - 1)) bumpAssemblyEpoch(profileId, chatId)
   return touched.size
 }
 
@@ -127,6 +130,8 @@ export function saveChat(profileId: string, chatId: string, chat: unknown): Save
     if (changedFrom === null || f.floor < changedFrom) changedFrom = f.floor
   })
   if (updates.length) floorStateForChat(chatId)?.updateTranscript(chatId, updates)
+  // ADR 0023: a card save that changed a floor below the latest invalidates later floors' stored prompts.
+  if (changedFrom !== null && changedFrom < floors.length - 1) bumpAssemblyEpoch(profileId, chatId)
   return { ok: true, changedFrom }
 }
 

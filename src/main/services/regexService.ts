@@ -9,6 +9,7 @@ import {
   listFilesSync
 } from './storageService'
 import { log } from './logService'
+import { bumpAllAssemblyEpochs } from './assemblyEpochService'
 import { applyRegexRules, RegexApplyContext } from '../../shared/regexTransform'
 import {
   storeRuleToTavernRegex,
@@ -60,6 +61,19 @@ const readMeta = (profileId: string): Record<string, ScopeMeta> =>
 export const getScriptScope = (profileId: string, file: string): ScopeMeta =>
   getScopeMeta(regexDir(profileId), file)
 
+/**
+ * ADR 0023: prompt-phase regex rules are a first-class ASSEMBLY input — `assemblePrompt` reads
+ * `getPromptRules` / `getWorldInfoRules` fresh on every build (assemble.ts) and applies them to the
+ * history and to each activated lorebook entry. So any mutation of the regex store makes every stored
+ * prompt in the profile stale, and a re-roll must reassemble instead of Resampling — otherwise the
+ * player edits a regex, re-rolls, and silently gets the pre-edit prompt back.
+ *
+ * Coarse (bump-all) on purpose, matching `presetService`: resolving which chats a rule's scope/owner
+ * actually reaches is not worth it when a false positive costs one normal reassembly. Called from the
+ * mutation choke points below; the display-only `setScriptRenderMode` deliberately does NOT bump.
+ */
+const invalidateAssembly = (profileId: string): void => bumpAllAssemblyEpochs(profileId)
+
 /** Assign a regex script's scope (and owner for world/session), preserving its disabled flag. */
 export const setScriptScope = (
   profileId: string,
@@ -69,12 +83,14 @@ export const setScriptScope = (
 ): void => {
   if (isUnsafe(file)) return
   setScope(regexDir(profileId), file, scope, owner)
+  invalidateAssembly(profileId) // scope decides which chats a prompt-phase rule applies to
 }
 
 /** Enable/disable a whole regex script (independent of its scope). */
 export const setScriptDisabled = (profileId: string, file: string, disabled: boolean): void => {
   if (isUnsafe(file)) return
   setDisabled(regexDir(profileId), file, disabled)
+  invalidateAssembly(profileId)
 }
 
 /** Set/clear a regex script's per-card render-mode override (null = follow global default). */
@@ -422,6 +438,7 @@ export const saveRegexScript = (
   if (typeof declaredMode === 'string' && VALID_MODES.has(declaredMode as CardRenderMode)) {
     setRenderMode(regexDir(profileId), fileName, declaredMode as CardRenderMode)
   }
+  invalidateAssembly(profileId)
   return rules[0]?.scriptName || rules[0]?.name || 'Imported regex'
 }
 
@@ -430,6 +447,7 @@ export const deleteScript = (profileId: string, file: string): void => {
   const p = path.join(regexDir(profileId), file)
   if (fs.existsSync(p)) fs.unlinkSync(p)
   removeScopeEntry(regexDir(profileId), file) // keep the sidecar free of orphans
+  invalidateAssembly(profileId)
 }
 
 /**
@@ -541,4 +559,5 @@ export const updateRule = (
   if (patch.trimStrings !== undefined) rule.trimStrings = patch.trimStrings
 
   writeJsonSyncAtomic(p, Array.isArray(data) ? arr : arr[0])
+  invalidateAssembly(profileId) // find/replace/promptOnly/disabled all change assembled output
 }

@@ -361,6 +361,26 @@ _Avoid_: main agent
 The player-facing Agent that produces the next Yuzu/IVN scene as a YSS Result.
 _Avoid_: Yuzu narrator, VN agent
 
+### The lore runtime
+
+**Context Pin**:
+A card-declared variable path whose current value is appended to the lore scan text each turn, so
+state-relevant lorebook entries keep matching after recent messages stop naming them. Pinned values
+are visible only to lore matching, never to the model's prompt.
+_Avoid_: pin role, scan variable
+
+**Assembly Epoch**:
+The per-chat marker that advances whenever something that could change prompt assembly is edited —
+variables, transcript, lorebooks, preset, or card. A floor remembers the epoch it was assembled
+under; a floor whose epoch is current still has a faithful stored prompt.
+_Avoid_: dirty flag, edit counter
+
+**Resample**:
+Regenerating or swiping by replaying the floor's stored prompt byte-for-byte and drawing only a new
+model response. Available only while the floor's Assembly Epoch is current; otherwise regenerate
+falls back to full reassembly with fresh lore selection.
+_Avoid_: reroll, prompt reuse, cached regenerate
+
 ### The card runtime seam
 
 **Host**:

@@ -1,6 +1,7 @@
 import { safeStorage } from 'electron'
 import { getDb } from './db'
 import { setFullTrace } from './logService'
+import { bumpAllAssemblyEpochs } from './assemblyEpochService'
 import { Settings, ApiPreset, PersonaPreset, ModeConfig, AgentMode } from '../types/models'
 
 // API keys are encrypted at rest via the OS keyring (Electron safeStorage). A
@@ -420,6 +421,9 @@ export const saveSettings = (profileId: string, settings: Settings): void => {
        ON CONFLICT(profile_id) DO UPDATE SET data = excluded.data`
     )
     .run(profileId, JSON.stringify(toStore))
+  // ADR 0023: settings hold profile-global generation inputs (API/model, mode config) that feed every
+  // chat's assembly; bump all chats rather than diff which fields changed — a false positive is cheap.
+  bumpAllAssemblyEpochs(profileId)
   // Apply the trace flag immediately on save (don't wait for a getSettings round-trip).
   setFullTrace(!!settings.logs?.full_trace)
 }

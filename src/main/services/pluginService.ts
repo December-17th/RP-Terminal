@@ -1,6 +1,7 @@
 import path from 'path'
 import { getChat, appendFloor, truncateFloors } from './chatService'
 import { editFloorTranscript, getAllFloors, getFloor } from './floorService'
+import { bumpAssemblyEpoch } from './assemblyEpochService'
 import { normalizeSwipes } from './swipeHelpers'
 import { loadGlobals, saveGlobals } from './templateService'
 import { getAppDir, readJsonSync, writeJsonSyncAtomic } from './storageService'
@@ -223,6 +224,10 @@ export const pluginVars = (profileId: string, chatId: string, action: VarAction)
   const operation = journalOperation(store, action, before)
   if (!operation) return { value, scope, store }
   floorStateForChat(chatId)?.append(chatId, target, 'card', [operation])
+  // ADR 0023: a message-scoped setvar targeting a floor BELOW the latest changes later floors' prompts
+  // (variables seed the next assembly), so the chat's stored prompts are now stale. A write to the
+  // latest floor (local scope, or message == latest) does not bump.
+  if (target < count - 1) bumpAssemblyEpoch(profileId, chatId)
   return { value, scope, store: getFloor(profileId, chatId, target)?.variables ?? store }
 }
 

@@ -4,10 +4,11 @@ import { getCharacter } from '../characterService'
 import { getLorebookById } from '../lorebookService'
 import { getChat, getChatLorebookIds, getChatMode, isYuzuMode } from '../chatService'
 import { getAllFloors, getFloorRequest } from '../floorService'
-import { buildScanText } from '../promptBuilder'
+import { buildScanText, buildPinBlock } from '../promptBuilder'
 import { loadGlobals } from '../templateService'
 import { frozenVarsFor } from '../cacheLayers'
-import { Lorebook } from '../../types/character'
+import { Lorebook, getRpExt } from '../../types/character'
+import { getAssemblyEpoch } from '../assemblyEpochService'
 import { GenContext } from './types'
 
 /**
@@ -76,7 +77,18 @@ export const buildGenContext = (
     ? (modeConfig.scan_depth ?? settings.lorebook?.scan_depth ?? 3)
     : (settings.lorebook?.scan_depth ?? 3)
   const maxRecursion = settings.lorebook?.max_recursion ?? 0
-  const scanText = buildScanText(floors, userAction, scanDepth)
+  // Context pins (WP-L3): append the card-declared variable snapshot to the SCAN TEXT only. This
+  // flows into matchWorldInfo/matchAcross (first pass + recursion) but never into the assembled
+  // prompt — the pin block lives solely on this matcher-input string.
+  //
+  // GATED OFF BY DEFAULT (`settings.lorebook.context_pins`). Pins are the only RPT extension that
+  // widens what the matcher sees beyond ST's conversation-text keyword scan, so a card declaring
+  // `pin_paths` must NOT be able to change retrieval behavior on its own — the app owner opts in.
+  // With the flag off, `scanText` is byte-identical to the pre-WP-L3 ST keyword baseline.
+  const pinsEnabled = settings.lorebook?.context_pins === true
+  const scanText =
+    buildScanText(floors, userAction, scanDepth) +
+    (pinsEnabled ? buildPinBlock(workingVars, getRpExt(card)?.pin_paths) : '')
 
   return {
     profileId,
@@ -104,6 +116,10 @@ export const buildGenContext = (
     frozenVars,
     scanDepth,
     maxRecursion,
-    scanText
+    scanText,
+    // ADR 0023: read the epoch HERE — before assembly consumes any lorebook/preset/regex/variable
+    // input — so the value `persistFloor` stamps describes the world this prompt was built from. A
+    // read at persist time would sit after the model call and could absorb a mid-stream edit.
+    assemblyEpoch: getAssemblyEpoch(profileId, chatId)
   }
 }

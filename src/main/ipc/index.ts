@@ -23,6 +23,7 @@ import { registerUpdateIpc } from './updateIpc'
 import { registerAgentRunIpc } from './agentRunIpc'
 import { registerAgentCatalogIpc } from './agentCatalogIpc'
 import { registerAgentLabIpc } from './agentLabIpc'
+import { registerDebugIpc } from './debugIpc'
 
 /** Register every IPC handler, grouped by domain. Called once after app-ready. */
 export const registerIpc = (ipcMain: IpcMain): void => {
@@ -50,4 +51,5 @@ export const registerIpc = (ipcMain: IpcMain): void => {
   registerAgentRunIpc(ipcMain)
   registerAgentCatalogIpc(ipcMain)
   registerAgentLabIpc(ipcMain)
+  registerDebugIpc(ipcMain)
 }

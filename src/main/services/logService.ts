@@ -20,6 +20,11 @@ const MAX_DETAIL_BYTES = 16 * 1024
 // individually capped at MAX_RING_BYTES, so the ring can never retain more than MAX_RING_BYTES of
 // detail in total.
 const MAX_RING_BYTES = 8 * 1024 * 1024
+// Cap on how much of an entry's `detail` is mirrored to the terminal (stdout/stderr), in UTF-8 BYTES.
+// Large details (request prompts, AI responses) are multi-KB JSON/prose with escaped newlines that turn
+// the terminal into an unstructured wall of text. The in-app Logs panel receives the FULL bounded entry
+// and is the right surface for the whole thing; the console only needs a preview to signal what happened.
+const CONSOLE_PREVIEW_BYTES = 1024
 
 const buffer: LogEntry[] = []
 // Sum of retained `detail` UTF-8 bytes, kept in step with `buffer` for O(1) budgeting.
@@ -70,7 +75,11 @@ export const log = (level: LogLevel, label: string, detail?: unknown): void => {
   while (buffer.length > MAX_ENTRIES) evictOldest()
   while (ringBytes > MAX_RING_BYTES && buffer.length > 1) evictOldest()
 
-  const line = `[${level}] ${label}${detailStr ? '\n' + detailStr : ''}`
+  // The console mirror gets a bounded PREVIEW of large details (the full bounded detail stays in the
+  // ring entry and the `log-event` push above). Errors get the same preview rule — a stack's first 1KB
+  // is the useful part.
+  const consoleDetail = detailStr !== undefined ? previewDetail(detailStr) : undefined
+  const line = `[${level}] ${label}${consoleDetail ? '\n' + consoleDetail : ''}`
   if (level === 'error') console.error(line)
   else console.log(line)
 
@@ -91,20 +100,42 @@ const evictOldest = (): void => {
   if (removed?.detail) ringBytes -= Buffer.byteLength(removed.detail, 'utf8')
 }
 
-/** Truncate an oversized detail string so that PREFIX + MARKER fits within `maxBytes` (UTF-8),
- *  never splitting a multibyte character (a split tail decodes to U+FFFD and is dropped). The
- *  marker names the original byte size so nothing silently disappears. */
-const boundDetail = (raw: string, maxBytes: number): string => {
+/** Truncate `raw` so that PREFIX + MARKER fits within `maxBytes` (UTF-8), never splitting a multibyte
+ *  character (a split tail decodes to U+FFFD and is dropped). `buildMarker` names the drop; it is sized
+ *  against `rawBytes` (an upper bound on both counts it may print, since `remainingBytes ≤ rawBytes`)
+ *  so the returned string is guaranteed ≤ `maxBytes` regardless of which count the marker names. */
+const truncateWithMarker = (
+  raw: string,
+  maxBytes: number,
+  buildMarker: (info: { rawBytes: number; remainingBytes: number }) => string
+): string => {
   const rawBytes = Buffer.byteLength(raw, 'utf8')
   if (rawBytes <= maxBytes) return raw
-  const marker = `… [truncated, ${rawBytes} bytes total]`
-  const budget = Math.max(0, maxBytes - Buffer.byteLength(marker, 'utf8'))
+  // Reserve room using the largest the marker can be (both counts = rawBytes → most digits).
+  const sizingMarker = buildMarker({ rawBytes, remainingBytes: rawBytes })
+  const budget = Math.max(0, maxBytes - Buffer.byteLength(sizingMarker, 'utf8'))
   const prefix = Buffer.from(raw, 'utf8')
     .subarray(0, budget)
     .toString('utf8')
     .replace(/�+$/, '')
-  return prefix + marker
+  const remainingBytes = rawBytes - Buffer.byteLength(prefix, 'utf8')
+  return prefix + buildMarker({ rawBytes, remainingBytes })
 }
+
+/** Bound a detail string for the ring, marker naming the original byte size so nothing silently
+ *  disappears. Unchanged behavior: the marker names the total (rawBytes). */
+const boundDetail = (raw: string, maxBytes: number): string =>
+  truncateWithMarker(raw, maxBytes, ({ rawBytes }) => `… [truncated, ${rawBytes} bytes total]`)
+
+/** Preview an (already-bounded) detail string for the console mirror. Anything over the preview cap is
+ *  cut to ≤ CONSOLE_PREVIEW_BYTES with a marker naming the bytes NOT shown, pointing at the Logs panel
+ *  for the rest. Small details pass through untouched. */
+const previewDetail = (detailStr: string): string =>
+  truncateWithMarker(
+    detailStr,
+    CONSOLE_PREVIEW_BYTES,
+    ({ remainingBytes }) => `… [+${remainingBytes} more bytes — see Logs panel]`
+  )
 
 const safeStringify = (value: unknown): string => {
   try {

@@ -326,6 +326,36 @@ export const captureTemplateWrites = (
 }
 
 /**
+ * Derive the sampler params for one call from the ACTIVE preset (+ the FSM mode's output ceiling and
+ * the preset's SPreset ChatSquash stop strings). Extracted verbatim from `assemblePrompt`'s tail so the
+ * Resample path (ADR 0023 / WP-G1) recomputes params from the current preset without re-running any of
+ * assembly — the player can raise temperature and re-roll without changing a byte of the stored prompt.
+ * With no FSM cap and no ChatSquash (a plain preset), this is `{ ...preset.parameters }` (parity).
+ */
+export const deriveSamplingParams = (
+  preset: Preset,
+  fsmEnabled: boolean,
+  modeConfig: { max_output_tokens: number }
+): PresetParameters => {
+  // Agentic mode caps the output ceiling at the FSM mode's limit (e.g. Combat is terse),
+  // never exceeding the preset's own max_tokens. Classic mode uses the preset value as-is.
+  const presetMax = preset.parameters.max_tokens
+  const baseMax = fsmEnabled
+    ? presetMax != null
+      ? Math.min(presetMax, modeConfig.max_output_tokens)
+      : modeConfig.max_output_tokens
+    : presetMax
+  // SPreset ChatSquash stop strings (issue 16, spec:1150-1166): parsed from `stop_string` and forwarded
+  // on the OpenAI-compatible path (params.stop). Empty on native presets → the key is absent (parity).
+  const stopStrings = resolveStopStrings(preset.spreset?.chatSquash)
+  return {
+    ...preset.parameters,
+    max_tokens: baseMax,
+    ...(stopStrings.length ? { stop: stopStrings } : {})
+  }
+}
+
+/**
  * Assemble the exact message array + sampler params sent to the provider. Moved verbatim out of
  * `generate()` (Phase 2b-1a) — same build/trim/reshape pipeline, same request log.
  *
@@ -534,22 +564,9 @@ export const assemblePrompt = (
     chatSquash: chatSquashOpt
   })
 
-  // Agentic mode caps the output ceiling at the FSM mode's limit (e.g. Combat is terse),
-  // never exceeding the preset's own max_tokens. Classic mode uses the preset value as-is.
-  const presetMax = preset.parameters.max_tokens
-  const baseMax = fsmEnabled
-    ? presetMax != null
-      ? Math.min(presetMax, modeConfig.max_output_tokens)
-      : modeConfig.max_output_tokens
-    : presetMax
-  // SPreset ChatSquash stop strings (issue 16, spec:1150-1166): parsed from `stop_string` and forwarded
-  // on the OpenAI-compatible path (params.stop). Empty on native presets → the key is absent (parity).
-  const stopStrings = resolveStopStrings(chatSquashConfig)
-  const params = {
-    ...preset.parameters,
-    max_tokens: baseMax,
-    ...(stopStrings.length ? { stop: stopStrings } : {})
-  }
+  // Sampler params from the active preset (FSM output cap + ChatSquash stop strings) — the extracted
+  // derivation the Resample path reuses; here it consumes THIS assembly's resolved preset.
+  const params = deriveSamplingParams(preset, fsmEnabled, modeConfig)
 
   log(
     'request',

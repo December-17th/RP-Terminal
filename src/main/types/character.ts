@@ -7,6 +7,9 @@ import { AgentDefinitionSchema } from '../../shared/agentRuntime'
  * and object-keyed (standalone world info) sources map onto it.
  */
 export const LorebookEntrySchema = z.object({
+  /** Stable per-entry identity preserved from the source (ST `uid`) or minted once on save
+   * (`saveLorebookById` is the single minting authority). Optional so id-less entries stay parseable. */
+  id: z.string().optional(),
   keys: z.array(z.string()).default([]),
   secondary_keys: z.array(z.string()).default([]),
   content: z.string().default(''),
@@ -244,7 +247,12 @@ export const RPTerminalExtSchema = z
     plugins: z.array(z.any()).optional(),
     agent: z.record(z.string(), z.any()).optional(),
     combat: CombatBundleSchema.optional(),
-    recommended_settings: z.record(z.string(), z.any()).optional()
+    recommended_settings: z.record(z.string(), z.any()).optional(),
+    /** Context pins (WP-L3): dot-paths into the latest-floor variables (e.g. `stat_data.location`)
+     * whose current values are appended to the lore SCAN TEXT so state-relevant keyed entries keep
+     * firing after recent messages stop naming them. Matcher input ONLY — pin values never enter the
+     * model prompt. Resolution + block format live in `buildPinBlock` (`promptBuilder.ts`). */
+    pin_paths: z.array(z.string()).optional()
   })
   // Still catch any further unknown/future slots so the manifest round-trips.
   .catchall(z.any())

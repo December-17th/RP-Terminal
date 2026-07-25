@@ -22,6 +22,7 @@ import * as tableProgressService from './tableProgressService'
 import { deleteChatFully } from './chatDeleteService'
 import { floorStateForChat } from './agentRuntime/floorState'
 import { emitCardFloorCommitted } from './agentRuntime/cardAgentEvents'
+import { bumpAssemblyEpoch } from './assemblyEpochService'
 import type { JsonObject } from '../../shared/agentRuntime'
 
 interface ChatRow {
@@ -173,6 +174,8 @@ export const setChatLorebookIds = (
     .run(ids === null ? null : JSON.stringify(ids), chatId, profileId)
   // The active book set changed — drop the cached match so the next turn re-scans.
   setCachedWorldInfo(profileId, chatId, null)
+  // ADR 0023: the lore selection feeds every assembly, so stored prompts are now stale.
+  bumpAssemblyEpoch(profileId, chatId)
 }
 
 /** The active FSM mode for a session (Phase H); a missing/invalid value defaults to 'explore'. */
@@ -190,6 +193,8 @@ export const setChatMode = (profileId: string, chatId: string, mode: ChatMode): 
   getDb()
     .prepare('UPDATE chats SET mode = ? WHERE id = ? AND profile_id = ?')
     .run(m, chatId, profileId)
+  // ADR 0023: FSM mode selects which world-info band assembles, so stored prompts are now stale.
+  bumpAssemblyEpoch(profileId, chatId)
   notifyChatModeChanged(chatId, m)
 }
 
@@ -208,6 +213,8 @@ export const setVnMode = (profileId: string, chatId: string, on: boolean): void 
   getDb()
     .prepare('UPDATE chats SET vn_mode = ? WHERE id = ? AND profile_id = ?')
     .run(on ? 1 : 0, chatId, profileId)
+  // ADR 0023: VN mode changes the pipeline that assembles the prompt, so stored prompts are now stale.
+  bumpAssemblyEpoch(profileId, chatId)
 }
 
 /** The session-tier workflow override for a chat; null = inherit world/global/builtin (spec §12). */
@@ -385,6 +392,9 @@ export const appendFloor = (profileId: string, chatId: string, floor: FloorFile)
  *  drop the SQL ops at/after the cut and rebuild the sandbox by ordered replay of the survivors
  *  (issue 03 rewind hook). Cheap no-op when no template is assigned. */
 export const truncateFloors = (profileId: string, chatId: string, fromFloor: number): void => {
+  // ADR 0023: a truncation does NOT bump the Assembly Epoch — surviving floors' stored prompts are
+  // unaffected (a floor's prompt depends only on floors below it), and the Resample flow cuts as its
+  // first step, so bumping here would defeat the reuse it exists for. See deleteFloorAndSubsequent.
   deleteFloorAndSubsequent(profileId, chatId, fromFloor)
   // FloorState already removed general and legacy variable operations in the same transaction as
   // the floors. Table-memory journals remain a separate store and rebuild boundary.

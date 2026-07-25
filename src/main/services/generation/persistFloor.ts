@@ -8,6 +8,7 @@ import { FloorMetrics } from '../../../shared/usageTypes'
 import { FloorFile, YuzuGateTrace } from '../../types/chat'
 import { GenContext } from './types'
 import { floorStateForChat, type FloorStateOperation } from '../agentRuntime/floorState'
+import { stampFloorAssemblyEpoch } from '../assemblyEpochService'
 import { log } from '../logService'
 
 /**
@@ -65,6 +66,14 @@ export const persistFloor = (
     floorStateForChat(ctx.chatId)?.setBaseline(ctx.chatId, ctx.floorStateBaseline)
   }
   appendFloor(ctx.profileId, ctx.chatId, floor)
+
+  // ADR 0023 (Assembly Epoch): stamp the floor with the epoch this turn's context was BUILT under
+  // (`ctx.assemblyEpoch`), not a fresh read. A fresh read here sits on the far side of the model call,
+  // so an edit landing mid-stream (a card script writing a lorebook, a settings/preset save, a
+  // background floor edit) would be folded into the stamp — and a prompt assembled before that edit
+  // would look current to Resample, replaying stale bytes. Stamping the build-time epoch inverts the
+  // failure: a mid-turn edit leaves this floor stamped stale, forcing a correct full reassembly.
+  stampFloorAssemblyEpoch(ctx.chatId, floor.floor, ctx.assemblyEpoch)
 
   // Journal this turn's build-time setvar writes against the floor that just landed. Rows only — no
   // replay: `floor.variables` is already the live result, and re-deriving it here would swap the

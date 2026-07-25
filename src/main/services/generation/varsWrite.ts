@@ -1,8 +1,9 @@
-import { getFloor } from '../floorService'
+import { getFloor, getFloorCount } from '../floorService'
 import { applyJsonPatch, JsonPatchOp } from '../../parsers/mvuParser'
 import { log } from '../logService'
 import { FloorFile } from '../../types/chat'
 import { floorStateForChat } from '../agentRuntime/floorState'
+import { bumpAssemblyEpoch } from '../assemblyEpochService'
 
 // Runaway write-back loop breaker (TIMING-INDEPENDENT). NOTE (2026-07-02): this is now a BACKSTOP, not the
 // primary defense. The self-feedback loop is fixed at the source — the card runtime (shared/thRuntime
@@ -107,6 +108,10 @@ export const applyVariableOps = (
     return null
   }
   floorStateForChat(chatId)?.appendPatch(chatId, floor, 'card', ops)
+  // ADR 0023: a panel/card variable write to a floor BELOW the latest changes what later floors
+  // assembled from (variables seed the next prompt), so the chat's stored prompts are now stale. A
+  // latest-floor write does not bump (that floor's own variables never fed its own prompt).
+  if (floor < getFloorCount(profileId, chatId) - 1) bumpAssemblyEpoch(profileId, chatId)
   log(
     'info',
     `variable write-back — floor ${floor}: ${changed.map((d) => d.path).join(', ')}` +

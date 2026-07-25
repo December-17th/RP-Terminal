@@ -23,7 +23,7 @@ export type FloorStateOperation =
   | { kind: 'delete'; path: string }
   | { kind: 'increment'; path: string; value: number }
 
-interface StoredOperation {
+export interface StoredOperation {
   floor: number
   seq: number
   source: FloorOperationSource
@@ -863,6 +863,19 @@ export const createFloorState = (dependencies: FloorStateDependencies) => {
 
     replay(chatId: string, fromFloor: number): ReplaySnapshot[] {
       return publish(chatId, fromFloor, [])
+    },
+
+    /**
+     * Read ONE floor's journaled operations (a copy — never the internal rows). The narrow accessor
+     * the Resample path (ADR 0023 / WP-G1) needs to lift a floor's `'template'`-source pre-fold writes
+     * BEFORE the cut deletes them, so they can be re-journaled against the replacement floor. Unlike
+     * `list`, this does NOT import legacy `vars_ops` (those are `'card'` source, never `'template'`), so
+     * a pre-cut read stays side-effect-free.
+     */
+    readFloorOperations(chatId: string, floor: number): StoredOperation[] {
+      return readStored(chatId)
+        .filter((operation) => operation.floor === floor)
+        .map(cloneJson)
     },
 
     /**
