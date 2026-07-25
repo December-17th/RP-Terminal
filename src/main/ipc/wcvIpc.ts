@@ -1031,8 +1031,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         type,
         mood
       )
-      return localFirstRemoteAssetUrl(local, String(type ?? ''), () =>
-        remoteAssetService.resolveRemoteAssetUrl(ctx.profileId, ctx.chatId, String(name ?? ''))
+      // The KIND comes from the type (立绘bg → char_info_visuals, misc → rpt_misc_assets) and must be
+      // forwarded: the resolver defaults to `character`, so dropping it would serve a portrait for a
+      // `misc` lookup. Kept identical in the inline transport (cardBridge/host.ts).
+      return localFirstRemoteAssetUrl(local, String(type ?? ''), (kind) =>
+        remoteAssetService.resolveRemoteAssetUrl(
+          ctx.profileId,
+          ctx.chatId,
+          String(name ?? ''),
+          kind
+        )
       )
     },
     sceneAssetUrl: (e, location, type) => {
@@ -1057,6 +1065,18 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
         (ctx.characterId ? [ctx.characterId] : [])
       return worldAssetService.assetListForWorld(ctx.profileId, ids, String(name ?? ''), type)
+    },
+    // Card-facing `misc` enumeration (M3): the WHOLE general-purpose card-art namespace, local + remote.
+    // WCV transport — ctx (profile/chat/lorebook ids) resolves from e.sender exactly like assetList, then
+    // the SAME shared body `worldAssetService.miscAssetsForWorld` the inline handler calls, so the two
+    // transports cannot drift. [] when the sender has no bound session.
+    miscAssets: (e) => {
+      const ctx = wcvManager.contextFor(e.sender.id)
+      if (!ctx) return []
+      const ids =
+        chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
+        (ctx.characterId ? [ctx.characterId] : [])
+      return worldAssetService.miscAssetsForWorld(ctx.profileId, ids, ctx.chatId)
     },
     // Card-facing picker-backed import (WA-3): main opens the OS image picker, copies into the calling
     // card's primary world, returns the new rptasset:// URL (null on cancel/invalid). ctx from e.sender; a

@@ -416,7 +416,11 @@ w.TavernHelper = g.TavernHelper
 ;(rptHost as any).closeOverlay = (): Promise<void> => g.closeOverlay()
 // WA-3: the picker-backed asset import is a host-privilege write, so (like requestOverlay) it is surfaced
 // on rptHost too, delegating to the shared-runtime facade. The read-only `assetList` stays a bare global
-// (mirrors assetUrl — Object.assign(w, g) above already exposed it), not on rptHost.
+// (mirrors assetUrl — Object.assign(w, g) above already exposed it), not on rptHost. M3's `miscAssets`
+// follows assetList exactly, for the same reason: it is a pure read, and the inline transport has NO
+// `rptHost` object at all (its bridge copies the runtime's own enumerable keys onto the card window,
+// InlineCardFrame.tsx:75-76), so a bare global + `TavernHelper.miscAssets` is what BOTH transports can
+// actually offer — putting it on rptHost here would be a WCV-only surface, i.e. drift.
 ;(rptHost as any).requestAssetImport = (arg: {
   name: string
   type: string

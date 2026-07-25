@@ -173,6 +173,15 @@ export interface AssetHost {
   // base first as `variant:null`, then variant tokens naturally sorted. Empty array on a miss. Same
   // lorebook-id precedence + category inference as `assetUrl`. Backs the bare `assetList` global.
   assetList(name: string, type: string): Promise<{ variant: string | null; url: string }[]>
+  // Enumerate the calling card's ENTIRE `misc` namespace — general-purpose card art (duel card faces,
+  // item icons, skill art, panel ornaments) that is NOT a character portrait, a location backdrop, or a
+  // CG (M3). Takes no arguments: the app does no matching, it hands over the whole list and the card UI
+  // parses it. LOCAL entries (`<name>_misc[_<variant>].<ext>` in a world's `misc` folder) come first, so
+  // a card taking the first match per name gets the local one; then the newest floor's remote
+  // `variables.rpt_misc_assets` declarations (always `variant: null`). Empty array on a miss or an error.
+  // Backs the bare `miscAssets` global. Both transports bottom out in
+  // `worldAssetService.miscAssetsForWorld`, the single shared body.
+  miscAssets(): Promise<import('../worldAssets/types').MiscAssetItem[]>
   // Import an image into the calling card's world under the naming convention (WA-3): main opens the OS
   // image picker (user-mediated, per the security stance), copies the pick in as `<name>_<type>[_<variant>]`,
   // invalidates the index, and resolves the new rptasset:// URL (null on cancel/invalid). A host-privilege

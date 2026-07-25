@@ -17,12 +17,16 @@ import {
   AssetExt,
   AssetIndex,
   AssetType,
+  AssetTypeEntry,
   ASSET_CATEGORIES,
   ASSET_EXTS,
   ASSET_TYPES,
   categoryForType,
-  isAssetMediaTypeAllowed
+  isAssetMediaTypeAllowed,
+  type MiscAssetItem
 } from '../../shared/worldAssets/types'
+import { REMOTE_MISC_ASSET_TYPE } from '../../shared/worldAssets/remote'
+import { listRemoteAssets } from './remoteAssetService'
 
 /** `<appDir>/profiles/<profileId>/lorebooks/<lorebookId>.assets` */
 const worldAssetsRoot = (profileId: string, lorebookId: string): string =>
@@ -502,6 +506,11 @@ export interface AssetListItem {
   url: string
 }
 
+/** The one natural-sort comparator every card-facing asset enumeration uses (numeric-aware, zh
+ *  collation) so `2` precedes `10` and CJK names order by pinyin — shared by
+ *  {@link assetListForWorld}'s variant sort and {@link miscAssetsForWorld}'s name + variant sorts. */
+const naturalCompare = (a: string, b: string): number => a.localeCompare(b, 'zh', { numeric: true })
+
 /** Enumerate one entry's files (all variants of a single name+type) for a card, as `rptasset://` URLs.
  *  Precedence mirrors {@link assetUrlForWorld}: the FIRST lorebook id that carries this name+type wins —
  *  entries are NOT merged across worlds. Order: the base file first (`variant:null`), then variant tokens
@@ -524,13 +533,76 @@ export function assetListForWorld(
       `rptasset://${profileId}/${id}/${category}/${encodeURIComponent(file)}`
     const out: AssetListItem[] = []
     if (entry.base) out.push({ variant: null, url: urlFor(entry.base) })
-    const variants = Object.keys(entry.moods).sort((a, b) =>
-      a.localeCompare(b, 'zh', { numeric: true })
-    )
+    const variants = Object.keys(entry.moods).sort(naturalCompare)
     for (const v of variants) out.push({ variant: v, url: urlFor(entry.moods[v]) })
     return out
   }
   return []
+}
+
+/**
+ * Enumerate EVERY `misc` asset a card can see — the whole general-purpose card-art namespace (duel card
+ * faces, item icons, skill art, panel ornaments), local files and remote declarations together. This is
+ * the single main-side body behind the card-facing `miscAssets()` on BOTH transports (inline
+ * `worldAssetIpc` `asset-misc-for-card`, WCV `wcvIpc` `wcv-host-misc-assets`), so the two cannot drift.
+ * The app does no matching: it hands the card the list and the card UI parses it (SPEC §What.3).
+ *
+ * Ordering — all LOCAL entries first, then remote, so a card taking the first match per name gets the
+ * local one (the local-first rule that `localFirstRemoteAssetUrl` applies per lookup). Within each half,
+ * names are naturally sorted; within one local name the base file (`variant: null`) comes first, then its
+ * variant tokens naturally sorted. Remote entries are always `variant: null` — the bag has no variants.
+ *
+ * Local precedence mirrors {@link assetListForWorld}/{@link assetUrlForWorld}: for each NAME, the first
+ * lorebook id carrying it wins; entries are NOT merged across worlds. Remote entries come from the newest
+ * persisted floor of `chatId` (`rpt_misc_assets`, HTTPS-only) via `remoteAssetService.listRemoteAssets`.
+ *
+ * Never throws: a bad world root or an unreadable chat degrades to the other half's entries (or `[]`).
+ */
+export function miscAssetsForWorld(
+  profileId: string,
+  lorebookIds: string[],
+  chatId: string
+): MiscAssetItem[] {
+  const category = categoryForType(REMOTE_MISC_ASSET_TYPE)
+  const out: MiscAssetItem[] = []
+
+  // --- local: first lorebook id carrying a NAME wins (no cross-world merge) ---
+  try {
+    const winner = new Map<string, { id: string; entry: AssetTypeEntry }>()
+    for (const id of Array.isArray(lorebookIds) ? lorebookIds : []) {
+      const names = getIndex(profileId, id)[category]
+      if (!names) continue
+      for (const [name, nameEntry] of Object.entries(names)) {
+        const entry = nameEntry[REMOTE_MISC_ASSET_TYPE]
+        if (!entry || winner.has(name)) continue
+        winner.set(name, { id, entry })
+      }
+    }
+    for (const name of [...winner.keys()].sort(naturalCompare)) {
+      const { id, entry } = winner.get(name)!
+      const urlFor = (file: string): string =>
+        `rptasset://${profileId}/${id}/${category}/${encodeURIComponent(file)}`
+      if (entry.base) out.push({ name, variant: null, url: urlFor(entry.base), remote: false })
+      for (const v of Object.keys(entry.moods).sort(naturalCompare))
+        out.push({ name, variant: v, url: urlFor(entry.moods[v]), remote: false })
+    }
+  } catch (e) {
+    log('error', '[world-assets] misc local enumeration failed', e)
+  }
+
+  // --- remote: the newest persisted floor's `rpt_misc_assets` bag for this chat ---
+  try {
+    if (chatId) {
+      const remote = listRemoteAssets(profileId, chatId, 'misc')
+        .map((asset) => ({ name: asset.name, variant: null, url: asset.url, remote: true }))
+        .sort((a, b) => naturalCompare(a.name, b.name))
+      out.push(...remote)
+    }
+  } catch (e) {
+    log('error', '[world-assets] misc remote enumeration failed', e)
+  }
+
+  return out
 }
 
 /** Copy ONE picked source file into a world's assets under the naming convention and return its new

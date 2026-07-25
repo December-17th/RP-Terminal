@@ -53,7 +53,8 @@ describe('WCV_CHANNEL_SPEC drives createWcvHost', () => {
     // 48 → 51 with issue 19's Tier-4 members: savePreset, getExtensionSettingsSync, setExtensionSettings.
     // 51 → 54 with the DisplayHost facet (ADR 0023): renderFloors, displayRevision, setDisplayStreamEnabled.
     // 54 → 55 with getFloorVars (chat-scope reads layer the card KV over the floor's local vars).
-    expect(Object.keys(WCV_CHANNEL_SPEC).length).toBe(55)
+    // 55 → 56 with M3's `miscAssets` (the card-facing `misc` asset-namespace enumeration).
+    expect(Object.keys(WCV_CHANNEL_SPEC).length).toBe(56)
     for (const [member, spec] of Object.entries(WCV_CHANNEL_SPEC)) {
       expect(WCV_CHANNELS[member as WcvSpecMember]).toBe(spec.channel)
     }

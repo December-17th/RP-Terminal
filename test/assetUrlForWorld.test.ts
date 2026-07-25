@@ -9,10 +9,24 @@ vi.mock('../src/main/services/storageService', async () => {
   const actual = await vi.importActual<any>('../src/main/services/storageService')
   return { ...actual, getAppDir: () => tmp }
 })
+// M3: miscAssetsForWorld merges the local `misc` index with the chat's remote `rpt_misc_assets` bag.
+// Stub the remote half at the service seam so this file stays a pure-filesystem test (the real
+// listRemoteAssets is exercised in remoteAssetService.test.ts).
+const remote = vi.hoisted(() => ({ listRemoteAssets: vi.fn(() => [] as any[]) }))
+vi.mock('../src/main/services/remoteAssetService', () => ({
+  listRemoteAssets: remote.listRemoteAssets
+}))
 import * as svc from '../src/main/services/worldAssetService'
 
-const catDir = (lb: string, cat: 'character' | 'location'): string =>
+const catDir = (lb: string, cat: 'character' | 'location' | 'misc'): string =>
   path.join(tmp, 'profiles', 'p1', 'lorebooks', `${lb}.assets`, cat)
+const writeMisc = (lb: string, file: string): void => {
+  const dir = catDir(lb, 'misc')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, file), 'img')
+}
+const miscUrl = (lb: string, file: string): string =>
+  `rptasset://p1/${lb}/misc/${encodeURIComponent(file)}`
 const write = (lb: string, file: string): void => {
   const dir = catDir(lb, 'character')
   fs.mkdirSync(dir, { recursive: true })
@@ -26,6 +40,7 @@ const writeLoc = (lb: string, file: string): void => {
 
 beforeEach(() => {
   svc.clearAssetCache()
+  remote.listRemoteAssets.mockReset().mockReturnValue([])
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rpt-aufw-'))
 })
 afterEach(() => {
@@ -151,6 +166,114 @@ describe('assetListForWorld', () => {
     const list = svc.assetListForWorld('p1', ['w1', 'w2'], '薇拉', '相册')
     expect(list).toEqual([
       { variant: '02', url: `rptasset://p1/w2/character/${encodeURIComponent('薇拉_相册_02.png')}` }
+    ])
+  })
+})
+
+// M3: miscAssetsForWorld is the ONE main-side body behind the card-facing `miscAssets()` on BOTH
+// transports (inline `asset-misc-for-card`, WCV `wcv-host-misc-assets`) — see miscAssetsParity.test.ts.
+// It enumerates the WHOLE `misc` namespace: local files first (so a card taking the first match per name
+// gets the local one), then the chat's remote `rpt_misc_assets` declarations.
+describe('miscAssetsForWorld', () => {
+  const remoteItem = (name: string, file: string): any => ({
+    name,
+    type: 'misc',
+    sourceUrl: `https://cdn.example.test/${file}`,
+    hostname: 'cdn.example.test',
+    mediaKind: 'image',
+    url: `rptremoteasset://misc/p1/c1/${encodeURIComponent(name)}?v=abc123abc123`
+  })
+
+  it('local-only: base first, then variants, names + variants naturally sorted', () => {
+    writeMisc('w1', '陨星裂空_misc.png')
+    writeMisc('w1', '火球术_misc.png')
+    writeMisc('w1', '火球术_misc_10.webp')
+    writeMisc('w1', '火球术_misc_2.webp')
+    expect(svc.miscAssetsForWorld('p1', ['w1'], 'c1')).toEqual([
+      // 火 before 陨 under zh collation; within 火球术, base then 2 then 10 (numeric-aware).
+      { name: '火球术', variant: null, url: miscUrl('w1', '火球术_misc.png'), remote: false },
+      { name: '火球术', variant: '2', url: miscUrl('w1', '火球术_misc_2.webp'), remote: false },
+      { name: '火球术', variant: '10', url: miscUrl('w1', '火球术_misc_10.webp'), remote: false },
+      { name: '陨星裂空', variant: null, url: miscUrl('w1', '陨星裂空_misc.png'), remote: false }
+    ])
+    expect(remote.listRemoteAssets).toHaveBeenCalledWith('p1', 'c1', 'misc')
+  })
+
+  it('omits the base when a name has only variants', () => {
+    writeMisc('w1', '火球术_misc_alt.webp')
+    expect(svc.miscAssetsForWorld('p1', ['w1'], 'c1')).toEqual([
+      { name: '火球术', variant: 'alt', url: miscUrl('w1', '火球术_misc_alt.webp'), remote: false }
+    ])
+  })
+
+  it('remote-only: bag entries are always variant:null and flagged remote', () => {
+    remote.listRemoteAssets.mockReturnValue([remoteItem('陨星裂空', 'meteor.mp4'), remoteItem('火球术', 'fireball.png')])
+    expect(svc.miscAssetsForWorld('p1', ['w1'], 'c1')).toEqual([
+      {
+        name: '火球术',
+        variant: null,
+        url: `rptremoteasset://misc/p1/c1/${encodeURIComponent('火球术')}?v=abc123abc123`,
+        remote: true
+      },
+      {
+        name: '陨星裂空',
+        variant: null,
+        url: `rptremoteasset://misc/p1/c1/${encodeURIComponent('陨星裂空')}?v=abc123abc123`,
+        remote: true
+      }
+    ])
+  })
+
+  it('both: ALL local entries come before any remote one, even for the same name', () => {
+    writeMisc('w1', '陨星裂空_misc.png')
+    remote.listRemoteAssets.mockReturnValue([remoteItem('陨星裂空', 'meteor.png'), remoteItem('火球术', 'fireball.png')])
+    const list = svc.miscAssetsForWorld('p1', ['w1'], 'c1')
+    expect(list.map((i) => [i.name, i.remote])).toEqual([
+      ['陨星裂空', false],
+      ['火球术', true],
+      ['陨星裂空', true]
+    ])
+    // A card taking the FIRST match per name gets the local file, not the remote declaration.
+    expect(list.find((i) => i.name === '陨星裂空')).toEqual({
+      name: '陨星裂空',
+      variant: null,
+      url: miscUrl('w1', '陨星裂空_misc.png'),
+      remote: false
+    })
+  })
+
+  it('honors lorebook-id precedence per NAME: the first id carrying it wins (no cross-world merge)', () => {
+    writeMisc('w1', '火球术_misc.png')
+    writeMisc('w2', '火球术_misc_alt.png') // later id, same name — must NOT merge into w1's entry
+    writeMisc('w2', '陨星裂空_misc.png') // a name w1 lacks — resolves from w2
+    expect(svc.miscAssetsForWorld('p1', ['w1', 'w2'], 'c1')).toEqual([
+      { name: '火球术', variant: null, url: miscUrl('w1', '火球术_misc.png'), remote: false },
+      { name: '陨星裂空', variant: null, url: miscUrl('w2', '陨星裂空_misc.png'), remote: false }
+    ])
+  })
+
+  it('returns [] for an unknown world, no lorebook ids, or an empty misc folder', () => {
+    write('w1', '爱莎_头像.png') // a character asset must never leak into the misc namespace
+    expect(svc.miscAssetsForWorld('p1', ['w1'], 'c1')).toEqual([])
+    expect(svc.miscAssetsForWorld('p1', ['nope'], 'c1')).toEqual([])
+    expect(svc.miscAssetsForWorld('p1', [], 'c1')).toEqual([])
+  })
+
+  it('skips the remote read entirely when there is no chat id', () => {
+    writeMisc('w1', '火球术_misc.png')
+    expect(svc.miscAssetsForWorld('p1', ['w1'], '')).toEqual([
+      { name: '火球术', variant: null, url: miscUrl('w1', '火球术_misc.png'), remote: false }
+    ])
+    expect(remote.listRemoteAssets).not.toHaveBeenCalled()
+  })
+
+  it('never throws: a failing remote read still returns the local half', () => {
+    writeMisc('w1', '火球术_misc.png')
+    remote.listRemoteAssets.mockImplementation(() => {
+      throw new Error('db closed')
+    })
+    expect(svc.miscAssetsForWorld('p1', ['w1'], 'c1')).toEqual([
+      { name: '火球术', variant: null, url: miscUrl('w1', '火球术_misc.png'), remote: false }
     ])
   })
 })

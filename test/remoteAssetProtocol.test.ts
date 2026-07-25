@@ -26,19 +26,47 @@ beforeEach(() => {
 })
 
 describe('rptremoteasset URL parsing', () => {
+  // M2 changed the shape: the host segment now carries `kind`, so the character address gained an
+  // explicit `kind: 'character'`. The `asset` host itself is unchanged.
   it('round-trips encoded profile/chat/name without carrying the source URL', () => {
     const raw = `rptremoteasset://asset/${encodeURIComponent('profile one')}/${encodeURIComponent('chat/1')}/${encodeURIComponent('傲 雪')}`
     expect(parseRemoteAssetUrl(raw)).toEqual({
       profileId: 'profile one',
       chatId: 'chat/1',
-      name: '傲 雪'
+      name: '傲 雪',
+      kind: 'character'
     })
     expect(raw).not.toContain('cdn.example')
+  })
+
+  it('reads the misc bag from the misc host', () => {
+    const raw = `rptremoteasset://misc/p/c/${encodeURIComponent('火球术')}`
+    expect(parseRemoteAssetUrl(raw)).toEqual({
+      profileId: 'p',
+      chatId: 'c',
+      name: '火球术',
+      kind: 'misc'
+    })
   })
 
   it('rejects another host or a missing scope segment', () => {
     expect(parseRemoteAssetUrl('rptremoteasset://other/p/c/n')).toBeNull()
     expect(parseRemoteAssetUrl('rptremoteasset://asset/p/c')).toBeNull()
+    expect(parseRemoteAssetUrl('rptremoteasset://misc/p/c')).toBeNull()
+    expect(parseRemoteAssetUrl('rptremoteasset://misc/p/c/n/extra')).toBeNull()
+    expect(parseRemoteAssetUrl('https://misc/p/c/n')).toBeNull()
+  })
+})
+
+describe('the served request carries the kind to the resolver', () => {
+  it('passes character for the asset host and misc for the misc host', async () => {
+    mocks.fetch.mockResolvedValue(
+      new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } })
+    )
+    await serveRemoteAssetRequest({ url: 'rptremoteasset://asset/p/c/name' })
+    expect(mocks.resolve).toHaveBeenLastCalledWith('p', 'c', 'name', 'character')
+    await serveRemoteAssetRequest({ url: 'rptremoteasset://misc/p/c/name' })
+    expect(mocks.resolve).toHaveBeenLastCalledWith('p', 'c', 'name', 'misc')
   })
 })
 

@@ -25,7 +25,9 @@ import { useT } from '../../i18n'
 import { useToastStore } from '../../stores/toastStore'
 import { mediaKindForUrl, resolveCharacterPreview } from './assetMedia'
 
-type AssetViewCategory = AssetCategory | 'remote'
+/** The categories this manager view renders as tabs. `misc` is card-owned general-purpose art with no
+ *  manager UI, so it is deliberately excluded here even though it is a real {@link AssetCategory}. */
+type AssetViewCategory = Exclude<AssetCategory, 'misc'> | 'remote'
 
 const CATS: AssetViewCategory[] = ['character', 'location', 'cg', 'remote']
 const LOCAL_CATS: AssetCategory[] = ['character', 'location', 'cg']

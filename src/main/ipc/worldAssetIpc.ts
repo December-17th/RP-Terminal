@@ -107,6 +107,16 @@ export const registerWorldAssetIpc = (ipcMain: IpcMain): void => {
     (_e, profileId: string, lorebookIds: string[], name: string, type: AssetType) =>
       svc.assetListForWorld(profileId, lorebookIds, name, type)
   )
+  // Card-facing `misc` enumeration (M3): the WHOLE general-purpose card-art namespace, local + remote.
+  // Inline transport — the renderer resolves the session lorebook ids (like `asset-list-for-card`) and
+  // passes them plus its chat id; main applies the id precedence and the local-before-remote ordering in
+  // the ONE shared body `svc.miscAssetsForWorld`, which the WCV handler (wcvIpc.ts) also calls. Always an
+  // array — the service never throws.
+  ipcMain.handle(
+    'asset-misc-for-card',
+    (_e, profileId: string, lorebookIds: string[], chatId: string) =>
+      svc.miscAssetsForWorld(profileId, lorebookIds, String(chatId ?? ''))
+  )
   ipcMain.handle(
     'asset-import-for-card',
     (

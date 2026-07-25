@@ -4,6 +4,10 @@ import {
   REMOTE_ASSET_SCHEME,
   resolveRemoteAssetSource
 } from './remoteAssetService'
+import {
+  remoteAssetKindForUrlHost,
+  type RemoteAssetKind
+} from '../../shared/worldAssets/remote'
 
 export { REMOTE_ASSET_SCHEME } from './remoteAssetService'
 
@@ -22,18 +26,23 @@ export interface RemoteAssetAddress {
   profileId: string
   chatId: string
   name: string
+  /** Which declaration bag the name is looked up in — carried by the host segment. */
+  kind: RemoteAssetKind
 }
 
-/** Parse rptremoteasset://asset/<profileId>/<chatId>/<name>. The source URL is never present here. */
+/** Parse rptremoteasset://<asset|misc>/<profileId>/<chatId>/<name>. The source URL is never present
+ * here. The host segment selects the bag: `asset` → char_info_visuals, `misc` → rpt_misc_assets. */
 export function parseRemoteAssetUrl(rawUrl: string): RemoteAssetAddress | null {
   try {
     const url = new URL(rawUrl)
-    if (url.protocol !== `${REMOTE_ASSET_SCHEME}:` || url.hostname !== 'asset') return null
+    if (url.protocol !== `${REMOTE_ASSET_SCHEME}:`) return null
+    const kind = remoteAssetKindForUrlHost(url.hostname)
+    if (!kind) return null
     const encoded = url.pathname.replace(/^\/+/, '').split('/')
     if (encoded.length !== 3 || encoded.some((segment) => !segment)) return null
     const [profileId, chatId, name] = encoded.map(decodeURIComponent)
     if (!profileId || !chatId || !name) return null
-    return { profileId, chatId, name }
+    return { profileId, chatId, name, kind }
   } catch {
     return null
   }
@@ -90,7 +99,12 @@ export async function serveRemoteAssetRequest(req: {
     if (method !== 'GET' && method !== 'HEAD') return new Response('Method Not Allowed', { status: 405 })
     const address = parseRemoteAssetUrl(req.url)
     if (!address) return new Response('Bad Request', { status: 400 })
-    const sourceUrl = resolveRemoteAssetSource(address.profileId, address.chatId, address.name)
+    const sourceUrl = resolveRemoteAssetSource(
+      address.profileId,
+      address.chatId,
+      address.name,
+      address.kind
+    )
     if (!sourceUrl) return new Response('Not Found', { status: 404 })
 
     const headers = new Headers()

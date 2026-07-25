@@ -676,6 +676,20 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     // as assetUrl. Behavior lives in the shared runtime so both transports inherit it; the transport Host
     // forwards to the app (WCV: worldAssetService.assetListForWorld; inline: cardBridge/host.ts).
     assetList: (name: string, type: string) => host.assetList(name, type),
+    // Enumerate the card's WHOLE `misc` namespace (M3) — a bare read global in the same family as
+    // assetList. The [] -on-failure guarantee lives HERE, in the shared facade, so both transports
+    // inherit it identically: the inline Host catches its own IPC errors, but the WCV Host is a raw
+    // `ipcRenderer.invoke` (generated from WCV_CHANNEL_SPEC) whose rejection would otherwise surface
+    // to the card as a thrown promise. Behavior + ordering live in the ONE main-side body both
+    // transports call, `worldAssetService.miscAssetsForWorld`.
+    miscAssets: async () => {
+      try {
+        const list = await host.miscAssets()
+        return Array.isArray(list) ? list : []
+      } catch {
+        return []
+      }
+    },
     // Picker-backed asset import (WA-3). A host-privilege write action (like requestOverlay), so both
     // transports also surface it on rptHost; the shared facade forwards to the Host, coercing the arg.
     requestAssetImport: (arg: { name: string; type: string; variant?: string }) =>

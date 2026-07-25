@@ -460,8 +460,11 @@ export function createInlineHost(ctx: CardCtx): Host {
         const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
         const category = categoryForType(type as AssetType)
         const local = await window.api.assetUrl(ctx.profileId, ids, category, name, type, mood)
-        return localFirstRemoteAssetUrl(local, type, () =>
-          window.api.remoteAssetUrl(ctx.profileId, ctx.chatId, name)
+        // Forward the fallback KIND (立绘bg → char_info_visuals, misc → rpt_misc_assets); main's
+        // resolver defaults to `character`, so dropping it would serve a portrait for a `misc`
+        // lookup. Kept identical in the WCV transport (wcvIpc.ts).
+        return localFirstRemoteAssetUrl(local, type, (kind) =>
+          window.api.remoteAssetUrl(ctx.profileId, ctx.chatId, name, kind)
         )
       } catch {
         return null
@@ -483,6 +486,19 @@ export function createInlineHost(ctx: CardCtx): Host {
         const own = cardCharacterId()
         const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
         return await window.api.assetList(ctx.profileId, ids, name, type)
+      } catch {
+        return []
+      }
+    },
+    // Enumerate the card's whole `misc` namespace (M3). Resolves the session lorebook ids exactly like
+    // assetUrl/assetList and passes this session's chatId (the remote `rpt_misc_assets` bag is per-chat);
+    // main applies the id precedence and the local-before-remote ordering in the SAME shared body the WCV
+    // handler calls (worldAssetService.miscAssetsForWorld). Empty array on error.
+    miscAssets: async () => {
+      try {
+        const own = cardCharacterId()
+        const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
+        return await window.api.miscAssets(ctx.profileId, ids, ctx.chatId)
       } catch {
         return []
       }
