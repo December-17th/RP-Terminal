@@ -460,8 +460,11 @@ export function createInlineHost(ctx: CardCtx): Host {
         const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
         const category = categoryForType(type as AssetType)
         const local = await window.api.assetUrl(ctx.profileId, ids, category, name, type, mood)
-        return localFirstRemoteAssetUrl(local, type, () =>
-          window.api.remoteAssetUrl(ctx.profileId, ctx.chatId, name)
+        // Forward the fallback KIND (立绘bg → char_info_visuals, misc → rpt_misc_assets); main's
+        // resolver defaults to `character`, so dropping it would serve a portrait for a `misc`
+        // lookup. Kept identical in the WCV transport (wcvIpc.ts).
+        return localFirstRemoteAssetUrl(local, type, (kind) =>
+          window.api.remoteAssetUrl(ctx.profileId, ctx.chatId, name, kind)
         )
       } catch {
         return null

@@ -1,23 +1,25 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   localFirstRemoteAssetUrl,
-  MISC_REMOTE_ASSETS_VARIABLE,
   remoteAssetForKind,
-  remoteAssetFromVariables,
   remoteAssetKindForUrlHost,
   remoteAssetsForKind,
-  remoteAssetsFromVariables
+  remoteFallbackKindForType
 } from '../src/shared/worldAssets/remote'
+
+/** The two bag keys are the CARD-FACING contract, so they are spelled out literally here rather
+ *  than imported — a rename in the source must fail this file, not follow it. */
+const charBag = (bag: unknown): Record<string, unknown> => ({ char_info_visuals: bag })
+const miscBag = (bag: unknown): Record<string, unknown> => ({ rpt_misc_assets: bag })
 
 describe('remote character assets from floor variables', () => {
   it('reads valid HTTPS char_info_visuals URLs and classifies the legacy field as 立绘bg', () => {
     expect(
-      remoteAssetsFromVariables({
-        char_info_visuals: {
-          '傲雪': { url: 'https://files.catbox.moe/dvlb7l.png', other: '#fff' },
-          '动画': { url: 'https://cdn.example.test/scene.mp4?rev=2' }
-        }
-      })
+      remoteAssetsForKind(charBag({
+        '傲雪': { url: 'https://files.catbox.moe/dvlb7l.png', other: '#fff' },
+        '动画': { url: 'https://cdn.example.test/scene.mp4?rev=2' }
+      }),
+      'character')
     ).toEqual([
       {
         name: '傲雪',
@@ -38,21 +40,23 @@ describe('remote character assets from floor variables', () => {
 
   it('rejects malformed, credentialed, and non-HTTPS declarations', () => {
     expect(
-      remoteAssetsFromVariables({
-        char_info_visuals: {
+      remoteAssetsForKind(
+        charBag({
           http: { url: 'http://example.test/a.png' },
           credentials: { url: 'https://user:pass@example.test/a.png' },
           malformed: { url: 'not a url' },
           missing: { color: '#fff' }
-        }
-      })
+        }),
+        'character'
+      )
     ).toEqual([])
   })
 
   it('resolves one exact character name', () => {
     expect(
-      remoteAssetFromVariables(
-        { char_info_visuals: { '傲雪': { url: 'https://example.test/a.gif' } } },
+      remoteAssetForKind(
+        charBag({ '傲雪': { url: 'https://example.test/a.gif' } }),
+        'character',
         '傲雪'
       )?.sourceUrl
     ).toBe('https://example.test/a.gif')
@@ -62,12 +66,12 @@ describe('remote character assets from floor variables', () => {
 // M2 regression guard: adding the second bag must not perturb the character path in any way.
 describe('char_info_visuals behaviour is unchanged by the misc bag', () => {
   const variables = {
-    char_info_visuals: { '傲雪': { url: 'https://files.catbox.moe/dvlb7l.png' } },
-    [MISC_REMOTE_ASSETS_VARIABLE]: { '傲雪': { url: 'https://cdn.example.test/card.png' } }
+    ...charBag({ '傲雪': { url: 'https://files.catbox.moe/dvlb7l.png' } }),
+    ...miscBag({ '傲雪': { url: 'https://cdn.example.test/card.png' } })
   }
 
   it('reads only char_info_visuals, ignoring a same-named misc declaration', () => {
-    expect(remoteAssetsFromVariables(variables)).toEqual([
+    expect(remoteAssetsForKind(variables, 'character')).toEqual([
       {
         name: '傲雪',
         type: '立绘bg',
@@ -76,38 +80,26 @@ describe('char_info_visuals behaviour is unchanged by the misc bag', () => {
         mediaKind: 'image'
       }
     ])
-    expect(remoteAssetFromVariables(variables, '傲雪')?.sourceUrl).toBe(
+    expect(remoteAssetForKind(variables, 'character', '傲雪')?.sourceUrl).toBe(
       'https://files.catbox.moe/dvlb7l.png'
     )
   })
 
-  it('is exactly the character kind of the generalised reader', () => {
-    expect(remoteAssetsForKind(variables, 'character')).toEqual(
-      remoteAssetsFromVariables(variables)
-    )
-    expect(remoteAssetForKind(variables, 'character', '傲雪')).toEqual(
-      remoteAssetFromVariables(variables, '傲雪')
-    )
-  })
-
   it('returns nothing for a misc-only floor on the character path', () => {
-    const miscOnly = { [MISC_REMOTE_ASSETS_VARIABLE]: { '火球术': { url: 'https://x.test/a.png' } } }
-    expect(remoteAssetsFromVariables(miscOnly)).toEqual([])
-    expect(remoteAssetFromVariables(miscOnly, '火球术')).toBeNull()
+    const miscOnly = miscBag({ '火球术': { url: 'https://x.test/a.png' } })
+    expect(remoteAssetsForKind(miscOnly, 'character')).toEqual([])
+    expect(remoteAssetForKind(miscOnly, 'character', '火球术')).toBeNull()
   })
 })
 
 describe('remote misc assets from floor variables', () => {
   it('uses the rpt_misc_assets bag and classifies declarations as misc', () => {
-    expect(MISC_REMOTE_ASSETS_VARIABLE).toBe('rpt_misc_assets')
     expect(
       remoteAssetsForKind(
-        {
-          rpt_misc_assets: {
-            '火球术': { url: 'https://cdn.example.test/fireball.png', tint: '#f00' },
-            '陨星裂空': { url: 'https://cdn.example.test/meteor.mp4?rev=2' }
-          }
-        },
+        miscBag({
+          '火球术': { url: 'https://cdn.example.test/fireball.png', tint: '#f00' },
+          '陨星裂空': { url: 'https://cdn.example.test/meteor.mp4?rev=2' }
+        }),
         'misc'
       )
     ).toEqual([
@@ -177,6 +169,16 @@ describe('protocol host ↔ kind mapping', () => {
   })
 })
 
+describe('type → fallback kind', () => {
+  it('maps each fallback type to ITS OWN bag, and nothing else', () => {
+    expect(remoteFallbackKindForType('立绘bg')).toBe('character')
+    expect(remoteFallbackKindForType('misc')).toBe('misc')
+    for (const type of ['立绘', '头像', '相册', '背景', '全景', 'CG', '', 'nonsense']) {
+      expect(remoteFallbackKindForType(type)).toBeNull()
+    }
+  })
+})
+
 describe('local-first remote fallback shared by both card transports', () => {
   it('keeps a local 立绘bg and does not inspect remote state', async () => {
     const remote = vi.fn(() => 'rptremoteasset://asset/p/c/n')
@@ -204,6 +206,23 @@ describe('local-first remote fallback shared by both card transports', () => {
       await expect(localFirstRemoteAssetUrl(null, type, remote)).resolves.toBeNull()
     }
     expect(remote).toHaveBeenCalledTimes(1)
+  })
+
+  // THE guard the pure-helper tests previously missed: asserting only that the gate OPENS for `misc`
+  // says nothing about WHICH bag the caller then reads. Every remote resolver defaults to
+  // `character`, so the kind has to be pushed to the caller — pin that it is.
+  it('hands the resolver the kind belonging to the requested type', async () => {
+    const remote = vi.fn((kind: string) => `rptremoteasset://${kind}/p/c/n`)
+
+    await expect(localFirstRemoteAssetUrl(null, 'misc', remote)).resolves.toBe(
+      'rptremoteasset://misc/p/c/n'
+    )
+    expect(remote).toHaveBeenLastCalledWith('misc')
+
+    await expect(localFirstRemoteAssetUrl(null, '立绘bg', remote)).resolves.toBe(
+      'rptremoteasset://character/p/c/n'
+    )
+    expect(remote).toHaveBeenLastCalledWith('character')
   })
 
   it('keeps "explicit local wins" for misc as well', async () => {

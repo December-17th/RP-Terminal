@@ -1031,8 +1031,16 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         type,
         mood
       )
-      return localFirstRemoteAssetUrl(local, String(type ?? ''), () =>
-        remoteAssetService.resolveRemoteAssetUrl(ctx.profileId, ctx.chatId, String(name ?? ''))
+      // The KIND comes from the type (立绘bg → char_info_visuals, misc → rpt_misc_assets) and must be
+      // forwarded: the resolver defaults to `character`, so dropping it would serve a portrait for a
+      // `misc` lookup. Kept identical in the inline transport (cardBridge/host.ts).
+      return localFirstRemoteAssetUrl(local, String(type ?? ''), (kind) =>
+        remoteAssetService.resolveRemoteAssetUrl(
+          ctx.profileId,
+          ctx.chatId,
+          String(name ?? ''),
+          kind
+        )
       )
     },
     sceneAssetUrl: (e, location, type) => {

@@ -22,6 +22,10 @@ const SLOT = { slotId: 's1', profileId: 'pA', chatId: 'cA', characterId: 'charA'
 // The one shared body both transports must bottom out in, plus the id-resolution the WCV side does.
 const h = vi.hoisted(() => ({
   miscAssetsForWorld: vi.fn(() => [] as any[]),
+  assetUrlForWorld: vi.fn(() => null as string | null),
+  resolveRemoteAssetUrl: vi.fn((_p: string, _c: string, name: string, kind = 'character') =>
+    `rptremoteasset://${kind}/pA/cA/${name}`
+  ),
   getChatLorebookIds: vi.fn(() => null as string[] | null),
   contextFor: vi.fn((id: number) => (id === WCV_ID ? SLOT : null)),
   senderSend: vi.fn(),
@@ -38,7 +42,7 @@ vi.mock('electron', () => ({
 vi.mock('../src/main/services/worldAssetService', () => ({
   miscAssetsForWorld: h.miscAssetsForWorld,
   assetListForWorld: vi.fn(() => []),
-  assetUrlForWorld: vi.fn(() => null),
+  assetUrlForWorld: h.assetUrlForWorld,
   sceneAssetUrlForWorld: vi.fn(() => null),
   resolveAssetFile: vi.fn(() => null),
   listCoverage: vi.fn(() => []),
@@ -90,7 +94,7 @@ vi.mock('../src/main/services/floorService', () => ({
   getLatestFloor: vi.fn(() => null)
 }))
 vi.mock('../src/main/services/remoteAssetService', () => ({
-  resolveRemoteAssetUrl: vi.fn(() => null),
+  resolveRemoteAssetUrl: h.resolveRemoteAssetUrl,
   listRemoteAssets: vi.fn(() => [])
 }))
 vi.mock('../src/main/services/agentRuntime/cardAgentEvents', () => ({
@@ -170,6 +174,11 @@ beforeEach(() => {
   h.contextFor.mockImplementation((id: number) => (id === WCV_ID ? SLOT : null))
   h.getChatLorebookIds.mockReturnValue(['w1', 'w2'])
   h.miscAssetsForWorld.mockReturnValue(LIST)
+  h.assetUrlForWorld.mockReturnValue(null)
+  h.resolveRemoteAssetUrl.mockImplementation(
+    (_p: string, _c: string, name: string, kind = 'character') =>
+      `rptremoteasset://${kind}/pA/cA/${name}`
+  )
   h.lifecycle.clear()
   registerWcvIpc(fakeIpcMain)
   registerWorldAssetIpc(fakeIpcMain)
@@ -217,5 +226,40 @@ describe('miscAssets() — inline and WCV transports are at parity', () => {
   it('the inline handler coerces a missing chat id to the empty string rather than passing undefined', () => {
     handlers.get('asset-misc-for-card')!(evt(1), 'pA', ['w1'], undefined)
     expect(h.miscAssetsForWorld).toHaveBeenLastCalledWith('pA', ['w1'], '')
+  })
+})
+
+// The single-lookup companion to the above. `localFirstRemoteAssetUrl` opens the remote gate for BOTH
+// `立绘bg` and `misc`, but every remote resolver defaults to the `character` bag — so a call site that
+// forgets to forward the kind answers a `misc` lookup with a char_info_visuals portrait, minted under
+// the WRONG protocol host. That is the cross-namespace shadowing the kind exists to prevent, and it is
+// invisible to a test of the pure helper alone: this drives the real handler.
+describe("assetUrl(name, 'misc') falls back into the misc bag, not char_info_visuals", () => {
+  const viaWcvAssetUrl = (name: string, type: string, senderId = WCV_ID): unknown =>
+    handlers.get(WCV_CHANNELS.assetUrl)!(evt(senderId), name, type)
+
+  it('forwards kind=misc for a misc lookup with no local file', async () => {
+    await expect(viaWcvAssetUrl('火球术', 'misc')).resolves.toBe(
+      'rptremoteasset://misc/pA/cA/火球术'
+    )
+    expect(h.resolveRemoteAssetUrl).toHaveBeenLastCalledWith('pA', 'cA', '火球术', 'misc')
+  })
+
+  it('still forwards kind=character for the legacy 立绘bg shim', async () => {
+    await expect(viaWcvAssetUrl('傲雪', '立绘bg')).resolves.toBe(
+      'rptremoteasset://character/pA/cA/傲雪'
+    )
+    expect(h.resolveRemoteAssetUrl).toHaveBeenLastCalledWith('pA', 'cA', '傲雪', 'character')
+  })
+
+  it('never consults the remote bags for a strict type, or when a local file exists', async () => {
+    await expect(viaWcvAssetUrl('傲雪', '立绘')).resolves.toBeNull()
+    expect(h.resolveRemoteAssetUrl).not.toHaveBeenCalled()
+
+    h.assetUrlForWorld.mockReturnValue('rptasset://pA/w1/misc/火球术_misc.png')
+    await expect(viaWcvAssetUrl('火球术', 'misc')).resolves.toBe(
+      'rptasset://pA/w1/misc/火球术_misc.png'
+    )
+    expect(h.resolveRemoteAssetUrl).not.toHaveBeenCalled()
   })
 })

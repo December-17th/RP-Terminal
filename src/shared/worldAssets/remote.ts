@@ -15,8 +15,6 @@ const KIND_SPEC: Record<RemoteAssetKind, { variable: string; type: RemoteAssetTy
   misc: { variable: 'rpt_misc_assets', type: REMOTE_MISC_ASSET_TYPE }
 }
 
-export const MISC_REMOTE_ASSETS_VARIABLE = KIND_SPEC.misc.variable
-
 /** The `rptremoteasset://<host>/…` host segment for each kind. `asset` is the pre-existing character
  *  host and must stay byte-identical; `misc` is the second, independent namespace. Single source of
  *  truth for both the minting side (remoteAssetService) and the parsing side (remoteAssetProtocol). */
@@ -100,30 +98,33 @@ export function remoteAssetForKind(
   return declarationsFromBag(variables, kind).find((asset) => asset.name === wanted) ?? null
 }
 
-/** Read the legacy Poem-of-Destiny character visual declarations from a persisted floor variable bag.
- * The legacy `url` has a composed background, so RPT classifies it as `立绘bg` rather than `立绘`. */
-export function remoteAssetsFromVariables(variables: unknown): RemoteAssetDeclaration[] {
-  return declarationsFromBag(variables, 'character')
+/** Which types may fall back to a latest-floor remote declaration when no local file exists, and —
+ * critically — WHICH bag each one falls back to. `立绘bg` is the legacy Poem-of-Destiny character
+ * visual (`char_info_visuals`, background-bearing, hence `立绘bg` rather than `立绘`); `misc` is the
+ * general-purpose card-art namespace (`rpt_misc_assets`). Explicit `立绘` and every other type stay
+ * strict. */
+const REMOTE_FALLBACK_KIND_BY_TYPE: Record<string, RemoteAssetKind> = {
+  [REMOTE_CHARACTER_ART_TYPE]: 'character',
+  [REMOTE_MISC_ASSET_TYPE]: 'misc'
 }
 
-export function remoteAssetFromVariables(
-  variables: unknown,
-  name: string
-): RemoteAssetDeclaration | null {
-  return remoteAssetForKind(variables, 'character', name)
-}
-
-/** Types allowed to fall back to a latest-floor remote declaration when no local file exists:
- * the legacy background-bearing character type and the general-purpose `misc` type. */
-const REMOTE_FALLBACK_TYPES: string[] = [REMOTE_CHARACTER_ART_TYPE, REMOTE_MISC_ASSET_TYPE]
+/** The bag a typed `assetUrl` lookup may fall back into, or null if the type is strict-local. */
+export const remoteFallbackKindForType = (type: string): RemoteAssetKind | null =>
+  REMOTE_FALLBACK_KIND_BY_TYPE[type] ?? null
 
 /** Shared transport rule: explicit local assets win; only the types above may fall back to the
- * latest-floor remote declaration. Explicit `立绘` and every other type stay strict. */
+ * latest-floor remote declaration.
+ *
+ * `resolveRemote` is HANDED the kind rather than choosing one: every remote resolver defaults to
+ * `character` when no kind is passed, so a caller that forgets would silently serve a
+ * `char_info_visuals` portrait for a `misc` lookup — the exact cross-namespace shadowing the kind
+ * exists to prevent. Taking it as a parameter makes that a type error instead. */
 export async function localFirstRemoteAssetUrl(
   localUrl: string | null,
   type: string,
-  resolveRemote: () => Promise<string | null> | string | null
+  resolveRemote: (kind: RemoteAssetKind) => Promise<string | null> | string | null
 ): Promise<string | null> {
-  if (localUrl || !REMOTE_FALLBACK_TYPES.includes(type)) return localUrl
-  return resolveRemote()
+  if (localUrl) return localUrl
+  const kind = remoteFallbackKindForType(type)
+  return kind ? resolveRemote(kind) : null
 }

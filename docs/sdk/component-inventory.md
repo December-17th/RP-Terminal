@@ -401,8 +401,14 @@ variants, remote entries always `variant: null`. Both transports call the one sh
 `wcv-host-misc-assets` ([`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts):1061-1072), inline via
 `asset-misc-for-card` ([`worldAssetIpc.ts`](../../src/main/ipc/worldAssetIpc.ts):110-119 →
 [`cardBridge/host.ts`](../../src/renderer/src/cardBridge/host.ts):490-502). `assetUrl(name, 'misc')` also
-works for a single lookup and falls back to the remote bag when no local file exists
-([`REMOTE_FALLBACK_TYPES`](../../src/shared/worldAssets/remote.ts):118). There is **no Assets-view UI tab**
+works for a single lookup and falls back to **the `misc` bag** when no local file exists: the fallback
+resolves the KIND from the type ([`remoteFallbackKindForType`](../../src/shared/worldAssets/remote.ts):106-113)
+and hands it to `localFirstRemoteAssetUrl`'s `resolveRemote(kind)`, which both transports forward
+([`wcvIpc.ts`](../../src/main/ipc/wcvIpc.ts):1034,
+[`cardBridge/host.ts`](../../src/renderer/src/cardBridge/host.ts):463 →
+`remote-asset-url`). Every remote resolver defaults to `character`, so dropping the kind there would
+answer a `misc` lookup with a `char_info_visuals` portrait — pinned against by
+`test/miscAssetsParity.test.ts`. There is **no Assets-view UI tab**
 for `misc` — it is card-managed only ([`AssetsView.tsx`](../../src/renderer/src/components/workspace/AssetsView.tsx)).
 
 `立绘bg` / `char_info_visuals` is **unchanged and remains character-only** — `misc` exists precisely so
