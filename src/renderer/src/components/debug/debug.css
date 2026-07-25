@@ -353,6 +353,31 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* --- Export the dry-run as a shareable report --- */
+.rt-export {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+
+.rt-export-btn {
+  appearance: none;
+  border: 1px solid var(--rpt-border);
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--rpt-text-secondary);
+  background: var(--rpt-bg-secondary);
+  cursor: pointer;
+}
+
+.rt-export-btn:hover {
+  color: var(--rpt-text-primary);
+  border-color: var(--rpt-accent);
+}
+
 /* --- Constants strip --- */
 .rt-const-strip {
   border: 1px solid var(--rpt-border);

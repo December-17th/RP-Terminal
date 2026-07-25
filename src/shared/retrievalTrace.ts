@@ -66,22 +66,74 @@ export interface ScoringParams {
    *  previous floor; 1 disables. Rewards cache continuity so a persistently-relevant entry survives the
    *  floor/cut/cap it would otherwise fail — but never resurrects a zero-evidence entry (0 × boost = 0). */
   persistBoost: number
+  /** Weight for a depth-0 key hit (the pending user action) — replaces `lambda ** 0`.
+   *  1 = previous behavior. The action is the query; the transcript is context. */
+  actionBoost: number
+  /** Cap on the one-hop link bonus, as a multiple of the RECEIVER's own seed score:
+   *  linkBonus = min(hopDecay * donorSeed, linkCap * ownSeed).
+   *  <= 0 (or non-finite) means UNCAPPED = previous behavior. A capped entry with zero own
+   *  seed therefore receives zero link bonus. */
+  linkCap: number
+  /** Damping for the multi-key sum: seed = maxContrib + keyDamp * (sumContrib - maxContrib),
+   *  applied BEFORE the probability factor. 1 = plain sum = previous behavior; 0 = strongest key only. */
+  keyDamp: number
+  /** Basis for the relative cut. 'final' = previous behavior (relCut × the top FINAL score, i.e.
+   *  after persistBoost). 'preBoost' = relCut × the max PRE-persistBoost score over ranked entries,
+   *  so persistence cannot raise the bar against a newly-relevant entry. */
+  relCutBasis: 'final' | 'preBoost'
 }
 
-/** Chosen from the 8100-combo synthetic grid (2026-07-24): best F1 0.919 on the 23-scenario suite, with
- *  real-floor frontier confirmation (recall 0.081→0.208, churn 0.533→0.133 vs the old maxK=4/persistBoost=1
- *  defaults). See docs/lore-scoring-tuning-persist-2026-07-24.md and lore-scoring-real-data-persist-2026-07-24.md.
- *  Selection is adaptive: an entry fires iff score > 0 AND score ≥ minScore AND score ≥ relCut·topScore AND
- *  fewer than maxK have fired. A sane floor + relative cut lets `maxK` be a generous ceiling while thin/weak
- *  evidence still fires nothing; persistBoost rewards previous-floor continuity. Debug-only. */
+/**
+ * Selection is adaptive: an entry fires iff score > 0 AND score ≥ minScore AND score ≥ relCut·topScore
+ * AND fewer than maxK have fired. A sane floor + relative cut lets `maxK` be a generous ceiling while
+ * thin/weak evidence still fires nothing; persistBoost rewards previous-floor continuity. Debug-only.
+ *
+ * PROVENANCE (2026-07-24) — actionBoost 2 / relCut 0.22 / linkCap 4 chosen on an **F2 (recall-weighted)**
+ * objective, not F1, measured on three instruments: the 31-scenario synthetic suite, its ORIGINAL 19
+ * subset (the only synthetic set authored BEFORE these hypotheses, so the only unbiased one), and an
+ * 8-floor / 40-option gold standard judged against a real chat (floors 2,4,6,8,11,13,15,17;
+ * 15 action-specific + 55 ambient labels).
+ *
+ * Strict Pareto improvement over the previous defaults (actionBoost 1 / relCut 0.35 / linkCap 0):
+ *   gold      recall .364→.385 · precision .254→.300 · pivot-recall .150→.383
+ *   synthetic P .811→.897 · R .857→.914 · F1 .833→.906 · F2 .847→.911
+ *   synthetic hard-negative violations 21→10, and on the gold standard it fires FEWER entries per floor
+ *   (11.68→10.40) — more recall from a SMALLER context, not a wider net.
+ *
+ * COUPLINGS — never tune these independently:
+ *   • actionBoost ↔ relCut: boosting depth-0 raises `topScore`, which raises `relCut·topScore`; raising
+ *     one without lowering the other cuts deep-evidence entries.
+ *   • linkCap ↔ relCut: at relCut .35 capping COSTS recall; at .22 it GAINS.
+ *
+ * relCut SITS ON A NARROW PLATEAU: 0.21/0.22/0.23 are numerically identical on all three instruments.
+ * 0.24 breaks `book-at-scale-hub` (recall 1.000→0.545); 0.25 costs gold pivot-recall (.383→.283); 0.20
+ * is knife-edge — the median (first non-fired score)/relFloor ratio across the 40 gold options is 0.974
+ * there (a 2.6% margin) vs 0.890 at 0.22 (~4× the headroom), and 0.20 lets a low-idf common-word trap
+ * through in `big-book-noise` (12 fired vs 3). Re-tune the plateau, not the single value.
+ *
+ * KNOWN BEHAVIORAL TRADE: any `linkCap > 0` zeroes link propagation into an entry with zero own seed, so
+ * one-hop activation no longer reaches an entry with no keyword evidence of its own (`scene-cluster-links`,
+ * `recursion-exclude-target`, `scene-cluster-large` regress). Accepted: `book-at-scale-hub` goes
+ * 0.091→1.000 and net true positives rise 90→96.
+ *
+ * MEASURED AND REJECTED: `keyDamp` ≠ 1 is harmful (left at 1); `relCutBasis: 'preBoost'` is a no-op on
+ * real data (left at 'final'). maxK 12 / persistBoost 1.5 carried over unchanged from the 2026-07-24
+ * persistence sweep (docs/lore-scoring-tuning-persist-2026-07-24.md).
+ */
 export const DEFAULT_SCORING_PARAMS: ScoringParams = {
   lambda: 0.6,
   hopDecay: 0.5,
   pinBoost: 2.5,
   maxK: 12,
   minScore: 0.6,
-  relCut: 0.35,
-  persistBoost: 1.5
+  relCut: 0.22,
+  persistBoost: 1.5,
+  actionBoost: 2,
+  linkCap: 4,
+  // keyDamp 1 = plain multi-key sum, relCutBasis 'final' = cut against the top post-persistBoost score.
+  // Both are the original behavior and both measured no better when changed.
+  keyDamp: 1,
+  relCutBasis: 'final'
 }
 
 /** One weighted key-evidence hit contributing to an entry's seed score. `depth` is the lowest scan

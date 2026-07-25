@@ -343,8 +343,9 @@ const pinHitCount = (books: Array<{ name: string; lorebook: Lorebook }>, pinText
       }
 
     // --- Named comparisons: current defaults vs the synthetic-grid winner vs keyword baseline ---
-    const currentDefaults = { ...DEFAULT_SCORING_PARAMS } // maxK4 min0.6 rel0.35 persist1, pinBoost 2.5
-    const syntheticWinner = { ...DEFAULT_SCORING_PARAMS, maxK: 12, persistBoost: 1.5 } // min0.6 rel0.35
+    // Since 2026-07-24 the shipped defaults are maxK12 min0.6 rel0.20 persist1.5 aB2 linkCap4, pinBoost 2.5.
+    const currentDefaults = { ...DEFAULT_SCORING_PARAMS }
+    const syntheticWinner = { ...DEFAULT_SCORING_PARAMS, maxK: 12, persistBoost: 1.5 }
     const statsDefault = statsAt(currentDefaults)
     const statsWinner = statsAt(syntheticWinner)
     const statsKeyword = keywordStats()

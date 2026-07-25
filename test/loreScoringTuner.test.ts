@@ -28,6 +28,13 @@ const GRID = {
 
 // The behavior to beat: the previous fixed-K default (minScore/relCut/persistBoost disabled), old topK=4.
 const BASELINE: ScoringParams = {
+  ...DEFAULT_SCORING_PARAMS,
+  // actionBoost/linkCap pinned to the ORIGINAL no-op behavior: since 2026-07-24 the shipped defaults are
+  // actionBoost 2 / linkCap 4, so spreading them in would no longer describe the old fixed-K baseline.
+  actionBoost: 1,
+  linkCap: 0,
+  keyDamp: 1,
+  relCutBasis: 'final',
   lambda: 0.6,
   hopDecay: 0.5,
   pinBoost: 2.5,
@@ -84,7 +91,18 @@ const RUN = process.env.TUNE_LORE === '1'
             for (const minScore of GRID.minScore)
               for (const relCut of GRID.relCut)
                 for (const persistBoost of GRID.persistBoost) {
-                  const params = { lambda, hopDecay, pinBoost, maxK, minScore, relCut, persistBoost }
+                  const params = {
+                    // The un-swept knobs come from the shipped defaults — since 2026-07-24 that means the
+                    // grid runs at actionBoost 2 / linkCap 4 (keyDamp 1, relCutBasis 'final').
+                    ...DEFAULT_SCORING_PARAMS,
+                    lambda,
+                    hopDecay,
+                    pinBoost,
+                    maxK,
+                    minScore,
+                    relCut,
+                    persistBoost
+                  }
                   combos.push({ params, micro: microScorer(SCENARIOS, params) })
                 }
     combos.sort(rankCmp)

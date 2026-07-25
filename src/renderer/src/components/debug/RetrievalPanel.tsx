@@ -7,6 +7,11 @@ import {
   type ScoredKeyHit,
   type ScoringParams
 } from '../../../../shared/retrievalTrace'
+import {
+  buildRetrievalReportJson,
+  buildRetrievalReportMarkdown,
+  type ReportMeta
+} from './retrievalReport'
 
 /**
  * WP-D2 — the Debug window's Retrieval tab. Runs a side-effect-free dry-run of lorebook retrieval for a
@@ -17,6 +22,14 @@ import {
  * It reuses the EXISTING listing IPC (getProfiles/getChats/getCharacters) for the chat picker; it adds no
  * new listing surface. Viewer state is not persisted.
  */
+
+/** Split the ad-hoc pin input on commas/newlines — the handler dedupes and drops declared paths.
+ *  Shared by the dry-run call and the export meta so both see the same list. */
+const splitPinInput = (raw: string): string[] =>
+  raw
+    .split(/[\n,]/)
+    .map((p) => p.trim())
+    .filter(Boolean)
 
 type Profile = { id: string; name: string }
 type Chat = { id: string; character_id: string; updated_at: string; floor_count: number }
@@ -41,7 +54,15 @@ export function RetrievalPanel(): React.ReactElement {
   const [persistBoost, setPersistBoost] = useState<string>(
     String(DEFAULT_SCORING_PARAMS.persistBoost)
   )
+  const [actionBoost, setActionBoost] = useState<string>(String(DEFAULT_SCORING_PARAMS.actionBoost))
+  const [linkCap, setLinkCap] = useState<string>(String(DEFAULT_SCORING_PARAMS.linkCap))
+  const [keyDamp, setKeyDamp] = useState<string>(String(DEFAULT_SCORING_PARAMS.keyDamp))
+  const [relCutBasis, setRelCutBasis] = useState<ScoringParams['relCutBasis']>(
+    DEFAULT_SCORING_PARAMS.relCutBasis
+  )
   const [result, setResult] = useState<RetrievalPreviewResponse | null>(null)
+  // The inputs the CURRENT `result` was produced from — the export's header, frozen at run time.
+  const [ranMeta, setRanMeta] = useState<ReportMeta | null>(null)
   const [running, setRunning] = useState(false)
 
   // Load profiles once; default to the first (most recently active).
@@ -73,14 +94,11 @@ export function RetrievalPanel(): React.ReactElement {
 
   const run = async (): Promise<void> => {
     if (!profileId || !chatId) return
-    // Split the ad-hoc pin input on commas/newlines; the handler dedupes and drops declared paths.
-    const extra = extraPins
-      .split(/[\n,]/)
-      .map((p) => p.trim())
-      .filter(Boolean)
+    const extra = splitPinInput(extraPins)
     // Only include a knob when its field parses to a finite number; otherwise main applies the default.
     const scoring: Partial<ScoringParams> = {}
-    const put = (key: keyof ScoringParams, raw: string): void => {
+    // `put` only handles the numeric knobs; `relCutBasis` is a string enum and is set directly below.
+    const put = (key: Exclude<keyof ScoringParams, 'relCutBasis'>, raw: string): void => {
       const n = Number(raw.trim())
       if (raw.trim() !== '' && Number.isFinite(n)) scoring[key] = n
     }
@@ -91,6 +109,10 @@ export function RetrievalPanel(): React.ReactElement {
     put('minScore', minScore)
     put('relCut', relCut)
     put('persistBoost', persistBoost)
+    put('actionBoost', actionBoost)
+    put('linkCap', linkCap)
+    put('keyDamp', keyDamp)
+    scoring.relCutBasis = relCutBasis
     setRunning(true)
     try {
       const res: RetrievalPreviewResponse = await window.api.retrievalPreview(
@@ -101,6 +123,15 @@ export function RetrievalPanel(): React.ReactElement {
         scoring
       )
       setResult(res)
+      // Snapshot the inputs THIS run used, so an exported report always describes the table beside it
+      // (editing the action/pin fields afterwards must not silently rewrite the report header).
+      const selectedChat = chats.find((c) => c.id === chatId)
+      setRanMeta({
+        profileName: profiles.find((p) => p.id === profileId)?.name || profileId,
+        chatLabel: selectedChat ? chatLabel(selectedChat) : chatId,
+        action,
+        extraPins: extra
+      })
     } finally {
       setRunning(false)
     }
@@ -235,6 +266,47 @@ export function RetrievalPanel(): React.ReactElement {
             onChange={(e) => setPersistBoost(e.target.value)}
           />
         </label>
+        <label className="rt-field rt-field-num">
+          <span className="rt-field-label">{t('debug.scoreActionBoost')}</span>
+          <input
+            className="rt-input"
+            type="number"
+            step="0.5"
+            value={actionBoost}
+            onChange={(e) => setActionBoost(e.target.value)}
+          />
+        </label>
+        <label className="rt-field rt-field-num">
+          <span className="rt-field-label">{t('debug.scoreLinkCap')}</span>
+          <input
+            className="rt-input"
+            type="number"
+            step="0.25"
+            value={linkCap}
+            onChange={(e) => setLinkCap(e.target.value)}
+          />
+        </label>
+        <label className="rt-field rt-field-num">
+          <span className="rt-field-label">{t('debug.scoreKeyDamp')}</span>
+          <input
+            className="rt-input"
+            type="number"
+            step="0.1"
+            value={keyDamp}
+            onChange={(e) => setKeyDamp(e.target.value)}
+          />
+        </label>
+        <label className="rt-field rt-field-num">
+          <span className="rt-field-label">{t('debug.scoreRelCutBasis')}</span>
+          <select
+            className="rt-select"
+            value={relCutBasis}
+            onChange={(e) => setRelCutBasis(e.target.value as ScoringParams['relCutBasis'])}
+          >
+            <option value="final">final</option>
+            <option value="preBoost">preBoost</option>
+          </select>
+        </label>
         <button className="rt-run" onClick={() => void run()} disabled={!chatId || running}>
           {running ? t('debug.retrievalRunning') : t('debug.retrievalRun')}
         </button>
@@ -242,7 +314,9 @@ export function RetrievalPanel(): React.ReactElement {
 
       {result === null && <p className="rt-empty">{t('debug.retrievalIdle')}</p>}
       {result?.ok === false && <p className="rt-error">{t('debug.retrievalNotFound')}</p>}
-      {result?.ok === true && <RetrievalResult result={result} />}
+      {result?.ok === true && ranMeta !== null && (
+        <RetrievalResult result={result} meta={ranMeta} />
+      )}
     </div>
   )
 }
@@ -276,9 +350,11 @@ const rowKey = (r: { bookName: string; entryIndex: number }): string =>
   `${r.bookName}::${r.entryIndex}`
 
 function RetrievalResult({
-  result
+  result,
+  meta
 }: {
   result: Extract<RetrievalPreviewResponse, { ok: true }>
+  meta: ReportMeta
 }): React.ReactElement {
   const t = useT()
   const [showInert, setShowInert] = useState(false)
@@ -372,7 +448,11 @@ function RetrievalResult({
           maxK: p.maxK,
           min: p.minScore,
           rel: p.relCut,
-          persist: p.persistBoost
+          persist: p.persistBoost,
+          action: p.actionBoost,
+          linkCap: p.linkCap,
+          keyDamp: p.keyDamp,
+          basis: p.relCutBasis
         })}
       </p>
       <p className="rt-summary">
@@ -390,6 +470,7 @@ function RetrievalResult({
           </span>
         )}
       </p>
+      <ExportBar result={result} meta={meta} />
 
       {constants.length > 0 && (
         <details className="rt-const-strip" open={constants.length <= 10}>
@@ -443,6 +524,74 @@ function RetrievalResult({
           {result.pinBlock && <span className="rt-pins">{result.pinBlock}</span>}
         </pre>
       </details>
+    </div>
+  )
+}
+
+/** Filename-safe slug of the chat label (CJK kept — Electron/Chromium handles it in a download name). */
+const slugify = (raw: string): string =>
+  raw
+    .toLowerCase()
+    .replace(/[^a-z0-9一-鿿]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'preview'
+
+/**
+ * Export the whole dry-run as a shareable report: Markdown or JSON to the clipboard, or a .md file
+ * saved via a Blob object URL. Renderer-only — no IPC, no main-process file API.
+ */
+function ExportBar({
+  result,
+  meta
+}: {
+  result: Extract<RetrievalPreviewResponse, { ok: true }>
+  meta: ReportMeta
+}): React.ReactElement {
+  const t = useT()
+  const [copied, setCopied] = useState<'md' | 'json' | null>(null)
+
+  useEffect(() => {
+    if (copied === null) return
+    const id = window.setTimeout(() => setCopied(null), 1500)
+    return () => window.clearTimeout(id)
+  }, [copied])
+
+  const copy = async (kind: 'md' | 'json'): Promise<void> => {
+    const text =
+      kind === 'md'
+        ? buildRetrievalReportMarkdown(result, meta)
+        : buildRetrievalReportJson(result, meta)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(kind)
+    } catch {
+      // No clipboard API (or permission denied) — no-op, and leave the button state unchanged.
+    }
+  }
+
+  const save = (): void => {
+    const url = URL.createObjectURL(
+      new Blob([buildRetrievalReportMarkdown(result, meta)], { type: 'text/markdown' })
+    )
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `retrieval-${slugify(meta.chatLabel)}.md`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="rt-export">
+      <button className="rt-export-btn" onClick={() => void copy('md')}>
+        {copied === 'md' ? t('debug.retrievalExportCopied') : t('debug.retrievalExportMd')}
+      </button>
+      <button className="rt-export-btn" onClick={() => void copy('json')}>
+        {copied === 'json' ? t('debug.retrievalExportCopied') : t('debug.retrievalExportJson')}
+      </button>
+      <button className="rt-export-btn" onClick={save}>
+        {t('debug.retrievalExportSave')}
+      </button>
     </div>
   )
 }

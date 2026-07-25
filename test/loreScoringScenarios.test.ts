@@ -18,11 +18,12 @@ import { DEFAULT_SCORING_PARAMS } from '../src/shared/retrievalTrace'
  * Regression tests for the deterministic lore scorer over the synthetic scenario suite
  * (test/fixtures/loreScoring). Runs at DEFAULT_SCORING_PARAMS (adaptive selection).
  *
- * The micro-F1 / recall FLOORS are computed over ORIGINAL_SCENARIOS only. The 2026-07-24 broad-evidence
- * scenarios carry 9–10 relevant entries each; they now reach full recall under the adopted maxK=12 default
- * (2026-07-24), so they are held in a SEPARATE block below rather than folded into the original-suite floor.
- * That block plus the persistence block document the wider cap and the persistence-bonus mechanics. See the
- * tuner (`npm run tune:lore`) and docs/lore-scoring-tuning-persist-2026-07-24.md.
+ * The aggregate FLOORS are computed over the FULL 31-scenario suite (SCENARIOS), re-baselined 2026-07-24
+ * when actionBoost 2 / relCut 0.20 / linkCap 4 were adopted on an F2 (recall-weighted) objective. The
+ * original 19-scenario subset alone is no longer a meaningful floor: the structural + broad-evidence
+ * scenarios are where the adopted defaults are actually measured, and the linkCap trade deliberately costs
+ * recall on the three link-propagation scenarios inside the original subset. See the tuner
+ * (`npm run tune:lore`) and the provenance block on DEFAULT_SCORING_PARAMS.
  */
 
 // Comment lookup on a scored run of one scenario (DEFAULT params).
@@ -34,15 +35,30 @@ const scoreByComment = (name: string): Map<string, number> => {
 
 const refKey = (r: EntryRef): string => `${r.bookName}::${r.entryIndex}`
 
+/** Recall-weighted F-measure — the objective the 2026-07-24 defaults were chosen on. Computed here (not
+ *  in metrics.ts) so the shared fixture module keeps its existing surface. */
+const f2Of = (precision: number, recall: number): number =>
+  precision + recall > 0 ? (5 * precision * recall) / (4 * precision + recall) : 0
+
 describe('lore scorer — synthetic scenario regression', () => {
-  it('achieves a micro-F1 above a loose floor at the default params (original suite)', () => {
-    // Floor computed over the ORIGINAL tuned suite — see the file header for why the new scenarios are
-    // excluded here (they intentionally under-fire at maxK=4).
-    const micro = microScorer(ORIGINAL_SCENARIOS, DEFAULT_SCORING_PARAMS)
-    // At the adopted maxK=12/persistBoost=1.5 defaults (2026-07-24) F1 measures 0.899 and recall 1.0 on
-    // the original suite; the wider cap trades a little precision for full recall. Floor set below measured.
-    expect(micro.f1).toBeGreaterThanOrEqual(0.87)
-    expect(micro.recall).toBeGreaterThanOrEqual(0.9)
+  it('holds the measured aggregate floors over the full 31-scenario suite (2026-07-24)', () => {
+    // Re-baselined 2026-07-24 for actionBoost 2 / relCut 0.22 / linkCap 4, measured over ALL 31 scenarios
+    // (was: F1 ≥ 0.87 / recall ≥ 0.9 over the 19-scenario ORIGINAL subset only). Measured at the adopted
+    // defaults: P 0.897 · R 0.914 · F1 0.906 · F2 0.911 · violations 10 (tp 96, fired 107, relevant 105).
+    // Previous defaults on the same suite: P 0.811 · R 0.857 · F1 0.833 · F2 0.847 · violations 21 (tp 90,
+    // fired 111) — a strict Pareto improvement on every rate. (On the real-chat gold standard the change
+    // also fires FEWER entries, 11.68→10.40 per floor.) relCut 0.22 rather than 0.20: identical gold
+    // recall/pivot-recall, but +0.07 synthetic precision and 4× the cut-margin headroom — see the
+    // plateau note in retrievalTrace.ts. Floors sit a small margin below each measured value so they
+    // guard against regression without being brittle.
+    const micro = microScorer(SCENARIOS, DEFAULT_SCORING_PARAMS)
+    expect(micro.precision).toBeGreaterThanOrEqual(0.86) // measured 0.897
+    expect(micro.recall).toBeGreaterThanOrEqual(0.88) // measured 0.914
+    expect(micro.f1).toBeGreaterThanOrEqual(0.88) // measured 0.906
+    expect(f2Of(micro.precision, micro.recall)).toBeGreaterThanOrEqual(0.88) // measured 0.911
+    expect(micro.violations).toBeLessThanOrEqual(12) // measured 10 (was 21 at the previous defaults)
+    expect(micro.tpSum).toBeGreaterThanOrEqual(92) // measured 96 (was 90)
+    expect(micro.firedSum).toBeLessThanOrEqual(115) // measured 107 (was 111) — no fire-everything drift
   })
 
   it('fires nothing on the thin-evidence opening (min-score floor zeroes weak noise)', () => {

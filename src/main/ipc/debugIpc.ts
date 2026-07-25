@@ -38,7 +38,19 @@ const sanitizeScoringParams = (raw?: Partial<ScoringParams>): ScoringParams => {
     persistBoost:
       typeof p.persistBoost === 'number' && Number.isFinite(p.persistBoost) && p.persistBoost >= 1
         ? p.persistBoost
-        : DEFAULT_SCORING_PARAMS.persistBoost
+        : DEFAULT_SCORING_PARAMS.persistBoost,
+    actionBoost: pos(p.actionBoost, DEFAULT_SCORING_PARAMS.actionBoost),
+    // Only a finite value > 0 caps the link bonus; anything else falls back to the uncapped default.
+    linkCap:
+      typeof p.linkCap === 'number' && Number.isFinite(p.linkCap) && p.linkCap > 0
+        ? p.linkCap
+        : DEFAULT_SCORING_PARAMS.linkCap,
+    keyDamp:
+      typeof p.keyDamp === 'number' && Number.isFinite(p.keyDamp)
+        ? Math.min(1, Math.max(0, p.keyDamp))
+        : DEFAULT_SCORING_PARAMS.keyDamp,
+    // Only the exact string switches basis; every other value keeps the default 'final'.
+    relCutBasis: p.relCutBasis === 'preBoost' ? 'preBoost' : DEFAULT_SCORING_PARAMS.relCutBasis
   }
 }
 

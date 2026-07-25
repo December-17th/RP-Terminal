@@ -753,9 +753,13 @@ const zh: Record<string, string> = {
   'debug.scoreMinScore': '最低分',
   'debug.scoreRelCut': '相对截断',
   'debug.scorePersistBoost': '持有加权',
+  'debug.scoreActionBoost': '行动加权',
+  'debug.scoreLinkCap': '联动上限',
+  'debug.scoreKeyDamp': '多关键词衰减',
+  'debug.scoreRelCutBasis': '相对截断基准',
   'debug.scoreTitle': '确定性打分器（试验）',
   'debug.scoreParams':
-    'λ={{lambda}} · 跳跃={{hop}} · 固定={{pin}} · maxK={{maxK}} · min={{min}} · relCut={{rel}} · 持有={{persist}}',
+    'λ={{lambda}} · 跳跃={{hop}} · 固定={{pin}} · maxK={{maxK}} · min={{min}} · relCut={{rel}} · 持有={{persist}} · 行动={{action}} · 联动上限={{linkCap}} · 关键词衰减={{keyDamp}} · 基准={{basis}}',
   'debug.scoreValue': '得分 {{n}}',
   'debug.scoreHeld': '持有',
   'debug.scoreConstant': '常驻',
@@ -781,6 +785,10 @@ const zh: Record<string, string> = {
   'debug.retrievalConstantStrip': '{{n}} 条常驻条目 — 始终触发',
   'debug.retrievalShowInert': '显示 {{n}} 条无关条目',
   'debug.retrievalHideInert': '隐藏无关条目',
+  'debug.retrievalExportMd': '复制 Markdown',
+  'debug.retrievalExportJson': '复制 JSON',
+  'debug.retrievalExportSave': '导出 .md',
+  'debug.retrievalExportCopied': '已复制',
   'debug.retrievalTableLegend':
     '每行一个条目，按打分排序（进度条 = 相对最高分的占比）。各列对比触发情况：ST 关键词（基线）、+固定（真实检索）、自适应打分器（触发清过最低分下限与 relCut·最高分截断的靠前条目，至多 maxK 条）。绿色行为打分器新增而关键词检索遗漏的条目；红色行为关键词检索触发但被打分器排除的条目。已打分但未触发的行会标注原因（floor / cut / cap）。常驻条目始终触发，置于上方条带。点击行可展开完整证据明细。',
 

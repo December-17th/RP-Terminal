@@ -86,6 +86,17 @@ export const scoreLoreEntries = (
   // Persistence multiplier: non-finite or < 1 collapses to 1 (no-op). Never < 1, so 0 stays 0.
   const persistBoost =
     Number.isFinite(params.persistBoost) && params.persistBoost >= 1 ? params.persistBoost : 1
+  // Depth-0 (pending-action) weight; 1 reproduces the old `lambda ** 0`.
+  const actionBoost =
+    Number.isFinite(params.actionBoost) && params.actionBoost >= 0 ? params.actionBoost : 1
+  // Link-bonus ceiling as a multiple of the receiver's own seed. Only a finite value > 0 caps;
+  // anything else (0, negative, non-finite, absent) leaves the bonus UNCAPPED = old behavior.
+  const linkCapped = Number.isFinite(params.linkCap) && params.linkCap > 0
+  const linkCap = linkCapped ? params.linkCap : 0
+  // Multi-key damping in [0,1]; 1 = plain sum = old behavior.
+  const keyDamp = Number.isFinite(params.keyDamp) ? Math.min(1, Math.max(0, params.keyDamp)) : 1
+  // Relative-cut basis; only the exact string 'preBoost' switches away from the old 'final' basis.
+  const relCutBasis: 'final' | 'preBoost' = params.relCutBasis === 'preBoost' ? 'preBoost' : 'final'
   const hasPin = pinText.length > 0
   // Full joined scan text used ONLY for the selective secondary-key gate.
   const fullScan = segments.map((s) => s.text).join('\n') + pinText
@@ -139,7 +150,14 @@ export const scoreLoreEntries = (
       }
     }
     const hits: ScoredKeyHit[] = []
+    // `seed` is the ORIGINAL left-to-right accumulation, used verbatim when keyDamp === 1. The damped
+    // form `max + keyDamp*(sum - max)` is arithmetically the plain sum at keyDamp = 1, but floating-point
+    // addition is not associative, so it can differ in the last bit — which would move rounded scores at
+    // the defaults. Keeping the two paths separate guarantees byte-identical output at keyDamp = 1.
     let seed = 0
+    let sumContrib = 0
+    let maxContrib = 0
+    let anyContrib = false
     for (const k of c.keys) {
       // Lowest depth where k matches a segment → recency weight lambda ** depth.
       let minDepth: number | null = null
@@ -148,7 +166,9 @@ export const scoreLoreEntries = (
           if (minDepth === null || seg.depth < minDepth) minDepth = seg.depth
         }
       }
-      const recencyWeight = minDepth === null ? 0 : Math.pow(params.lambda, minDepth)
+      // depth 0 = the pending user action: its own weight knob (actionBoost), not lambda ** 0.
+      const recencyWeight =
+        minDepth === null ? 0 : minDepth === 0 ? actionBoost : Math.pow(params.lambda, minDepth)
       const pinHit = hasPin && keyMatchesText(k, pinText, entry.case_sensitive, cache)
       const pinWeight = pinHit ? params.pinBoost : 0
       const weight = Math.max(recencyWeight, pinWeight)
@@ -157,8 +177,16 @@ export const scoreLoreEntries = (
       const contribution = idf * weight
       if (contribution === 0) continue
       hits.push({ key: k, depth: minDepth, pin: pinHit, idf: round4(idf), weight: round4(weight) })
-      seed += contribution
+      if (keyDamp === 1) {
+        seed += contribution
+      } else {
+        sumContrib += contribution
+        if (!anyContrib || contribution > maxContrib) maxContrib = contribution
+        anyContrib = true
+      }
     }
+    // Damped multi-key sum: the strongest key at full weight, the rest discounted by keyDamp.
+    if (keyDamp !== 1) seed = anyContrib ? maxContrib + keyDamp * (sumContrib - maxContrib) : 0
     seed *= entry.probability / 100
     return { c, constant: false, disqualified: false, seedScore: seed, keyHits: hits, linkBonus: 0 }
   })
@@ -192,8 +220,15 @@ export const scoreLoreEntries = (
       }
     }
     if (best) {
-      B.linkBonus = params.hopDecay * best.seedScore
-      B.linkFrom = labelOf(best.c.entry) || `${best.c.bookName}#${best.c.entryIndex}`
+      const raw = params.hopDecay * best.seedScore
+      // When capped, an entry can only borrow up to `linkCap ×` its OWN seed — so a zero-seed entry
+      // borrows nothing. Uncapped (the default) keeps the raw hopDecay · donorSeed bonus.
+      B.linkBonus = linkCapped ? Math.min(raw, linkCap * B.seedScore) : raw
+      // A zero (or negative) bonus records no donor — matching the row invariant that `linkFrom` is
+      // only emitted when linkBonus > 0.
+      if (B.linkBonus > 0) {
+        B.linkFrom = labelOf(best.c.entry) || `${best.c.bookName}#${best.c.entryIndex}`
+      }
     }
   }
 
@@ -222,8 +257,13 @@ export const scoreLoreEntries = (
   // Adaptive selection (ranked desc, all score > 0). Fire iff score ≥ minScore AND score ≥ relCut·topScore
   // AND fewer than maxK have fired. A non-firing entry records the FIRST failed condition (floor→cut→cap)
   // so the viewer can explain why. topScore < minScore ⇒ nothing fires (thin evidence → zero, by design).
+  // Basis for the relative cut: the top FINAL score (default) or — under 'preBoost' — the MAXIMUM
+  // pre-persistBoost score across all ranked entries (not ranked[0]'s: the top-by-final entry need not
+  // be the top-by-preboost one). Only the floor's basis moves; ranking and each entry's own compared
+  // score stay the boosted final score.
   const topScore = ranked.length > 0 ? finalScoreOf(ranked[0]) : 0
-  const relFloor = relCut * topScore
+  const topPreBoost = ranked.reduce((m, s) => Math.max(m, s.seedScore + s.linkBonus), 0)
+  const relFloor = relCut * (relCutBasis === 'preBoost' ? topPreBoost : topScore)
   const firedSet = new Set<Scratch>()
   const cutOf = new Map<Scratch, 'floor' | 'cut' | 'cap'>()
   let firedCount = 0

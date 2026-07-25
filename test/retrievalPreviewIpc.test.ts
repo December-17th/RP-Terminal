@@ -246,15 +246,23 @@ describe('retrieval-preview IPC', () => {
     expect(res.ok).toBe(true)
     if (!res.ok) return
     expect(Array.isArray(res.scored)).toBe(true)
-    // Defaults are applied when no scoring arg is passed (maxK 12 / persistBoost 1.5 adopted 2026-07-24).
+    // Defaults are applied when no scoring arg is passed (maxK 12 / persistBoost 1.5 adopted 2026-07-24;
+    // actionBoost 2 / relCut 0.22 / linkCap 4 adopted 2026-07-24 on the F2 objective — see the provenance
+    // block on DEFAULT_SCORING_PARAMS. Was relCut 0.35 / actionBoost 1 / linkCap 0.)
     expect(res.scoringParams).toEqual({
       lambda: 0.6,
       hopDecay: 0.5,
       pinBoost: 2.5,
       maxK: 12,
       minScore: 0.6,
-      relCut: 0.35,
-      persistBoost: 1.5
+      relCut: 0.22,
+      persistBoost: 1.5,
+      actionBoost: 2,
+      linkCap: 4,
+      // keyDamp / relCutBasis keep the original behavior (plain multi-key sum, cut against the top FINAL
+      // score); both measured no better when changed.
+      keyDamp: 1,
+      relCutBasis: 'final'
     })
     // The constant entry appears fired in the scorer output (and first).
     const always = res.scored.find((r) => r.comment === 'AlwaysOn')!
@@ -327,8 +335,12 @@ describe('retrieval-preview IPC', () => {
   })
 
   it('holds a previous-floor entry when persistBoost > 1, changing the fired set', () => {
-    const base = invoke(CHAT, '', undefined, { persistBoost: 1 })
-    const boosted = invoke(CHAT, '', undefined, { persistBoost: 2 })
+    // relCut pinned at the pre-2026-07-24 value 0.35 (the default moved to 0.20): this test needs Greeter
+    // to be BELOW the relative cut at persistBoost 1 so the hysteresis lift is observable, and at the
+    // adopted 0.20 it already clears the cut on its own evidence. The mechanism under test is persistence,
+    // not the cut level.
+    const base = invoke(CHAT, '', undefined, { persistBoost: 1, relCut: 0.35 })
+    const boosted = invoke(CHAT, '', undefined, { persistBoost: 2, relCut: 0.35 })
     expect(base.ok).toBe(true)
     expect(boosted.ok).toBe(true)
     if (!base.ok || !boosted.ok) return
