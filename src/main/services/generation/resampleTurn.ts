@@ -43,6 +43,14 @@ export interface CapturedResample {
   templateOps: FloorStateOperation[]
   /** The floor's display-only plot block, carried onto the replacement floor when present. */
   plotBlock?: string
+  /**
+   * ADR 0023: the Assembly Epoch that was VALIDATED at capture time (floor stamp == chat epoch). The
+   * replacement floor is stamped with this, not with a fresh read: `generate()` awaits the turn
+   * barriers between capture and replay, so a bump landing in that gap would otherwise stamp the
+   * replayed (older-epoch) prompt as current and let the NEXT re-roll replay it again, skipping the
+   * reassembly that edit earned.
+   */
+  epoch: number
 }
 
 /** Sentinel returned by `stage` when the graph signal aborted before the stage could run. */
@@ -97,6 +105,10 @@ export const runResampleTurnDirect = async (
   )
   if (seed === ABORTED) return null
   const gen: GenContext = seed
+  // The replayed prompt belongs to the epoch validated at capture, NOT to whatever the epoch reads as
+  // now — an edit landing in the barrier gap must leave the replacement floor stamped stale. Assigned
+  // in place (not spread) to keep the ONE shared `gen` object this file's header documents.
+  gen.assemblyEpoch = captured.epoch
 
   // ── 2. replay the captured build-time template writes onto the seed vars (pre-fold order) ────────
   const applied = await stage(() => {

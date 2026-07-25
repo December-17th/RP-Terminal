@@ -120,6 +120,15 @@ export interface Settings {
     scan_depth: number
     /** Max recursive match passes fed by matched entries' content (0 = off). */
     max_recursion: number
+    /**
+     * Context pins (lore-runtime V8 WP-L3): append a card's declared `pin_paths` variable values to
+     * the lore SCAN TEXT. **Default OFF (undefined = off).** Retrieval otherwise stays exactly ST's
+     * keyword matcher over conversation text; pins are the one RPT extension that widens what the
+     * matcher sees, so they are opt-in at the APP level rather than card-declaration alone — a card
+     * cannot switch the retrieval behavior on by itself. The Debug window's Retrieval tab previews
+     * what pins would fire regardless of this flag, so the effect can be evaluated before enabling.
+     */
+    context_pins?: boolean
   }
   /** SQL-table memory (manual-pass issue 04): the global default maintenance cadence a template table
    *  with `updateFrequency === -1` ("use global") runs at. Mirrors the 数据库-plugin global default. */

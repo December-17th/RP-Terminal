@@ -41,7 +41,14 @@ import { applyVariableOps } from '../src/main/services/generation/varsWrite'
 import { setChatLorebookIds, setChatMode, setVnMode, truncateFloors } from '../src/main/services/chatService'
 import { setFloorStatData } from '../src/main/services/generationService'
 import { saveChat } from '../src/main/services/chatWriteService'
-import { saveLorebookById } from '../src/main/services/lorebookService'
+import { saveLorebookById, deleteLorebookById } from '../src/main/services/lorebookService'
+import {
+  saveRegexScript,
+  listScripts,
+  updateRule,
+  setScriptDisabled,
+  deleteScript
+} from '../src/main/services/regexService'
 import { savePreset } from '../src/main/services/presetService'
 import { saveSettings } from '../src/main/services/settingsService'
 import { persistFloor } from '../src/main/services/generation/persistFloor'
@@ -273,6 +280,45 @@ describe('assemblyEpochService — selection / config / library call sites', () 
     expect(getAssemblyEpoch(PROFILE, 'save-lb-unrelated')).toBe(0)
   })
 
+  it('bumps referencing chats when the lorebook is DELETED (symmetric with save)', () => {
+    insertChat('del-lb', { characterId: 'other', lorebookIds: ['book-gone'] })
+    insertChat('del-lb-unrelated', { characterId: 'other', lorebookIds: ['book-x'] })
+    saveLorebookById(PROFILE, 'book-gone', { name: 'B', entries: [] } as never) // epoch → 1
+    deleteLorebookById(PROFILE, 'book-gone')
+    // A chat that referenced the book assembled from entries that no longer exist.
+    expect(getAssemblyEpoch(PROFILE, 'del-lb')).toBe(2)
+    expect(getAssemblyEpoch(PROFILE, 'del-lb-unrelated')).toBe(0)
+  })
+
+  it('bumps a chat on the DEFAULT selection when its embedded book is saved (id == characterId)', () => {
+    // Guards the SQL prefilter in bumpAssemblyEpochForLorebook: a NULL lorebook_ids column is decided
+    // on character_id, so narrowing the candidate set must not drop this row.
+    insertChat('default-sel', { characterId: 'char-embed' })
+    saveLorebookById(PROFILE, 'char-embed', { name: 'B', entries: [] } as never)
+    expect(getAssemblyEpoch(PROFILE, 'default-sel')).toBe(1)
+  })
+
+  it('bumps all chats when a prompt-phase regex rule is saved, edited, or deleted', () => {
+    // Prompt-phase regex is an assembly input (assemblePrompt reads getPromptRules/getWorldInfoRules
+    // fresh every build), so editing one must force a reassembly rather than a Resample.
+    insertChat('regex-1')
+    const file = saveRegexScript(PROFILE, [
+      { scriptName: 'R', findRegex: '/a/g', replaceString: 'b', promptOnly: true }
+    ])
+    expect(file).not.toBeNull()
+    expect(getAssemblyEpoch(PROFILE, 'regex-1')).toBe(1)
+
+    const script = listScripts(PROFILE)[0]
+    updateRule(PROFILE, script.file, 0, { replace: 'c' })
+    expect(getAssemblyEpoch(PROFILE, 'regex-1')).toBe(2)
+
+    setScriptDisabled(PROFILE, script.file, true)
+    expect(getAssemblyEpoch(PROFILE, 'regex-1')).toBe(3)
+
+    deleteScript(PROFILE, script.file)
+    expect(getAssemblyEpoch(PROFILE, 'regex-1')).toBe(4)
+  })
+
   it('bumps all chats when a preset is saved', () => {
     insertChat('preset-1')
     insertChat('preset-2')
@@ -296,19 +342,17 @@ describe('assemblyEpochService — selection / config / library call sites', () 
   })
 })
 
-describe('persistFloor — stamps the current epoch', () => {
-  it('stamps the new floor with the chat’s epoch at persist time', () => {
-    insertChat('persist-c')
-    bumpAssemblyEpoch(PROFILE, 'persist-c')
-    bumpAssemblyEpoch(PROFILE, 'persist-c')
-    bumpAssemblyEpoch(PROFILE, 'persist-c') // epoch = 3
+describe('persistFloor — stamps the epoch the context was BUILT under', () => {
+  /** Persist one floor for `chatId` under a given build-time epoch (what `buildGenContext` read). */
+  const persistUnder = (chatId: string, assemblyEpoch: number): void => {
     const ctx = {
       profileId: PROFILE,
-      chatId: 'persist-c',
+      chatId,
       userAction: 'hi',
       chat: { floor_count: 0 },
       settings: { api: { model: 'm', provider: 'openai' } },
-      globals: {}
+      globals: {},
+      assemblyEpoch
     } as unknown as GenContext
     persistFloor(ctx, {
       userAction: 'hi',
@@ -318,6 +362,26 @@ describe('persistFloor — stamps the current epoch', () => {
       variables: {},
       metrics: {} as never
     })
+  }
+
+  it('stamps `ctx.assemblyEpoch` — the value read when the context was built', () => {
+    insertChat('persist-c')
+    bumpAssemblyEpoch(PROFILE, 'persist-c')
+    bumpAssemblyEpoch(PROFILE, 'persist-c')
+    bumpAssemblyEpoch(PROFILE, 'persist-c') // epoch = 3
+    persistUnder('persist-c', 3) // context built at 3, nothing changed since
     expect(getFloorAssemblyEpoch('persist-c', 0)).toBe(3)
+  })
+
+  it('an edit landing DURING the turn leaves the floor stamped stale, not current', () => {
+    // The mid-stream hazard: assembly read epoch 1, then a lorebook/preset/settings save bumped the
+    // chat to 2 while the model was still streaming. Stamping a fresh read here would mark a prompt
+    // built under epoch 1 as current, and the next re-roll would Resample those stale bytes.
+    insertChat('persist-mid')
+    bumpAssemblyEpoch(PROFILE, 'persist-mid') // epoch = 1, context built here
+    bumpAssemblyEpoch(PROFILE, 'persist-mid') // epoch = 2, the mid-turn edit
+    persistUnder('persist-mid', 1)
+    expect(getFloorAssemblyEpoch('persist-mid', 0)).toBe(1)
+    expect(getAssemblyEpoch(PROFILE, 'persist-mid')).toBe(2) // → mismatch → full reassembly
   })
 })

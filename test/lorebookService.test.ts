@@ -255,6 +255,30 @@ describe('regex keys', () => {
     expect(matchEntries(lb, 'plain foo text')).toHaveLength(0)
   })
 
+  it('accepts the full JS flag set (d, v) instead of silently going literal', () => {
+    // A valid-but-unlisted flag used to fall back to literal matching, which can never hit (scan text
+    // does not contain the slashes) — i.e. the key was silently dead, the exact bug regex keys fix.
+    expect(matchEntries(book([{ keys: ['/spark/d'], content: 'x' }]), 'a spark flies')).toHaveLength(
+      1
+    )
+    expect(matchEntries(book([{ keys: ['/spark/v'], content: 'x' }]), 'a spark flies')).toHaveLength(
+      1
+    )
+  })
+
+  it('a genuinely invalid flag combination still falls back to literal', () => {
+    // `u` and `v` are mutually exclusive — RegExp throws, so the key matches literally.
+    const lb = book([{ keys: ['/spark/uv'], content: 'x' }])
+    expect(matchEntries(lb, 'a spark flies')).toHaveLength(0)
+    expect(matchEntries(lb, 'the /spark/uv marker')).toHaveLength(1)
+  })
+
+  it('an unknown flag letter falls back to literal', () => {
+    const lb = book([{ keys: ['/spark/z/'], content: 'x' }])
+    expect(() => matchEntries(lb, 'a spark flies')).not.toThrow()
+    expect(matchEntries(lb, 'a spark flies')).toHaveLength(0)
+  })
+
   it('a regex key triggers a recursion pass', () => {
     const lb = book([
       { keys: ['/dragon/i'], content: 'The dragon guards gold.' },

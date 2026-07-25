@@ -667,6 +667,9 @@ const zh: Record<string, string> = {
     '仅影响 OpenAI 兼容端点（openai/openrouter/custom）。在合并前把 system 重标为 user，与 SillyTavern 对“OpenAI 兼容层后的 Gemini”（其对 system 角色支持较差）的处理一致。对原生 Anthropic/Gemini 连接无效。使用真实 OpenAI/Anthropic 时请保持关闭。',
   'prefs.renderCadenceHint': '流式生成时，大约每这么多 Token 重新运行一次引擎（而非每个 Token）。',
   'prefs.recursionHint': '已匹配条目的内容可触发更多条目，最多这么多轮（0 = 关闭）。',
+  'prefs.contextPins': '上下文锚定',
+  'prefs.contextPinsHint':
+    '默认关闭。开启后，声明了锚定路径的角色卡会把当前变量值（地点、队伍等）加入世界书扫描文本，使状态相关的条目在对话不再提及关键词后仍能命中。锚定的值不会进入提示词本身。可在调试窗口的「检索」标签页预览效果。',
   'prefs.pricing': 'Token 定价（美元 / 百万 Token）',
   'prefs.pricingHint': '可选。留空 ⇒ 计量仅显示 Token。按精确的模型 id 索引。',
   'prefs.remove': '删除',

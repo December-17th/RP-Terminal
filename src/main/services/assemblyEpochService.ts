@@ -53,17 +53,36 @@ export const bumpAssemblyEpoch = (profileId: string, chatId: string): void => {
  */
 export const bumpAssemblyEpochForLorebook = (profileId: string, lorebookId: string): void => {
   const db = getDb()
+  // PREFILTER in SQL, decide in JS. Card scripts can save a worldbook every turn (TavernHelper
+  // `replaceWorldbookEntries` → `saveLorebookById`), so this must not be an unconditional scan of
+  // every chat in the profile. Only two row shapes can possibly match: a DEFAULT selection (NULL
+  // column, matched on `character_id`), or an explicit selection whose JSON text contains the id.
+  // The three disjuncts are an EXACT superset of what the JS filter can accept: `parseIds` returns
+  // null for a NULL *or unparseable* column (decided on `character_id`, hence the equality disjunct),
+  // and otherwise the id must appear verbatim in the JSON text (hence LIKE). `parseIds` still makes
+  // the real decision below, so the narrowing cannot change which chats bump.
   const rows = db
-    .prepare('SELECT id, lorebook_ids, character_id FROM chats WHERE profile_id = ?')
-    .all(profileId) as Array<{ id: string; lorebook_ids: string | null; character_id: string }>
+    .prepare(
+      `SELECT id, lorebook_ids, character_id FROM chats
+        WHERE profile_id = ?
+          AND (lorebook_ids IS NULL OR character_id = ? OR lorebook_ids LIKE ?)`
+    )
+    .all(profileId, lorebookId, `%${lorebookId}%`) as Array<{
+    id: string
+    lorebook_ids: string | null
+    character_id: string
+  }>
   const bump = db.prepare(
     'UPDATE chats SET assembly_epoch = COALESCE(assembly_epoch, 0) + 1 WHERE id = ? AND profile_id = ?'
   )
-  for (const row of rows) {
-    const ids = parseIds(row.lorebook_ids)
-    const affected = ids === null ? row.character_id === lorebookId : ids.includes(lorebookId)
-    if (affected) bump.run(row.id, profileId)
-  }
+  // One transaction: a save that touches many chats is a single durable step, not N fsyncs.
+  db.transaction(() => {
+    for (const row of rows) {
+      const ids = parseIds(row.lorebook_ids)
+      const affected = ids === null ? row.character_id === lorebookId : ids.includes(lorebookId)
+      if (affected) bump.run(row.id, profileId)
+    }
+  })()
 }
 
 /** Bump every chat bound to `characterId` (a card save changes those chats' assembly inputs). */

@@ -688,6 +688,9 @@ const en: Record<string, string> = {
     'During streaming, re-run the engine roughly every this many tokens (not per token).',
   'prefs.recursionHint':
     "Matched entries' content can trigger more entries, up to this many passes (0 = off).",
+  'prefs.contextPins': 'Context pins',
+  'prefs.contextPinsHint':
+    'Off by default. When on, a card that declares pin paths adds its current variable values (location, party, …) to the lorebook scan text, so state-relevant entries keep matching after the conversation stops naming them. Pinned values never enter the prompt itself. Preview the effect in the Debug window’s Retrieval tab.',
   'prefs.pricing': 'Token pricing ($ / 1M tokens)',
   'prefs.pricingHint': 'Optional. Empty ⇒ the meter shows tokens only. Keyed by exact model id.',
   'prefs.remove': 'Remove',

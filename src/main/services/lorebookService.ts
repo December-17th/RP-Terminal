@@ -10,6 +10,7 @@ import {
 } from './storageService'
 import { Lorebook, LorebookEntry, LorebookSchema } from '../types/character'
 import { bumpAssemblyEpochForLorebook } from './assemblyEpochService'
+import { log } from './logService'
 import { RetrievalReason, RetrievalTraceRow } from '../../shared/retrievalTrace'
 
 /**
@@ -72,6 +73,10 @@ export const saveLorebookById = (profileId: string, id: string, lorebook: Lorebo
 export const deleteLorebookById = (profileId: string, id: string): void => {
   const p = lorebookPath(profileId, id)
   if (fs.existsSync(p)) fs.unlinkSync(p)
+  // ADR 0023: symmetric with `saveLorebookById` — a chat that referenced this book assembled its
+  // stored prompts from entries that no longer exist, so those prompts are stale. Bumping AFTER the
+  // unlink is fine: the bump only marks chats, it never re-reads the book.
+  bumpAssemblyEpochForLorebook(profileId, id)
 }
 
 /** Create a new, empty standalone lorebook. Returns its id. */
@@ -104,22 +109,34 @@ export const deleteCharacterLorebook = (profileId: string, characterId: string):
 /**
  * ST-style regex key support. A key is a regex when it is slash-delimited
  * `/pattern/flags`: it starts with `/`, has a closing unescaped `/`, and everything
- * after the final `/` is flags drawn from JS RegExp's `g i m s u y`. Internal `/` in
+ * after the final `/` is flags drawn from JS RegExp's full set — `d g i m s u v y`. Internal `/` in
  * the pattern must be escaped (`\/`). A key that looks slash-delimited but fails to
  * compile falls back to plaintext matching of the whole key string. Regex keys test
  * the untransformed scan text — their own `i` flag governs case, so `case_sensitive`
  * does not apply to them.
+ *
+ * The flag set is the FULL JS set on purpose: an unlisted-but-valid flag used to make the key fall
+ * back to literal matching, which can never hit (nothing in scan text contains the slashes), so the
+ * key was silently dead — the exact failure mode regex-key support exists to fix. Genuinely invalid
+ * combinations (`u` with `v`, a repeated flag, a bad pattern) still throw and fall back, and that
+ * fallback is now LOGGED, because a slash-delimited key that fails to compile is an authoring error
+ * the card author would otherwise never see.
  */
 const parseRegexKey = (key: string): RegExp | null => {
   // Body: escaped chars (\.) or any char that is not an unescaped `/` or `\`.
   const m = /^\/((?:\\.|[^/\\])*)\/([a-z]*)$/.exec(key)
   if (!m) return null
   const [, pattern, flags] = m
-  if (flags && !/^[gimsuy]*$/.test(flags)) return null
+  if (flags && !/^[dgimsuvy]*$/.test(flags)) {
+    log('info', `lorebook regex key "${key}" has unknown flag(s) — matching it literally instead`)
+    return null
+  }
   try {
     return new RegExp(pattern, flags)
-  } catch {
-    return null // invalid pattern → caller falls back to literal
+  } catch (error) {
+    // invalid pattern → caller falls back to literal
+    log('info', `lorebook regex key "${key}" failed to compile — matching it literally instead`, error)
+    return null
   }
 }
 

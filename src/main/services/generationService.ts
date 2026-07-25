@@ -323,7 +323,12 @@ const captureResample = (
     'info',
     `re-roll → resample stored prompt for chat ${chatId} (epoch ${chatEpoch}, ${request.length} msgs, ${templateOps.length} template op(s))`
   )
-  return { sendMessages: request as ChatMessage[], templateOps, ...(last.plot_block ? { plotBlock: last.plot_block } : {}) }
+  return {
+    sendMessages: request as ChatMessage[],
+    templateOps,
+    epoch: chatEpoch,
+    ...(last.plot_block ? { plotBlock: last.plot_block } : {})
+  }
 }
 
 /**

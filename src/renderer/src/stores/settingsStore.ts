@@ -50,6 +50,9 @@ export interface Settings {
   lorebook: {
     scan_depth: number
     max_recursion: number
+    /** Context pins (WP-L3) — append card-declared `pin_paths` values to the lore scan text.
+     *  Default OFF; see the main-side `Settings['lorebook']` doc for why it is app-gated. */
+    context_pins?: boolean
   }
   /** SQL-table memory global default cadence (manual-pass issue 04); a template table with
    *  updateFrequency -1 ("use global") maintains at this frequency. Optional — older profiles lack it

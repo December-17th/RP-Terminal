@@ -43,6 +43,15 @@ export interface GenContext {
   maxRecursion: number
   scanText: string
   /**
+   * ADR 0023 (Assembly Epoch): the chat's epoch READ AT CONTEXT-BUILD TIME — i.e. before this turn's
+   * assembly reads any lorebook / preset / regex / variable input. `persistFloor` stamps THIS value on
+   * the floor, never a fresh read: a re-read at persist time sits on the far side of the model call, so
+   * an edit landing mid-stream would be folded into the stamp and a prompt assembled under the OLD
+   * epoch would look current to Resample. Stamping the build-time epoch keeps the failure direction
+   * safe — a mid-turn edit leaves the floor stamped stale and forces a full reassembly.
+   */
+  assemblyEpoch: number
+  /**
    * Turn-scoped carrier for the forensic Execution Record (issue 09). `buildGenContext` never sets
    * this; the assemble STAGE (`prompt.assemble` / `prompt.preset`) stamps the just-built record here so
    * the terminal write stage (`persistFloor`) can persist it WITHOUT a dedicated graph edge — both

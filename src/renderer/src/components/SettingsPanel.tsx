@@ -395,6 +395,25 @@ export const SettingsPanel: React.FC<{ profileId: string }> = ({ profileId }) =>
               {t('prefs.recursionHint')}
             </div>
 
+            <label
+              className="entry-toggles"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}
+            >
+              <input
+                type="checkbox"
+                checked={settings.lorebook?.context_pins === true}
+                onChange={(e) =>
+                  updateSettings(profileId, {
+                    lorebook: { ...settings.lorebook, context_pins: e.target.checked }
+                  })
+                }
+              />
+              {t('prefs.contextPins')}
+            </label>
+            <div style={{ fontSize: '0.78em', color: 'var(--rpt-text-secondary)', marginTop: 4 }}>
+              {t('prefs.contextPinsHint')}
+            </div>
+
             {/* SQL-table memory: the global default cadence a template table with updateFrequency -1
                 ("use global") maintains at (manual-pass issue 04). */}
             <label className="field-label" style={{ marginTop: 18 }}>

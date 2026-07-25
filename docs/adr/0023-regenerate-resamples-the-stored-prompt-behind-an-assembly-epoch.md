@@ -7,9 +7,17 @@ decisively — it removes the only consumer of deterministic lore probability an
 state, which the V7 lore-runtime design would otherwise have needed (seeded RNG, activation
 ledgers, revision hashes). Staleness is handled by a coarse persisted per-chat **Assembly
 Epoch**: any assembly-relevant edit (variables or transcript below the latest floor, referenced
-lorebook/card/preset, chat lorebook selection or mode) bumps it, and a floor whose stored epoch
-no longer matches falls back to today's full reassembly — false positives merely cost a normal
-rebuild, never correctness. The old floor's `'template'`-source journal ops must be captured
+lorebook saved *or deleted*, card/preset/settings, a prompt-phase **regex** rule, chat lorebook
+selection or mode) bumps it, and a floor whose stored epoch no longer matches falls back to
+today's full reassembly — false positives merely cost a normal rebuild, never correctness.
+
+The asymmetry is load-bearing and runs one way only: over-bumping is free, under-bumping replays
+a stale prompt. So a floor is stamped with the epoch read when its **context was built**
+(`GenContext.assemblyEpoch`), never with a fresh read at persist time — a persist-time read sits
+on the far side of the model call, and an edit landing mid-stream would be folded into the stamp,
+marking a prompt assembled under the *old* epoch as current. The Resample path likewise stamps the
+epoch validated at capture, since `generate()` awaits the turn barriers between the two.
+The old floor's `'template'`-source journal ops must be captured
 before the cut and re-journaled on the replacement floor, or Forward Replay silently loses
 build-time setvar writes.
 
