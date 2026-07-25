@@ -128,6 +128,7 @@ export const WCV_CHANNEL_SPEC: Record<WcvSpecMember, ChannelSpec> = {
   assetUrl: { channel: 'wcv-host-asset-url', kind: 'invoke' },
   sceneAssetUrl: { channel: 'wcv-host-scene-asset-url', kind: 'invoke' },
   assetList: { channel: 'wcv-host-asset-list', kind: 'invoke' },
+  miscAssets: { channel: 'wcv-host-misc-assets', kind: 'invoke' },
   requestAssetImport: { channel: 'wcv-host-request-asset-import', kind: 'invoke' },
 
   // --- GenHost ---

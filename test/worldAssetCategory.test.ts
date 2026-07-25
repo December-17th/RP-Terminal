@@ -22,9 +22,14 @@ describe('categoryForType', () => {
   it('maps CG to its own cg category (not the character fallback)', () => {
     expect(categoryForType('CG')).toBe('cg')
   })
-  it('is exhaustive over all seven known types', () => {
-    const routed = (['头像', '立绘', '立绘bg', '相册', '背景', '全景', 'CG'] as const).map((t) =>
-      categoryForType(t)
+  // M1: `misc` is general-purpose card art (skill/item/card faces) with its own category, so it never
+  // pollutes the character namespace the way the rejected `立绘bg` reuse did.
+  it('maps misc to its own misc category (not the character fallback)', () => {
+    expect(categoryForType('misc')).toBe('misc')
+  })
+  it('is exhaustive over all eight known types', () => {
+    const routed = (['头像', '立绘', '立绘bg', '相册', '背景', '全景', 'CG', 'misc'] as const).map(
+      (t) => categoryForType(t)
     )
     expect(routed).toEqual([
       'character',
@@ -33,13 +38,15 @@ describe('categoryForType', () => {
       'character',
       'location',
       'location',
-      'cg'
+      'cg',
+      'misc'
     ])
   })
   it("TYPES_BY_CATEGORY lists each category's types", () => {
     expect(TYPES_BY_CATEGORY.character).toEqual(['立绘', '立绘bg', '头像', '相册'])
     expect(TYPES_BY_CATEGORY.location).toEqual(['背景', '全景'])
     expect(TYPES_BY_CATEGORY.cg).toEqual(['CG'])
+    expect(TYPES_BY_CATEGORY.misc).toEqual(['misc'])
   })
 
   // PM-A6: both card transports' `assetUrl(name, type, mood)` fill-in points infer the category
@@ -54,7 +61,9 @@ describe('categoryForType', () => {
     expect(categoryForType('头像')).toBe('character')
     expect(categoryForType('立绘')).toBe('character')
     expect(categoryForType('立绘bg')).toBe('character')
+    expect(categoryForType('misc')).toBe('misc')
     // Unknown/garbage type ⇒ character (old hardcoded default preserved).
     expect(categoryForType('nonsense' as never)).toBe('character')
+    expect(categoryForType('' as never)).toBe('character')
   })
 })

@@ -126,6 +126,51 @@ describe('parseAssetFilename', () => {
     const p = { name: '初遇', type: 'CG' as const, mood: '雨夜', ext: 'png' as const }
     expect(parseAssetFilename(buildAssetFilename(p))).toEqual(p)
   })
+  // M1: `misc` joins ASSET_TYPES with NO parser change — the right-to-left whole-segment scan finds it,
+  // and appending it to the array cannot shadow (or be shadowed by) any existing token.
+  it('parses a misc base file and a variant token', () => {
+    expect(parseAssetFilename('火球术_misc.png')).toEqual({
+      name: '火球术',
+      type: 'misc',
+      mood: undefined,
+      ext: 'png'
+    })
+    expect(parseAssetFilename('火球术_misc_alt.webp')).toEqual({
+      name: '火球术',
+      type: 'misc',
+      mood: 'alt',
+      ext: 'webp'
+    })
+  })
+  it('keeps underscores in the name before the misc token', () => {
+    expect(parseAssetFilename('skill_card_misc_02.png')).toEqual({
+      name: 'skill_card',
+      type: 'misc',
+      mood: '02',
+      ext: 'png'
+    })
+  })
+  it('accepts MP4 for misc (full-frame art, like CG)', () => {
+    expect(parseAssetFilename('陨星裂空_misc.mp4')).toEqual({
+      name: '陨星裂空',
+      type: 'misc',
+      mood: undefined,
+      ext: 'mp4'
+    })
+  })
+  it('round-trips a misc variant through buildAssetFilename', () => {
+    const p = { name: '火球术', type: 'misc' as const, mood: 'alt', ext: 'webp' as const }
+    expect(parseAssetFilename(buildAssetFilename(p))).toEqual(p)
+  })
+  it('does not let misc shadow a more specific trailing type token', () => {
+    // A right-to-left scan still anchors on the RIGHTMOST known token.
+    expect(parseAssetFilename('misc_立绘bg.png')).toEqual({
+      name: 'misc',
+      type: '立绘bg',
+      mood: undefined,
+      ext: 'png'
+    })
+  })
   it('returns null when no known type token is present', () => {
     expect(parseAssetFilename('爱莎_随手图.png')).toBeNull()
   })

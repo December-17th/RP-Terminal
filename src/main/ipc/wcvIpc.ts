@@ -1058,6 +1058,18 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
         (ctx.characterId ? [ctx.characterId] : [])
       return worldAssetService.assetListForWorld(ctx.profileId, ids, String(name ?? ''), type)
     },
+    // Card-facing `misc` enumeration (M3): the WHOLE general-purpose card-art namespace, local + remote.
+    // WCV transport — ctx (profile/chat/lorebook ids) resolves from e.sender exactly like assetList, then
+    // the SAME shared body `worldAssetService.miscAssetsForWorld` the inline handler calls, so the two
+    // transports cannot drift. [] when the sender has no bound session.
+    miscAssets: (e) => {
+      const ctx = wcvManager.contextFor(e.sender.id)
+      if (!ctx) return []
+      const ids =
+        chatService.getChatLorebookIds(ctx.profileId, ctx.chatId) ??
+        (ctx.characterId ? [ctx.characterId] : [])
+      return worldAssetService.miscAssetsForWorld(ctx.profileId, ids, ctx.chatId)
+    },
     // Card-facing picker-backed import (WA-3): main opens the OS image picker, copies into the calling
     // card's primary world, returns the new rptasset:// URL (null on cancel/invalid). ctx from e.sender; a
     // WCV's webContents doesn't map to a BrowserWindow, so fall back to the app's window for the dialog.

@@ -76,6 +76,7 @@ export function createNullHost(ctx?: CardCtx): Host {
     assetUrl: async () => null,
     sceneAssetUrl: async () => null,
     assetList: async () => [],
+    miscAssets: async () => [],
     requestAssetImport: async () => null,
 
     // --- GenHost ---

@@ -2,8 +2,10 @@ import { getDb } from './db'
 import { createHash } from 'crypto'
 import * as floorService from './floorService'
 import {
-  remoteAssetFromVariables,
-  remoteAssetsFromVariables,
+  remoteAssetForKind,
+  remoteAssetsForKind,
+  REMOTE_ASSET_URL_HOSTS,
+  type RemoteAssetKind,
   type RemoteAssetListItem
 } from '../../shared/worldAssets/remote'
 
@@ -13,10 +15,11 @@ export const remoteAssetUrl = (
   profileId: string,
   chatId: string,
   name: string,
-  sourceUrl: string
+  sourceUrl: string,
+  kind: RemoteAssetKind = 'character'
 ): string => {
   const revision = createHash('sha256').update(sourceUrl).digest('hex').slice(0, 12)
-  return `${REMOTE_ASSET_SCHEME}://asset/${encodeURIComponent(profileId)}/${encodeURIComponent(chatId)}/${encodeURIComponent(name)}?v=${revision}`
+  return `${REMOTE_ASSET_SCHEME}://${REMOTE_ASSET_URL_HOSTS[kind]}/${encodeURIComponent(profileId)}/${encodeURIComponent(chatId)}/${encodeURIComponent(name)}?v=${revision}`
 }
 
 const latestVariables = (profileId: string, chatId: string): Record<string, unknown> | null => {
@@ -30,12 +33,16 @@ const latestVariables = (profileId: string, chatId: string): Record<string, unkn
   return count ? floorService.getFloor(profileId, chatId, count - 1)?.variables ?? null : null
 }
 
-export function listRemoteAssets(profileId: string, chatId: string): RemoteAssetListItem[] {
+export function listRemoteAssets(
+  profileId: string,
+  chatId: string,
+  kind: RemoteAssetKind = 'character'
+): RemoteAssetListItem[] {
   const variables = latestVariables(profileId, chatId)
   if (!variables) return []
-  return remoteAssetsFromVariables(variables).map((asset) => ({
+  return remoteAssetsForKind(variables, kind).map((asset) => ({
     ...asset,
-    url: remoteAssetUrl(profileId, chatId, asset.name, asset.sourceUrl)
+    url: remoteAssetUrl(profileId, chatId, asset.name, asset.sourceUrl, kind)
   }))
 }
 
@@ -51,18 +58,21 @@ export function clearRemoteAssetSourceCache(): void {
 export function resolveRemoteAssetSource(
   profileId: string,
   chatId: string,
-  name: string
+  name: string,
+  kind: RemoteAssetKind = 'character'
 ): string | null {
   // A single MP4 playback issues many byte-range protocol requests; this micro-cache spares SQLite the
   // repeated chat-row + latest-floor reads. A staleness window of up to SOURCE_CACHE_TTL_MS against the
   // newest floor is accepted.
-  const key = `${profileId} ${chatId} ${name}`
+  // The KIND is part of the key: the same name may be declared in both bags, and a shared key would
+  // let a `misc` lookup serve the cached `character` URL (or vice versa).
+  const key = `${kind} ${profileId} ${chatId} ${name}`
   const now = Date.now()
   const cached = sourceCache.get(key)
   if (cached && now - cached.at < SOURCE_CACHE_TTL_MS) return cached.url
 
   const variables = latestVariables(profileId, chatId)
-  const url = variables ? remoteAssetFromVariables(variables, name)?.sourceUrl ?? null : null
+  const url = variables ? remoteAssetForKind(variables, kind, name)?.sourceUrl ?? null : null
 
   sourceCache.delete(key)
   sourceCache.set(key, { url, at: now })
@@ -77,10 +87,11 @@ export function resolveRemoteAssetSource(
 export function resolveRemoteAssetUrl(
   profileId: string,
   chatId: string,
-  name: string
+  name: string,
+  kind: RemoteAssetKind = 'character'
 ): string | null {
-  const sourceUrl = resolveRemoteAssetSource(profileId, chatId, name)
+  const sourceUrl = resolveRemoteAssetSource(profileId, chatId, name, kind)
   return sourceUrl
-    ? remoteAssetUrl(profileId, chatId, String(name ?? '').trim(), sourceUrl)
+    ? remoteAssetUrl(profileId, chatId, String(name ?? '').trim(), sourceUrl, kind)
     : null
 }

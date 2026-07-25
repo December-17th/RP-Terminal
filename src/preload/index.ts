@@ -774,6 +774,10 @@ const api = {
   // Card-facing (WA-3): enumerate one entry's variants; main applies id precedence + category inference.
   assetList: (profileId: string, lorebookIds: string[], name: string, type: string) =>
     ipcRenderer.invoke('asset-list-for-card', profileId, lorebookIds, name, type),
+  // Card-facing (M3): enumerate the WHOLE `misc` card-art namespace — local files first, then the chat's
+  // remote `rpt_misc_assets` declarations. Main applies id precedence + ordering (miscAssetsForWorld).
+  miscAssets: (profileId: string, lorebookIds: string[], chatId: string) =>
+    ipcRenderer.invoke('asset-misc-for-card', profileId, lorebookIds, chatId),
   // Card-facing (WA-3): open the OS image picker and import into the primary world; returns the new
   // rptasset:// URL or null (cancel/invalid). Backs rptHost.requestAssetImport on inline cards.
   assetImportForCard: (

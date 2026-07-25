@@ -487,6 +487,19 @@ export function createInlineHost(ctx: CardCtx): Host {
         return []
       }
     },
+    // Enumerate the card's whole `misc` namespace (M3). Resolves the session lorebook ids exactly like
+    // assetUrl/assetList and passes this session's chatId (the remote `rpt_misc_assets` bag is per-chat);
+    // main applies the id precedence and the local-before-remote ordering in the SAME shared body the WCV
+    // handler calls (worldAssetService.miscAssetsForWorld). Empty array on error.
+    miscAssets: async () => {
+      try {
+        const own = cardCharacterId()
+        const ids = useLorebookStore.getState().sessionIds ?? (own ? [own] : [])
+        return await window.api.miscAssets(ctx.profileId, ids, ctx.chatId)
+      } catch {
+        return []
+      }
+    },
     // Picker-backed import (WA-3): resolves the session lorebook ids like assetUrl/assetList (the write
     // target is the primary id); main opens the OS image picker, copies the pick into the world, and
     // returns the new rptasset:// URL (null on cancel/invalid). Kept at parity with the WCV path.
