@@ -172,7 +172,18 @@ export const createSessionInvocationFloorPort = (
     // extracts `<tp>` or any card-specific tag. Additive: a same-named inputBinding wins. Manual
     // "Run now" and formatVersion-1 Agents (including the built-in Memory Maintenance Agent) are
     // untouched. Shape pinned by `TriggeredRunInputContext`.
-    if (request.triggered && request.agent.effective.formatVersion === 2) {
+    //
+    // A DECLARED `processing.preprocess` is part of the gate: only a preprocess can consume (and
+    // reshape away) these fields. Enriching a preprocess-less Agent would (a) hard-fail one whose
+    // `inputSchema` sets `additionalProperties: false` — with no preprocess the harness validates the
+    // raw input against it (`prepare.ts`, `inputProcessed` unset) and zod rejects the extra keys — and
+    // (b) silently append the whole floor text to every triggered prompt, since the harness always
+    // sends the input object as a trailing JSON user message (`attemptLog.ts`).
+    if (
+      request.triggered &&
+      request.agent.effective.formatVersion === 2 &&
+      request.agent.effective.processing?.preprocess !== undefined
+    ) {
       const result = request.agent.effective.result
       const saveAs = result.mode === 'tools-only' ? undefined : result.saveAs
       const priorResult = saveAs ? readPath(variables, saveAs) : undefined

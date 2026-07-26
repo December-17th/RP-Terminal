@@ -142,6 +142,35 @@ const echoTriggerAgent = fv2Agent(
 // Returns the skip sentinel: the run must abort before any provider dispatch.
 const skipGateAgent = fv2Agent('Skip Gate', 'return { __rpt_skip: true, reason: "not due" }')
 
+// A triggered formatVersion-2 Agent with NO preprocess and a CLOSED inputSchema. Nothing can consume
+// (or reshape away) injected fields here, and with `inputProcessed` unset the harness validates the raw
+// input against this schema — so enriching it would fail the run outright.
+const strictNoPreprocessAgent = ((): CatalogAgent => {
+  const parsed = parseAgentDefinition({
+    format: 'rpt-agent',
+    formatVersion: 2,
+    name: 'Strict No Preprocess',
+    prompt: [{ role: 'system', content: 'Strict.' }],
+    inputSchema: {
+      type: 'object',
+      properties: { text: { type: 'string' } },
+      required: ['text'],
+      additionalProperties: false
+    },
+    result: { mode: 'text', saveAs: 'variables.__rpt.agent_results.world.progression' },
+    defaults: { maxRetryAttempts: 0, retryDelayMs: 0, notification: 'none' }
+  })
+  if (!parsed.ok) throw new Error(parsed.errors.map((error) => error.message).join('; '))
+  return {
+    ...catalogAgent,
+    id: 'strict-no-preprocess',
+    name: parsed.value.name,
+    baseline: parsed.value,
+    effective: parsed.value,
+    effectiveHash: 'hash:strict-no-preprocess'
+  }
+})()
+
 const settings = {
   api: {
     provider: 'openai',
@@ -327,6 +356,34 @@ describe('InvocationRuntime session integration', () => {
     // No run record formed, so the derived cadence baseline never advanced — a skip is "not a run".
     expect(store.list('chat')).toEqual([])
     expect(store.latestRunFloor('chat', skipGateAgent.name)).toBeNull()
+  })
+
+  it('does not enrich a triggered formatVersion-2 Agent that declares no preprocess', async () => {
+    // Regression: the enrichment is FOR a preprocess gate. A preprocess-less Agent cannot consume the
+    // injected keys — a closed `inputSchema` would reject them at the harness (INVALID_INPUT), and the
+    // floor text would be appended to the prompt as a trailing JSON message it never asked for.
+    insertFloorWithResponse(7, 'floor seven body', {
+      __rpt: { agent_results: { world: { progression: 'marker-5' } } }
+    })
+    const { runtime, store } = setup(undefined, strictNoPreprocessAgent)
+    const invocation = runtime.run({
+      profileId: 'profile',
+      chatId: 'chat',
+      floor: 7,
+      agent: strictNoPreprocessAgent.name,
+      options: { input: { text: 'as supplied' } },
+      triggered: true
+    })
+    await vi.waitFor(() => expect(provider.calls).toHaveLength(1))
+    provider.calls[0].succeed('done')
+    // Enriched, this run would never reach the provider at all: the closed schema rejects the extra
+    // keys with INVALID_INPUT.
+    await expect(invocation).resolves.toMatchObject({ status: 'succeeded' })
+
+    // The harness sends the input object as the trailing JSON user message, so the wire proves the
+    // floor text was NOT smuggled into the prompt.
+    const messages = provider.calls[0].request.messages
+    expect(messages[messages.length - 1].content).toBe(JSON.stringify({ text: 'as supplied' }))
   })
 
   it('does not enrich a NON-triggered formatVersion-2 run (manual "Run now" input is untouched)', async () => {

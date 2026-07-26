@@ -71,7 +71,8 @@ export interface InvocationFloorPort {
     agent: CatalogAgent
     options?: InvocationOptions
     /** Floor-commit trigger dispatch (never a manual "Run now"): enriches the preprocess input with
-     *  the triggering floor's content and this Agent's prior result slot. See `TriggeredRunInputContext`. */
+     *  the triggering floor's content and this Agent's prior result slot — only for an Agent that
+     *  declares a `processing.preprocess`. See `TriggeredRunInputContext`. */
     triggered?: boolean
   }): Promise<InvocationSourceSnapshot>
   isSourceCurrent(

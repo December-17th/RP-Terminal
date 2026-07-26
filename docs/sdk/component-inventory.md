@@ -428,9 +428,10 @@ run immediately after card/file import and are disclosed in the bundle summary. 
 [`AgentProcessor.ts`](../../src/main/services/agentRuntime/processing/AgentProcessor.ts), and
 [`InvocationRuntime.ts`](../../src/main/services/agentRuntime/invocation/InvocationRuntime.ts).
 
-**Triggered-run preprocess input enrichment.** For a **floor-commit-triggered** version-2 Agent (NOT a
-manual **Run now**, and NOT a version-1 Agent), the runtime injects trigger context into the preprocess
-input so a gate can self-gate on in-game state — the script reads it as `input.value.trigger` /
+**Triggered-run preprocess input enrichment.** For a **floor-commit-triggered** version-2 Agent that
+**declares a `processing.preprocess`** (NOT a manual **Run now**, NOT a version-1 Agent, and NOT a
+preprocess-less Agent), the runtime injects trigger context into the preprocess input so a gate can
+self-gate on in-game state — the script reads it as `input.value.trigger` /
 `input.value.priorResult`. The shape (`TriggeredRunInputContext` in
 [`types.ts`](../../src/shared/agentRuntime/types.ts)):
 
@@ -451,8 +452,13 @@ marker" against current floor state. Both keys are **additive**: a same-named `i
 Because the harness always appends the (post-preprocess) input object as a trailing JSON user message —
 and a prompt segment `{ type: "binding", source: { type: "input" } }` injects it inline — the enriched
 fields are visible to the model without extra wiring (whole-object only; there is no per-field input
-path). Verify [`InvocationRuntimeService.ts`](../../src/main/services/agentRuntime/InvocationRuntimeService.ts)
-(`resolveSource`) and [`attemptLog.ts`](../../src/main/services/agentRuntime/harness/attemptLog.ts).
+path). That trailing message is also **why the preprocess is required**: a preprocess-less Agent has no
+way to reshape the injected keys away, so it would ship the whole floor text to the model unasked — and
+a closed `inputSchema` (`additionalProperties: false`) would reject them outright, since without a
+preprocess the harness validates the raw input against it. Such Agents are left untouched. Verify
+[`InvocationRuntimeService.ts`](../../src/main/services/agentRuntime/InvocationRuntimeService.ts)
+(`resolveSource`), [`prepare.ts`](../../src/main/services/agentRuntime/harness/prepare.ts)
+(`inputProcessed`) and [`attemptLog.ts`](../../src/main/services/agentRuntime/harness/attemptLog.ts).
 
 **Preprocess skip gate.** A version-2 `preprocess` may abort the run **before any provider/LLM dispatch**
 by returning the sentinel `{ __rpt_skip: true }` (optionally `{ __rpt_skip: true, reason: "…" }`; the
