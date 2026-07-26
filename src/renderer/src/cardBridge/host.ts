@@ -396,7 +396,12 @@ export function createInlineHost(ctx: CardCtx): Host {
     },
     // Inline-transport counterpart of the WCV `wcv-host-open-floor-manager` relay: this transport IS
     // the renderer, so it flips the uiStore flag directly. App mounts the modal (parity by construction).
+    // Chat-scoped exactly like the WCV path (which drops the push in App when the chatId is not the
+    // active one): a callback queued by a panel bound to a chat the user has since left must not raise
+    // the manager over a DIFFERENT chat's floors, where a confirmed cut deletes from a chat nobody
+    // asked about. FloorManagerModal reads `useChatStore.floors`, i.e. always the ACTIVE chat.
     openFloorManager: () => {
+      if (ctx.chatId !== useChatStore.getState().activeChatId) return
       useUiStore.getState().openFloorManager()
     },
     // Global (per-profile) variables for triggerSlash's /setglobalvar / /getglobalvar — the same
