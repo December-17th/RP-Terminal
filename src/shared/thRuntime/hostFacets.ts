@@ -142,6 +142,11 @@ export interface SurfaceHost {
   // Render the script's action buttons (replaceScriptButtons) — the host shows the visible ones in the
   // menu above the input; a click is delivered back as a host event named after the button.
   setButtons(buttons: { name: string; visible: boolean }[]): void
+  /** Open the app's floor manager (楼层管理) — the floor list + delete-tail surface. For cards that own
+   *  the play area and therefore never get the native chat toolbar's ☰ button. Fire-and-forget, and
+   *  app-owned: the card does not supply or render the surface (contrast `requestOverlay`, which mounts
+   *  a URL the CARD declares). Scoped to the active chat by the host; a no-op with no chat context. */
+  openFloorManager(): void
   // Raise a full-play-area overlay surface declared in the active card's `panel_ui.overlays` (PM-A7):
   // the app mounts the named surface as a WCV covering the whole panel_ui grid region above the slots.
   // One overlay at a time — requesting another closes the current one first. Resolves `true` when it

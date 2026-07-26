@@ -10,7 +10,6 @@ import { ChatToolbar } from './ChatToolbar'
 import { ScriptActionsBar } from './ScriptActionsBar'
 import { Composer } from './Composer'
 import { ContextMenu } from './ContextMenu'
-import { FloorManagerModal } from './FloorManagerModal'
 import { currentDisplayCtx, renderFloorView } from '../display/displayPipeline'
 import { useUiStore } from '../stores/uiStore'
 import {
@@ -63,6 +62,11 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const activeChatMode = useChatStore((s) => s.activeChatMode)
   const duelPopupOpen = useUiStore((s) => s.duelPopupOpen)
   const openDuelPopup = useUiStore((s) => s.openDuelPopup)
+  // The floor manager lives in uiStore and is MOUNTED BY App, not here — a card that owns the play
+  // area never mounts ChatView, and `SurfaceHost.openFloorManager()` must still reach it. ChatView
+  // only reads the flag (to gate its arrow-key paging) and raises it from the toolbar.
+  const floorManagerOpen = useUiStore((s) => s.floorManagerOpen)
+  const openFloorManager = useUiStore((s) => s.openFloorManager)
   const settings = useSettingsStore((s) => s.settings)
   const regexRules = useRegexStore((s) => s.rules)
   // Post-phase side-agent (memory.maintain / notes.maintain / agent.llm): background LLM work that runs
@@ -75,7 +79,6 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   const [editing, setEditing] = useState<{ floor: number; field: 'user' | 'response' } | null>(null)
   const [editText, setEditText] = useState('')
   const [menu, setMenu] = useState<FloorMenuTarget | null>(null)
-  const [floorsOpen, setFloorsOpen] = useState(false)
   // Which floor (page) the chat history is showing — one floor at a time.
   const [viewIndex, setViewIndex] = useState(0)
   // Jump-to-floor: when open, the page indicator swaps for a number input.
@@ -192,7 +195,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
   useEffect(() => {
     if (pageCount === 0) return
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (editing || menu || floorsOpen) return
+      if (editing || menu || floorManagerOpen) return
       if (inEditable(e.target) || e.ctrlKey || e.altKey || e.metaKey) return
       if (e.key === 'ArrowLeft') {
         setViewIndex(Math.max(0, page - 1))
@@ -204,7 +207,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [page, pageCount, editing, menu, floorsOpen])
+  }, [page, pageCount, editing, menu, floorManagerOpen])
 
   if (!activeChatId) {
     return (
@@ -389,7 +392,7 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
       <ChatToolbar
         canRegenerate={canRegenerate}
         onRegenerate={handleRegenerate}
-        onManageFloors={() => setFloorsOpen(true)}
+        onManageFloors={openFloorManager}
       />
 
       <ScriptActionsBar />
@@ -411,10 +414,6 @@ export function ChatView({ profileId }: { profileId: string }): React.ReactEleme
             }
           ]}
         />
-      )}
-
-      {floorsOpen && (
-        <FloorManagerModal profileId={profileId} onClose={() => setFloorsOpen(false)} />
       )}
     </>
   )

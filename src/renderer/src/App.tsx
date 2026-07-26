@@ -60,6 +60,10 @@ const MemoryManagerView = lazyNamed(
   () => import('./components/memory/MemoryManagerView'),
   'MemoryManagerView'
 )
+const FloorManagerModal = lazyNamed(
+  () => import('./components/FloorManagerModal'),
+  'FloorManagerModal'
+)
 const TableTemplateReminderModal = lazyNamed(
   () => import('./components/TableTemplateReminderModal'),
   'TableTemplateReminderModal'
@@ -95,6 +99,7 @@ export default function App(): React.ReactElement {
   const assetsPopupOpen = useUiStore((s) => s.assetsPopupOpen)
   const agentWorkspaceOpen = useUiStore((s) => s.agentWorkspaceOpen)
   const memoryManagerOpen = useUiStore((s) => s.memoryManagerOpen)
+  const floorManagerOpen = useUiStore((s) => s.floorManagerOpen)
   const activeChatMode = useChatStore((s) => s.activeChatMode)
   const templateReminderOpen = useChatStore((s) => s.templateReminderOpen)
 
@@ -129,6 +134,14 @@ export default function App(): React.ReactElement {
       const st = useChatStore.getState()
       if (chatId === st.activeChatId && !st.isGenerating) {
         useComposerStore.getState().requestSubmit()
+      }
+    })
+    // A card panel asked to open the floor manager (楼层管理). Scoped to the active chat, like the
+    // input/submit relays. The modal is mounted by THIS component, not ChatView, so it opens even when
+    // a card owns the whole play area (where ChatView — and its toolbar ☰ button — never mounts).
+    const unsubFloorManager = window.api.onWcvHostOpenFloorManager(({ chatId }) => {
+      if (chatId === useChatStore.getState().activeChatId) {
+        useUiStore.getState().openFloorManager()
       }
     })
     // Card-side chat and regex writes share this signal; refresh both renderer caches.
@@ -231,6 +244,7 @@ export default function App(): React.ReactElement {
       unsubWcv()
       unsubInput()
       unsubSubmit()
+      unsubFloorManager()
       unsubReload()
       unsubSetPlayTheme()
       unsubSetColorScheme()
@@ -496,6 +510,12 @@ export default function App(): React.ReactElement {
         {assetsPopupOpen && <AssetsPopup profileId={activeProfile.id} />}
         {agentWorkspaceOpen && <AgentWorkspace profileId={activeProfile.id} />}
         {memoryManagerOpen && <MemoryManagerView profileId={activeProfile.id} />}
+        {floorManagerOpen && (
+          <FloorManagerModal
+            profileId={activeProfile.id}
+            onClose={useUiStore.getState().closeFloorManager}
+          />
+        )}
         {templateReminderOpen && <TableTemplateReminderModal profileId={activeProfile.id} />}
       </Suspense>
       <CardTrustPrompt />

@@ -698,6 +698,13 @@ const api = {
     ipcRenderer.on('wcv-host-submit', listener)
     return () => ipcRenderer.removeListener('wcv-host-submit', listener)
   },
+  // A card panel asked to open the floor manager (楼层管理) — its route to a surface the native chat
+  // toolbar owns, which a card that owns the play area never renders.
+  onWcvHostOpenFloorManager: (cb: (payload: { chatId: string }) => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { chatId: string }): void => cb(payload)
+    ipcRenderer.on('wcv-host-open-floor-manager', listener)
+    return () => ipcRenderer.removeListener('wcv-host-open-floor-manager', listener)
+  },
   // A card panel changed message content via saveChat → reload the active chat's floors.
   onWcvHostReload: (cb: (payload: { chatId: string }) => void) => {
     const listener = (_e: IpcRendererEvent, payload: { chatId: string }): void => cb(payload)

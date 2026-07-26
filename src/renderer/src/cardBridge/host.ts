@@ -6,6 +6,7 @@ import { useRegexStore } from '../stores/regexStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useComposerStore } from '../stores/composerStore'
 import { useLorebookStore } from '../stores/lorebookStore'
+import { useUiStore } from '../stores/uiStore'
 import { onCardHostEvent } from './cardHostEvents'
 import { applyRuntimeTheme, getEffectivePlayTheme } from './playTheme'
 import { evalTemplate, evalTemplateDetailed } from '../../../shared/templateEngine'
@@ -392,6 +393,11 @@ export function createInlineHost(ctx: CardCtx): Host {
     },
     setInput: (text) => {
       useComposerStore.getState().injectInput(String(text ?? ''))
+    },
+    // Inline-transport counterpart of the WCV `wcv-host-open-floor-manager` relay: this transport IS
+    // the renderer, so it flips the uiStore flag directly. App mounts the modal (parity by construction).
+    openFloorManager: () => {
+      useUiStore.getState().openFloorManager()
     },
     // Global (per-profile) variables for triggerSlash's /setglobalvar / /getglobalvar — the same
     // template-globals store the renderer's chat-input slash uses (pluginVars global scope).

@@ -115,6 +115,7 @@ export const WCV_CHANNEL_SPEC: Record<WcvSpecMember, ChannelSpec> = {
   setInput: { channel: 'wcv-host-set-input', kind: 'send' },
   submitInput: { channel: 'wcv-host-submit-input', kind: 'send' },
   setButtons: { channel: 'wcv-register-button', kind: 'send' },
+  openFloorManager: { channel: 'wcv-host-open-floor-manager', kind: 'send' },
   requestOverlay: { channel: 'wcv-host-request-overlay', kind: 'invoke' },
   closeOverlay: { channel: 'wcv-host-close-overlay', kind: 'invoke' },
   setPlayTheme: { channel: 'wcv-host-set-play-theme', kind: 'invoke' },

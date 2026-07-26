@@ -721,6 +721,10 @@ export function createThRuntime(host: Host, opts?: { chatScope?: CardChatScope }
     // forwards to the app's overlay mechanism (WCV over the grid region). See docs/rpt-api.md.
     requestOverlay: (id: string) => host.requestOverlay(String(id ?? '')),
     closeOverlay: () => host.closeOverlay(),
+    // App-owned surface, NOT a card overlay: open RP Terminal's own floor manager (楼层管理). A card
+    // that owns the play area never renders the native chat toolbar, so this is how its UI reaches
+    // that surface. Fire-and-forget; both transports inherit it through this facade.
+    openFloorManager: () => host.openFloorManager(),
     // Runtime theming (runtime-theme-api-design §3B). Universal — any card, any scope. Behavior lives in
     // the renderer authority (cardBridge/playTheme); both transports' Host forwards there. Also surfaced
     // on rptHost by each transport (like requestOverlay). `setMessageTheme` is sugar for a message-target

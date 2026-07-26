@@ -414,6 +414,10 @@ w.TavernHelper = g.TavernHelper
 // ONE place (shared/thRuntime → the WCV Host → the app's overlay mechanism), never forked per transport.
 ;(rptHost as any).requestOverlay = (id: string): Promise<boolean> => g.requestOverlay(id)
 ;(rptHost as any).closeOverlay = (): Promise<void> => g.closeOverlay()
+// The app's OWN floor manager (楼层管理), surfaced on rptHost next to the overlay pair because it is
+// likewise a host-privileged surface request. Unlike requestOverlay it names no card-declared entry —
+// the app owns the modal — so a card that owns the play area can reach a surface it cannot render.
+;(rptHost as any).openFloorManager = (): void => g.openFloorManager()
 // WA-3: the picker-backed asset import is a host-privilege write, so (like requestOverlay) it is surfaced
 // on rptHost too, delegating to the shared-runtime facade. The read-only `assetList` stays a bare global
 // (mirrors assetUrl — Object.assign(w, g) above already exposed it), not on rptHost. M3's `miscAssets`
