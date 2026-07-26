@@ -1,10 +1,11 @@
 import crypto from 'crypto'
 
-import type {
-  AgentDefinition,
-  JsonObject,
-  JsonValue,
-  ProcessorOutputContract
+import {
+  isPreprocessSkipSignal,
+  type AgentDefinition,
+  type JsonObject,
+  type JsonValue,
+  type ProcessorOutputContract
 } from '../../../../shared/agentRuntime'
 import { runSandbox } from '../../sandboxService'
 import { compileJsonSchema } from '../harness/schemaValidation'
@@ -27,6 +28,12 @@ export interface ProcessingResult<T extends JsonValue | undefined> {
   value: T
   logs: string[]
   warning?: ProcessingWarning
+  /**
+   * Set by {@link runPreprocessor} ONLY when the script returned the skip sentinel (see
+   * `isPreprocessSkipSignal`). The Invocation Runtime aborts the run before dispatch — no run record,
+   * no cadence advance. `value` is left as the untouched raw input and must be ignored when this is set.
+   */
+  skip?: true
 }
 
 const jsonText = (value: unknown): string | undefined => {
@@ -125,6 +132,16 @@ export const runPreprocessor = async (
   }
   const run = await execute('preprocess', definition.processing.preprocess.code, { value: copyJson(rawInput) })
   if (run.warning) return { value: copyJson(rawInput), logs: run.logs, warning: run.warning }
+  // Skip sentinel: detected BEFORE the object/inputSchema checks so a gate opting out is exempt from
+  // the Agent's declared input contract. The raw input is preserved but ignored by the caller on skip.
+  if (isPreprocessSkipSignal(run.value)) {
+    const reason = typeof run.value.reason === 'string' ? run.value.reason : undefined
+    return {
+      value: copyJson(rawInput),
+      logs: reason ? [...run.logs, `preprocess skip: ${reason}`] : run.logs,
+      skip: true
+    }
+  }
   if (!run.value || typeof run.value !== 'object' || Array.isArray(run.value)) {
     return {
       value: copyJson(rawInput),

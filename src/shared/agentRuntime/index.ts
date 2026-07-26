@@ -14,6 +14,11 @@ export {
 } from './paths'
 export { parseInvocationPlan } from './plan'
 export {
+  PREPROCESS_SKIP_MARKER,
+  isPreprocessSkipSignal,
+  type PreprocessSkipSignal
+} from './preprocess'
+export {
   isObjectInputSchema,
   validateJsonSchemaSemantics,
   type JsonSchemaSemanticIssue

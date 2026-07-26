@@ -106,6 +106,31 @@ describe('AgentProcessor', () => {
     expect(result.warning).toMatchObject({ phase: 'preprocess', code: 'OUTPUT_INVALID' })
   })
 
+  it('returns the skip signal when preprocess emits the sentinel, exempt from inputSchema', async () => {
+    const agent = definition({
+      runtime: 'rpt-processor-v1',
+      // The sentinel object would fail the `text` inputSchema, but skip is detected first.
+      preprocess: { code: 'return { __rpt_skip: true, reason: "not due" }' }
+    })
+    const result = await runPreprocessor(agent, { text: 'ignored' })
+
+    expect(result.skip).toBe(true)
+    expect(result.warning).toBeUndefined()
+    expect(result.value).toEqual({ text: 'ignored' })
+    expect(result.logs).toContain('preprocess skip: not due')
+  })
+
+  it('does not treat an ordinary input object as a skip signal', async () => {
+    const agent = definition({
+      runtime: 'rpt-processor-v1',
+      preprocess: { code: 'return { text: input.value.raw }' }
+    })
+    const result = await runPreprocessor(agent, { raw: 'run me' })
+
+    expect(result.skip).toBeUndefined()
+    expect(result.value).toEqual({ text: 'run me' })
+  })
+
   it('validates postprocessor output and falls back to the model result', async () => {
     const agent = definition({
       runtime: 'rpt-processor-v1',

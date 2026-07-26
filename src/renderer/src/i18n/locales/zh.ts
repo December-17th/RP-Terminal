@@ -338,6 +338,8 @@ const zh: Record<string, string> = {
   'agents.run.missingRequired': '请填写必填字段：{{fields}}。',
   'agents.run.started': '运行 {{id}} 已结束，状态：{{status}}。',
   'agents.run.nothingDue': '当前无需维护 —— 没有到期的表格，因此未启动运行。',
+  'agents.run.skipped':
+    '预处理门控跳过了本次运行 —— 未向模型发送任何请求，也未记录运行。原因见日志面板。',
   'agents.run.history': '运行历史（{{count}}）',
   'agents.run.noRuns': '此会话尚无运行记录。',
   'agents.run.floor': '楼层 {{floor}}',
