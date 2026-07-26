@@ -975,6 +975,12 @@ export const registerWcvIpc = (ipcMain: IpcMain): void => {
       const ctx = wcvManager.contextFor(e.sender.id)
       if (ctx) wcvManager.pushHostSubmit(ctx.chatId)
     },
+    // Card → host: open the app's floor manager (楼层管理). The renderer owns the modal; a card that
+    // owns the play area has no native toolbar to reach it from, so this is its entry point.
+    openFloorManager: (e) => {
+      const ctx = wcvManager.contextFor(e.sender.id)
+      if (ctx) wcvManager.pushHostOpenFloorManager(ctx.chatId)
+    },
     // A card script (replaceScriptButtons) declared its action buttons 鈫?push them to the renderer toolbar.
     setButtons: (e, buttons) => {
       const ctx = wcvManager.contextFor(e.sender.id)

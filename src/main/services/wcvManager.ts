@@ -610,6 +610,16 @@ export const pushHostSubmit = (chatId: string): void => {
   mainWindow?.webContents.send('wcv-host-submit', { chatId })
 }
 
+/**
+ * Push an "open the floor manager" request to the host renderer (a card UI's 楼层管理 button).
+ * Distinct from the card→main channel (`wcv-host-open-floor-manager`) on purpose, like
+ * `wcv-host-submit-input`/`wcv-host-submit` and `wcv-host-set-input`/`wcv-host-input`: one name per
+ * direction means a renderer-side emit can never round-trip through main's own spec handler.
+ */
+export const pushHostOpenFloorManager = (chatId: string): void => {
+  mainWindow?.webContents.send('wcv-host-floor-manager', { chatId })
+}
+
 /** Ask the host renderer to reload a chat's floors (a card UI changed message content via saveChat). */
 export const pushHostReload = (chatId: string): void => {
   mainWindow?.webContents.send('wcv-host-reload', { chatId })

@@ -69,6 +69,14 @@ interface UiState {
   memoryManagerOpen: boolean
   openMemoryManager: () => void
   closeMemoryManager: () => void
+  /** The floor manager (FloorManagerModal) — the 楼层 list + delete-tail surface. Lifted out of
+   *  ChatView's local state so it can be opened when ChatView is NOT mounted: a card that owns the
+   *  play area via `panel_ui` never mounts ChatView, and `SurfaceHost.openFloorManager()` lets that
+   *  card's own UI raise this modal. Mounted from App like the Duel/Assets/Memory popups so it layers
+   *  above both the Workspace and a card's static panel_ui. */
+  floorManagerOpen: boolean
+  openFloorManager: () => void
+  closeFloorManager: () => void
   /** The full-window Agent Workspace popup (AgentWorkspace) — Session 10's complete editor: library,
    *  definition form, prompt/result/tool/history/model/retry sections, plan editor, run detail, and
    *  Manual Invocation. Hosted as a centered full-window popup like the Duel/Assets/Memory popups so
@@ -136,6 +144,9 @@ export const useUiStore = create<UiState>((set) => ({
   memoryManagerOpen: false,
   openMemoryManager: () => set({ memoryManagerOpen: true }),
   closeMemoryManager: () => set({ memoryManagerOpen: false }),
+  floorManagerOpen: false,
+  openFloorManager: () => set({ floorManagerOpen: true }),
+  closeFloorManager: () => set({ floorManagerOpen: false }),
   trustPrompt: null,
   openTrustPrompt: (trustPrompt) => set({ trustPrompt }),
   closeTrustPrompt: () => set({ trustPrompt: null })

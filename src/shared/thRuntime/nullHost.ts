@@ -67,6 +67,7 @@ export function createNullHost(ctx?: CardCtx): Host {
     setInput: () => {},
     submitInput: () => {},
     setButtons: () => {},
+    openFloorManager: () => {},
     requestOverlay: async () => false,
     closeOverlay: async () => {},
     setPlayTheme: async () => false,
