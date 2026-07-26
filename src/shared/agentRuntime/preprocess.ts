@@ -11,7 +11,9 @@ import type { JsonObject, JsonValue } from './types'
  *
  * Semantics (enforced in the Invocation Runtime, NOT here): the run aborts with a distinct `skipped`
  * outcome, produces NO run record, and does NOT advance the floor-commit trigger cadence
- * (`latestRunFloor`). A skip is "not a run". The optional `reason` is surfaced in the preprocess logs.
+ * (`latestRunFloor`). A skip is "not a run". Because no run record forms, the preprocess logs have
+ * nowhere to land — the optional `reason` and the script's own log output are mirrored to the app log
+ * ring instead, where the Logs debug panel shows them.
  *
  * The sentinel is detected BEFORE `inputSchema` validation, so it is deliberately exempt from the
  * Agent's declared input contract.

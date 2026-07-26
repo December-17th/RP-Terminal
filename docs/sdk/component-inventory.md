@@ -461,12 +461,15 @@ preprocess the harness validates the raw input against it. Such Agents are left 
 (`inputProcessed`) and [`attemptLog.ts`](../../src/main/services/agentRuntime/harness/attemptLog.ts).
 
 **Preprocess skip gate.** A version-2 `preprocess` may abort the run **before any provider/LLM dispatch**
-by returning the sentinel `{ __rpt_skip: true }` (optionally `{ __rpt_skip: true, reason: "…" }`; the
-reason is logged). The sentinel is detected **before** `inputSchema` validation, so it is exempt from the
+by returning the sentinel `{ __rpt_skip: true }` (optionally `{ __rpt_skip: true, reason: "…" }`). The
+sentinel is detected **before** `inputSchema` validation, so it is exempt from the
 Agent's input contract. A skip is **"not a run"**: no run record forms, so the `onFloorCommitted` cadence
 baseline (`latestRunFloor`) does **not** advance and the Agent re-evaluates on the next committed floor;
 the invocation resolves with a distinct `skipped` status (no failure, no `blocksNextTurn` barrier
-failure). Marker + guard: `PREPROCESS_SKIP_MARKER` / `isPreprocessSkipSignal` in
+failure). Since there is no run record to carry them, the `reason` and the preprocess's own log output
+are mirrored to the app log ring — read them in the **Logs** debug panel, not the Run Inspector. A
+manual **Run now** that skips reports it in the Workspace notice (`agents.run.skipped`) and adds no row
+to the run history. Marker + guard: `PREPROCESS_SKIP_MARKER` / `isPreprocessSkipSignal` in
 [`preprocess.ts`](../../src/shared/agentRuntime/preprocess.ts). Verify
 [`AgentProcessor.ts`](../../src/main/services/agentRuntime/processing/AgentProcessor.ts) (`runPreprocessor`)
 and [`InvocationRuntime.ts`](../../src/main/services/agentRuntime/invocation/InvocationRuntime.ts)

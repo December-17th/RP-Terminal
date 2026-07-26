@@ -347,6 +347,8 @@ const en: Record<string, string> = {
   'agents.run.needsChat': 'Open a session first — a run needs a committed floor to own its result.',
   'agents.run.started': 'Run {{id}} finished with status {{status}}.',
   'agents.run.nothingDue': 'Nothing to maintain right now — no tables are due, so no run was started.',
+  'agents.run.skipped':
+    'The preprocess gate skipped this run — nothing was sent to the model, so no run was recorded. See the Logs panel for the reason.',
   'agents.run.history': 'Run history ({{count}})',
   'agents.run.noRuns': 'No runs recorded for this session.',
   'agents.run.floor': 'floor {{floor}}',

@@ -186,7 +186,11 @@ export const createSessionInvocationFloorPort = (
     ) {
       const result = request.agent.effective.result
       const saveAs = result.mode === 'tools-only' ? undefined : result.saveAs
-      const priorResult = saveAs ? readPath(variables, saveAs) : undefined
+      // Cloned like every other value crossing into the input (see `resolveBinding` / `promptValues`):
+      // `readPath` hands back a live reference into the parsed floor variables, which must not alias
+      // the snapshot the source hash is taken over.
+      const read = saveAs ? readPath(variables, saveAs) : undefined
+      const priorResult = read === undefined ? undefined : structuredClone(read)
       input = {
         trigger: { floorId: request.floor, floorContent: row.response_content ?? '' },
         ...(priorResult !== undefined ? { priorResult } : {}),

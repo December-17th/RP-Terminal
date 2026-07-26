@@ -598,10 +598,15 @@ function ProfileAgentWorkspace({ profileId }: { profileId: string }): React.Reac
     setNotice(null)
     const result = await window.api.runAgentManually(profileId, chatId, selected.name, input)
     setSaving(false)
+    // Two distinct "nothing happened" shapes share the `skipped` status: the Memory Maintenance
+    // due-gate declining to dispatch at all (no invocationId), and a preprocess self-gate aborting the
+    // run before dispatch (invocationId, but no Run Record — so the list below stays unchanged).
     setNotice(
       result.ok
         ? 'invocationId' in result
-          ? t('agents.run.started', { status: result.status, id: result.invocationId })
+          ? result.status === 'skipped'
+            ? t('agents.run.skipped')
+            : t('agents.run.started', { status: result.status, id: result.invocationId })
           : t('agents.run.nothingDue')
         : agentErrorMessage(t, result.code)
     )

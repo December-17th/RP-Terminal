@@ -85,9 +85,15 @@ export type AgentMutationResult =
   | { ok: true; agent: AgentCatalogSummary }
   | { ok: false; error: string; code?: string; details?: unknown }
 
-/** Outcome of a Manual Invocation started from the Workspace (design §12). The `skipped` variant is
- *  Memory Maintenance's due-gate declining to bill a run when nothing is due (final-review Finding 1) —
- *  a real non-outcome, distinct from a run that succeeded. */
+/** Outcome of a Manual Invocation started from the Workspace (design §12).
+ *
+ *  TWO shapes report `skipped`, told apart by whether `invocationId` is present:
+ *  - NO `invocationId` — Memory Maintenance's due-gate declined to bill a run when nothing is due
+ *    (final-review Finding 1); the Invocation Runtime was never entered.
+ *  - WITH `invocationId` — an invocation was created, but its formatVersion-2 preprocess returned the
+ *    skip sentinel, so it aborted before provider dispatch. No Run Record forms in either case.
+ *
+ *  Both are real non-outcomes, distinct from a run that succeeded. */
 export type AgentManualRunResult =
   | { ok: true; invocationId: string; status: string; result?: unknown }
   | { ok: true; status: 'skipped' }

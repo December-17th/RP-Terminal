@@ -10,6 +10,7 @@ import {
   type JsonValue
 } from '../../../../shared/agentRuntime'
 import type { CatalogAgent } from '../catalog'
+import { log } from '../../logService'
 import {
   harnessInvocationOptions,
   type HarnessExecutionResult,
@@ -519,6 +520,14 @@ export const createInvocationRuntime = ({
           // returning first means no record forms and `latestRunFloor` (the derived cadence baseline)
           // never advances. A skip is "not a run": no failure, no barrier failure, no incorporation.
           if (preprocessing.skip) {
+            // No run record forms, so the preprocess logs (which carry the sentinel's `reason`) have
+            // nowhere to land — a silently self-gating Agent would be undebuggable. Mirror them to the
+            // app log ring instead, where the Logs debug panel shows them.
+            log(
+              'info',
+              `Agent "${resolvedAgent.name}" skipped floor ${item.request.floor} (preprocess gate)`,
+              preprocessing.logs.length ? preprocessing.logs.join('\n') : undefined
+            )
             return {
               invocationId: item.invocationId,
               status: 'skipped',
