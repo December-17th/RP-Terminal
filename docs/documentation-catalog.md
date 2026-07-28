@@ -130,8 +130,9 @@ survive the ADR 0020 cutover.
 ## Point-in-time records
 
 - Health and structure: `codebase-health-check-2026-06-24.md`,
-  `codebase-structural-review-2026-06-26.md`, `maintainability-plan-2026-06-26.md`, and
-  `structural-cleanup-log-2026-06-26.md`.
+  `codebase-structural-review-2026-06-26.md`, `maintainability-plan-2026-06-26.md`,
+  `structural-cleanup-log-2026-06-26.md`, and the final
+  [Codebase Health Check — 2026-07-27](codebase-health-check-2026-07-27.md) snapshot.
 - Session handoffs: `handoff-2026-07-04-agent-workflow.md` and
   `handoff-2026-07-04-manual-pass.md`.
 - Reviews/reports: `project-review-2026-07-09.md`,
