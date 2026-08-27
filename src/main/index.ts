@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
 import { dirname, join } from 'path'
+import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icons/rp-terminal-emerald.png?asset'
 
@@ -28,6 +29,7 @@ import { resolveProfileId } from './services/sessionDbService'
 import { getChat } from './services/chatService'
 import { getCharacter } from './services/characterService'
 import { getRpExt } from './types/character'
+import { installMainWindowNavigationPolicy } from './mainWindowNavigation'
 
 // A packaged Windows ZIP is self-contained: RP Terminal records, Electron preferences, browser
 // storage, and caches all live below rp-terminal-data beside the executable. macOS retains Electron's
@@ -79,6 +81,12 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 function createWindow(): void {
+  const rendererEntry = join(__dirname, '../renderer/index.html')
+  const rendererUrl =
+    is.dev && process.env['ELECTRON_RENDERER_URL']
+      ? process.env['ELECTRON_RENDERER_URL']
+      : pathToFileURL(rendererEntry).toString()
+
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 900,
@@ -114,7 +122,7 @@ function createWindow(): void {
 
   // Identify the app's own top frame for the destructive-IPC sender gate (card-trust-boundary
   // issue 02): gated channels run only when the caller IS this window's main frame.
-  setGuardMainWindow(mainWindow)
+  setGuardMainWindow(mainWindow, rendererUrl)
 
   // Interception point #1: the close button / Windows title-bar close. Only OUTSIDE macOS, where it
   // cascades into window-all-closed -> app.quit() and really does discard the work. On macOS closing
@@ -150,17 +158,16 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
+  installMainWindowNavigationPolicy(mainWindow.webContents, rendererUrl, (url) =>
+    shell.openExternal(url)
+  )
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    mainWindow.loadURL(rendererUrl)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(rendererEntry)
   }
 }
 

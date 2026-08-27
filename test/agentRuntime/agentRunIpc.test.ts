@@ -119,7 +119,7 @@ describe('Agent Run IPC', () => {
     hoisted.cancel.mockClear()
     hoisted.runtimeCancel.mockClear()
     hoisted.sent.length = 0
-    setGuardMainWindow({ webContents: mainWc, on: () => undefined } as never)
+    setGuardMainWindow({ webContents: mainWc, on: () => undefined } as never, 'app://top')
     registerAgentRunIpc({
       handle: (channel: string, handler: (...args: any[]) => unknown) =>
         void handlers.set(channel, handler),

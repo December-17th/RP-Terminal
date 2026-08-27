@@ -1,5 +1,6 @@
 import type { BrowserWindow, IpcMainInvokeEvent, WebContents } from 'electron'
 import { log } from '../services/logService'
+import { isAllowedMainWindowUrl } from '../mainWindowNavigation'
 
 /**
  * Main-side sender gating for the "real-harm" IPC channels (card-trust-boundary issue 02).
@@ -26,9 +27,10 @@ export const GATED_CHANNELS = [
   // Packaged-build update notifier: network check + opening the main-validated GitHub release URL
   'check-for-update',
   'open-update-release',
-  // profile-level destruction + credential-bearing settings write (profileIpc)
+  // profile-level destruction + credential-bearing settings/model discovery (profileIpc)
   'wipe-profile',
   'save-settings',
+  'list-models',
   // whole-entity deletion (conservative default) + native card import/export dialogs (characterIpc)
   'delete-character',
   'import-character-dialog',
@@ -117,22 +119,27 @@ export type GatedChannel = (typeof GATED_CHANNELS)[number]
 export class IpcSenderRejectedError extends Error {
   readonly code = 'IPC_SENDER_REJECTED' as const
   constructor(readonly channel: string) {
-    super(`ipc '${channel}': rejected — sender is not the app's top frame`)
+    super(`ipc '${channel}': rejected — sender is not the app's top frame and document`)
     this.name = 'IpcSenderRejectedError'
   }
 }
 
 let mainWebContents: WebContents | null = null
+let mainDocumentUrl: string | null = null
 
 /**
  * Wire the app's main BrowserWindow so the guard can compare senders against it. Mirrors
  * `wcvManager.init(win)` — called once from `createWindow`. Cleared when that window closes so a
  * stale, destroyed webContents can never be mistaken for the top frame.
  */
-export const setGuardMainWindow = (win: BrowserWindow): void => {
+export const setGuardMainWindow = (win: BrowserWindow, documentUrl: string): void => {
   mainWebContents = win.webContents
+  mainDocumentUrl = documentUrl
   win.on('closed', () => {
-    if (mainWebContents === win.webContents) mainWebContents = null
+    if (mainWebContents === win.webContents) {
+      mainWebContents = null
+      mainDocumentUrl = null
+    }
   })
 }
 
@@ -140,22 +147,22 @@ export const setGuardMainWindow = (win: BrowserWindow): void => {
 export const guardMainWebContents = (): WebContents | null => mainWebContents
 
 /**
- * Pure predicate — is this invoke from the app's OWN top frame? True only when the sender IS the
- * main window's webContents AND the calling frame is that webContents' `mainFrame`. A card iframe
- * (a sub-frame of the same webContents) fails the frame check; a WCV (a different webContents)
- * fails the sender check; a destroyed frame (`senderFrame === null`, an Electron caveat) fails.
- * Exported so the guard can be table-driven in tests with fake events.
+ * Pure predicate — is this invoke from the app's OWN top frame and renderer document? A card iframe
+ * fails the frame check; a WCV fails the sender check; a destroyed frame fails; and a top frame that
+ * navigated away from the configured app URL fails the document check.
  */
 export const isAppTopFrame = (
   event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>,
-  mainWc: WebContents | null
+  mainWc: WebContents | null,
+  documentUrl?: string | null
 ): boolean => {
   if (!mainWc) return false
   const sender = event?.sender
   if (!sender || sender !== mainWc) return false
   const frame = event?.senderFrame
   if (!frame) return false // destroyed frame → reject
-  return frame === sender.mainFrame
+  if (frame !== sender.mainFrame) return false
+  return !documentUrl || isAllowedMainWindowUrl(frame.url, documentUrl)
 }
 
 type Handler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown
@@ -168,11 +175,11 @@ type Handler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown
  */
 export const gate = <T extends Handler>(channel: GatedChannel, handler: T): T =>
   ((event: IpcMainInvokeEvent, ...args: any[]) => {
-    if (!isAppTopFrame(event, mainWebContents)) {
+    if (!isAppTopFrame(event, mainWebContents, mainDocumentUrl)) {
       log(
         'error',
         `ipc-guard: rejected '${channel}'`,
-        'sender is not the app top frame (card iframe / WCV / destroyed frame)'
+        'sender is not the app top frame and document (card iframe / WCV / destroyed or remote frame)'
       )
       return Promise.reject(new IpcSenderRejectedError(channel))
     }

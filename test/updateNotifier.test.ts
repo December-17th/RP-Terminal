@@ -256,9 +256,9 @@ describe('guarded IPC and release opening safety', () => {
     }
     registerUpdateIpc(ipcMain as never, notifier)
 
-    const mainFrame = {}
+    const mainFrame = { url: 'app://top' }
     const sender = { mainFrame }
-    setGuardMainWindow({ webContents: sender, on: () => {} } as never)
+    setGuardMainWindow({ webContents: sender, on: () => {} } as never, 'app://top')
     const topFrameEvent = { sender, senderFrame: mainFrame }
     await handlers.get('open-update-release')!(
       topFrameEvent,

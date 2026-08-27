@@ -62,7 +62,7 @@ describe('restart-app goes through the exit guard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setExitDialogLocale('en')
-    setGuardMainWindow({ webContents: mainWc, on: () => {} } as never)
+    setGuardMainWindow({ webContents: mainWc, on: () => {} } as never, 'app://top')
     mockActiveWork.hasActiveBackgroundWork.mockReturnValue(false)
   })
 

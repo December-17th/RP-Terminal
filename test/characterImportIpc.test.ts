@@ -83,14 +83,14 @@ import { setGuardMainWindow } from '../src/main/ipc/ipcGuards'
 
 describe('character Agent collision IPC continuation', () => {
   const handlers = new Map<string, (...args: any[]) => any>()
-  const mainFrame = {}
+  const mainFrame = { url: 'app://top' }
   const sender = { mainFrame }
   const event = { sender, senderFrame: mainFrame } as unknown as IpcMainInvokeEvent
 
   beforeEach(() => {
     handlers.clear()
     hoisted.importCharacter.mockClear()
-    setGuardMainWindow({ webContents: sender, on: () => undefined } as never)
+    setGuardMainWindow({ webContents: sender, on: () => undefined } as never, 'app://top')
     registerCharacterIpc({
       handle: (channel: string, handler: (...args: any[]) => unknown) =>
         void handlers.set(channel, handler)
