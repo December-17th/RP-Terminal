@@ -31,18 +31,17 @@ export const registerProfileIpc = (ipcMain: IpcMain): void => {
       setExitDialogLocale(settings.ui.locale)
     })
   )
-  // Fetch the provider's available models for the API settings tab's model dropdown. The renderer's key
-  // is masked after first entry, so resolve the real (stored) key here when it isn't a freshly-typed one.
-  ipcMain.handle('list-models', async (_, api, profileId) => {
-    try {
-      let key = api?.api_key
-      if (!key || settingsService.isMaskedKey(String(key))) {
-        key = settingsService.getSettings(profileId).api.api_key
+  // Provider discovery is app-UI-only and uses one complete configuration read in main. Never combine
+  // a stored secret with a renderer-selected provider or endpoint.
+  ipcMain.handle(
+    'list-models',
+    gate('list-models', async (_, profileId) => {
+      try {
+        return await apiService.listModels(settingsService.getSettings(profileId).api)
+      } catch (err) {
+        log('error', '✗ list-models failed', err instanceof Error ? err.message : String(err))
+        throw err
       }
-      return await apiService.listModels({ ...api, api_key: key })
-    } catch (err) {
-      log('error', '✗ list-models failed', err instanceof Error ? err.message : String(err))
-      throw err
-    }
-  })
+    })
+  )
 }

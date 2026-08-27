@@ -64,7 +64,7 @@ describe('Agent Catalog IPC prompt preview', () => {
       attribution: {},
       warnings: []
     })
-    setGuardMainWindow({ webContents: mainWc, on: () => undefined } as never)
+    setGuardMainWindow({ webContents: mainWc, on: () => undefined } as never, 'app://top')
     registerAgentCatalogIpc({
       handle: (channel: string, handler: (...args: any[]) => unknown) =>
         void handlers.set(channel, handler)

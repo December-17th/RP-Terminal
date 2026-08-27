@@ -58,7 +58,7 @@ describe('Agent Catalog IPC manual run', () => {
       status: 'succeeded',
       result: 'ok'
     })
-    setGuardMainWindow({ webContents: mainWc, on: () => undefined } as never)
+    setGuardMainWindow({ webContents: mainWc, on: () => undefined } as never, 'app://top')
     registerAgentCatalogIpc({
       handle: (channel: string, handler: (...args: any[]) => unknown) =>
         void handlers.set(channel, handler)

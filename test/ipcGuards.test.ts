@@ -54,7 +54,7 @@ const SENDER_CASES: { name: string; event: FakeEvent; allowed: boolean }[] = [
 
 beforeEach(() => {
   // Wire the guard to the fake main window; silence the reject log so the run stays quiet.
-  setGuardMainWindow(mainWin as never)
+  setGuardMainWindow(mainWin as never, 'app://top')
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
@@ -68,6 +68,13 @@ describe('isAppTopFrame predicate', () => {
   it('rejects when no main window is registered (null mainWc)', () => {
     const topEvent: FakeEvent = { sender: mainWc, senderFrame: mainFrame as never }
     expect(isAppTopFrame(topEvent, null)).toBe(false)
+  })
+
+  it('rejects the registered top frame after it navigates away from the app document', () => {
+    const remoteFrame = { url: 'https://attacker.example/' }
+    const remoteMainWc = { mainFrame: remoteFrame } as unknown as IpcMainInvokeEvent['sender']
+    const event: FakeEvent = { sender: remoteMainWc, senderFrame: remoteFrame as never }
+    expect(isAppTopFrame(event, remoteMainWc, 'app://top')).toBe(false)
   })
 })
 

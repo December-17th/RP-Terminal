@@ -41,10 +41,10 @@ export const ApiSettingsPanel: React.FC<{ profileId: string }> = ({ profileId })
   const fetchModels = async (): Promise<void> => {
     setFetching(true)
     try {
-      const list: string[] = await window.api.listModels(
-        { provider: active.provider, endpoint: active.endpoint, api_key: active.api_key },
-        profileId
-      )
+      // Persist the current optimistic editor state first; model discovery then resolves the complete
+      // active connection in main, without accepting an endpoint/key pair from this call.
+      await window.api.saveSettings(profileId, settings)
+      const list: string[] = await window.api.listModels(profileId)
       setModels(list)
       if (!list.length) useToastStore.getState().push(t('api.noModels'))
     } catch (e) {

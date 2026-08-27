@@ -9,6 +9,7 @@ declare global {
         latestVersion: string
       } | null>
       openUpdateRelease: () => Promise<boolean>
+      listModels: (profileId: string) => Promise<string[]>
       // Open (or focus) the separate Debug window hosting the Logs panel (WP-D1).
       openDebugWindow: () => Promise<void>
       // WP-D2: side-effect-free lorebook retrieval dry-run for the Debug window's Retrieval tab.

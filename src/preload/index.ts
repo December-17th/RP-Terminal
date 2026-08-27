@@ -26,8 +26,7 @@ const api = {
   getSettings: (profileId: string) => ipcRenderer.invoke('get-settings', profileId),
   saveSettings: (profileId: string, settings: any) =>
     ipcRenderer.invoke('save-settings', profileId, settings),
-  listModels: (api: unknown, profileId: string) =>
-    ipcRenderer.invoke('list-models', api, profileId),
+  listModels: (profileId: string) => ipcRenderer.invoke('list-models', profileId),
   getCharacters: (profileId: string) => ipcRenderer.invoke('get-characters', profileId),
   getCharacterAvatar: (characterId: string) =>
     ipcRenderer.invoke('get-character-avatar', characterId),
